@@ -1,0 +1,17 @@
+{
+  "mongodb-nosql-operator-injection-mitigation": {
+    "title": "Input Validation with AJV",
+    "href": "/posts/2020/9/6/mongodb-nosql-operator-injection-mitigation",
+    "newWindow": false
+  },
+  "input-validation-json-schemas-best-practices": {
+    "title": "Input Validation With JSON Schemas: Best Practices",
+    "href": "/posts/2021/2/20/input-validation-json-schemas-best-practices",
+    "newWindow": false
+  },
+  "httpjs-double-cookies-against-csrf-and-session-theft": {
+    "title": "HTTP/JS-Double-Cookies Against CSRF And Session Theft",
+    "href": "/posts/2021/1/16/httpjs-double-cookies-against-csrf-and-session-theft",
+    "newWindow": false
+  }
+}

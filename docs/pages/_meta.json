@@ -1,36 +1,49 @@
 {
   "index": {
-    "type": "page",
-    "title": "Nextra",
+    "title": "Latest articles",
     "display": "hidden",
     "theme": {
-      "layout": "raw"
-    }
-  },
-  "docs": {
-    "type": "page",
-    "title": "Documentation"
-  },
-  "showcase": {
-    "type": "page",
-    "title": "Showcase",
-    "theme": {
-      "typesetting": "article",
-      "layout": "full"
+      "breadcrumb": true,
+      "footer": true,
+      "sidebar": true,
+      "toc": false,
+      "pagination": false,
+      "timestamp": false
     }
   },
   "about": {
     "type": "page",
     "title": "About",
     "theme": {
-      "typesetting": "article"
+      "typesetting": "article",
+      "breadcrumb": false,
+      "footer": true,
+      "sidebar": false,
+      "toc": false,
+      "pagination": false,
+      "timestamp": false
     }
   },
-  "404": {
+  "-- Categories": {
+    "type": "separator",
+    "title": "Categories"
+  },
+  "cryptography": "Cryptography",
+  "ethereum": "Ethereum/EVM",
+  "web2": "Web2",
+  "---": {
+    "type": "separator"
+  },
+  "posts": {
     "type": "page",
-    "theme": {
-      "timestamp": false,
-      "typesetting": "article"
-    }
+    "display": "hidden"
+  },
+  "components": {
+    "type": "page",
+    "display": "hidden"
+  },
+  "secureum-auditor-bootcamp-2021-quizzes": {
+    "type": "page",
+    "display": "hidden"
   }
 }

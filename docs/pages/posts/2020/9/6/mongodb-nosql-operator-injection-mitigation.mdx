@@ -1,0 +1,89 @@
+# MongoDB NoSQL Operator Injection: Mitigation
+
+<p className="text-xs text-right">September 6, 2020 by [patrickd](/about#patrickd)</p>
+
+In [previous articles](/web2/mongodb/nosql-operator-injection/) we explored different ways of exploiting Operator Injections. Here we want to look at how they can be mitigated.
+
+## Validating User Input
+
+import { Callout } from 'nextra/components'
+
+<Callout type="warning">
+  Due to the age of this article, the exact methods shown below may be wildly outdated.
+</Callout>
+
+This won't be a surprise for experienced programmers, but as with most security issues, it is always about validating all values that have been provided by the user. Whether it is the URL (path, query parameters, ...) or other HTTP Headers (Cookies, Referer, Host, ...) or if one was sent, the request body itself. Before making use of User Input within an application we should validate whether it looks anything like we expect it to.
+
+In terms of the NodeJS applications from previous examples this could mean using a Schema Validator like [AJV](https://www.npmjs.com/package/ajv) to create a reusable middleware that can be easily plugged in before the controllers' business logic:
+
+```javascript showLineNumbers {14} filename="middlewares/validateQuery.js" copy
+const Ajv = require('ajv');
+
+const ajv = new Ajv({
+  removeAdditional: true, // Remove additional properties if they are not allowed.
+  useDefaults: true,      // Defaults defined in the schema will be set as value.
+});
+
+// We define a reusable middleware called "validateQuery" that accepts a JSON
+// schema which it will validate the query parameters against.
+const validateQuery = (schema) => {
+  const validate = ajv.compile(schema);
+
+  return async (req) => {
+    if (!validate(req.query)) {
+      throw new BadRequestError({
+        message: ajv.errorsText(validate.errors, { dataVar: 'query' }),
+      });
+    }
+  };
+};
+```
+
+```javascript showLineNumbers {2-9} filename="controllers/users.js" copy /req.query.id/
+app.get('/users',
+  validateQuery({
+    type: 'object',
+    properties: {
+      id: {
+        type: 'string',            // id property MUST be a string.
+        pattern: '^[a-f0-9]{24}$', // id property MUST be a MongoDB ObjectId.
+      },
+    },
+    required: ['id'],
+    additionalProperties: false,   // Additional properties are not allowed.
+  }),
+  async (req) => {
+    // The `req.query` is now guaranteed to only have an `id` parameter containing
+    // a valid MongoDB ID – if not, it errored before reaching this code.
+    return userModel.findOne({ _id: req.query.id });
+  }
+);
+```
+
+With this it is no longer possible to pass Objects (`?id[key]=value{:js}`) or Arrays (`?id[]=value{:js}`) as `id` parameter values to this route's controller, effectively mitigating any chance for NoSQL Injections.
+
+To reduce the chance of human error even further we could prepare similar middlewares for all other possible User Input vectors (`validateBody`, `validateCookies`, `validateHeaders`, ...) and we might even want to make the raw values completely inaccessible unless the appropriate validator middleware has been called before.
+
+## Disabling Advanced Query parsing
+
+Most No SQL Injection vectors appear in the URL Query Parameters and that, even though the feature enabling them is usually not used by the vulnerable application itself. Therefore, even though it only covers a small part of the overall possible attack surface, it should be considered to simply disable the functionality that allows specifying Objects and Arrays as Query Parameter values – if that is possible.
+
+
+
+---
+
+import { Card, Cards } from 'nextra/components'
+import { NewsletterIcon } from '@components/icons'
+
+<Cards>
+  <Card
+    icon={<NewsletterIcon />}
+    title="← MongoDB NoSQL Operator Injection: Iterating Collections"
+    href="/posts/2020/7/25/iterating-collections-mongodb-nosql-operator-injection/"
+  />
+  <Card
+    icon={<NewsletterIcon />}
+    title="← MongoDB NoSQL Operator Injection: Cracking Sessions"
+    href="/posts/2020/8/9/cracking-sessions-mongodb-nosql-operator-injection/"
+  />
+</Cards>

@@ -1,10 +1,139 @@
-<svg width="144" height="144" viewBox="0 0 144 144" fill="none" xmlns="http://www.w3.org/2000/svg">
-<g clip-path="url(#clip0_510_6)">
-<path d="M108.411 31.0308L104.919 34.523C86.9284 52.5134 57.7601 52.5134 39.7697 34.523L36.2775 31.0308C34.8287 29.582 32.4797 29.582 31.0309 31.0308C29.5821 32.4796 29.5821 34.8286 31.0309 36.2773L34.5231 39.7695C52.5135 57.76 52.5135 86.9283 34.5231 104.919L31.0309 108.411C29.5821 109.86 29.5821 112.209 31.0309 113.657C32.4797 115.106 34.8287 115.106 36.2775 113.657L39.7697 110.165C57.7601 92.1748 86.9284 92.1748 104.919 110.165L108.411 113.657C109.86 115.106 112.209 115.106 113.658 113.657C115.106 112.209 115.106 109.86 113.658 108.411L110.165 104.919C92.1749 86.9283 92.1749 57.76 110.165 39.7695L113.658 36.2773C115.106 34.8286 115.106 32.4796 113.658 31.0308C112.209 29.582 109.86 29.582 108.411 31.0308Z" fill="black" stroke="black" stroke-width="4"/>
-</g>
-<defs>
-<clipPath id="clip0_510_6">
-<rect width="144" height="144" fill="white"/>
-</clipPath>
-</defs>
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+ xmlns:dc="http://purl.org/dc/elements/1.1/"
+ xmlns:cc="http://creativecommons.org/ns#"
+ xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+ xmlns:svg="http://www.w3.org/2000/svg"
+ xmlns="http://www.w3.org/2000/svg"
+ version="1.1"
+ x="0px"
+ y="0px"
+ width="161"
+ height="132"
+ viewBox="0 0 161 132"
+ xml:space="preserve">
+  <metadata>
+    <rdf:RDF>
+      <cc:Work rdf:about="">
+        <dc:format>image/svg+xml</dc:format>
+        <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+        <dc:title>Ventral Consulting Logo</dc:title>
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
+  <g id="logo" transform="translate(0,-89.841995)">
+    <g id="elements" transform="translate(-26.790241,32.430291)">
+    	<polygon
+       points="198.549,128.749 212.568,104.47 184.528,104.47 "
+       id="polygon24"
+       transform="translate(-24.910224,-32.900296)"
+       style="fill:#0066ff" />
+    	<polygon
+       points="72.365,104.47 44.325,104.47 58.342,128.749 "
+       id="polygon30"
+       transform="translate(-16.920152,-46.76542)"
+       style="fill:#0066ff" />
+  		<polygon
+       points="89.888,130.77 75.864,106.491 61.853,130.77 "
+       id="polygon36"
+       transform="translate(-16.920152,-46.76542)"
+       style="fill:#0066ff" />
+  		<polygon
+       points="167.009,130.77 195.049,130.77 181.023,106.491 "
+       id="polygon42"
+       transform="translate(-24.910224,-32.900296)"
+       style="fill:#0066ff" />
+      <polygon
+       points="181.023,159.106 195.049,134.825 167.009,134.825 "
+       id="polygon44"
+       transform="translate(-24.910224,-32.900296)"
+       style="fill:#0066ff" />
+  		<polygon
+       points="89.888,134.825 61.853,134.825 75.864,159.106 "
+       id="polygon50"
+       transform="translate(-16.920152,-46.76542)"
+       style="fill:#0066ff" />
+      <polygon
+       points="79.375,161.133 107.41,161.133 93.393,136.846 "
+       id="polygon56"
+       transform="translate(-16.920152,-46.76542)"
+       style="fill:#0066ff" />
+  		<polygon
+       points="149.478,161.133 177.518,161.133 163.497,136.846 "
+       id="polygon60"
+       transform="translate(-24.910224,-32.900296)"
+       style="fill:#0066ff" />
+  		<polygon
+       points="163.497,189.463 177.518,165.182 149.478,165.182 "
+       id="polygon62"
+       transform="translate(-24.910224,-32.900296)"
+       style="fill:#0066ff" />
+  		<polygon
+       points="79.375,165.182 93.393,189.463 107.41,165.182 "
+       id="polygon66"
+       transform="translate(-16.920152,-46.76542)"
+       style="fill:#0066ff" />
+  		<polygon
+       points="96.904,191.485 124.936,191.485 110.921,167.204 "
+       id="polygon72"
+       transform="translate(-16.920152,-46.76542)"
+       style="fill:#0066ff" />
+  		<polygon
+       points="131.958,191.485 159.986,191.485 145.979,167.204 "
+       id="polygon74"
+       transform="translate(-24.910224,-32.900296)"
+       style="fill:#0066ff" />
+  		<polygon
+       points="145.979,219.821 159.986,195.528 131.958,195.528 "
+       id="polygon76"
+       transform="translate(-24.910224,-32.900296)"
+       style="fill:#0066ff" />
+  		<polygon
+       points="110.921,219.821 124.936,195.528 96.904,195.528 "
+       id="polygon78"
+       transform="translate(-16.920152,-46.76542)"
+       style="fill:#0066ff" />
+  		<polygon
+       points="114.433,221.842 142.467,221.842 128.446,197.561 "
+       id="polygon84"
+       transform="translate(-24.910224,-32.900296)"
+       style="fill:#0066ff" />
+  	  <polygon
+       points="163.497,128.749 177.518,104.47 149.478,104.47 "
+       id="polygon22"
+       transform="translate(-16.920152,-46.76542)" />
+      <polygon
+       points="114.433,104.47 128.446,128.749 142.467,104.47 "
+       id="polygon26"
+       transform="translate(-16.920152,-46.76542)" />
+      <polygon
+       points="79.375,104.47 93.393,128.749 107.41,104.47 "
+       id="polygon28"
+       transform="translate(-16.920152,-46.76542)" />
+      <polygon
+       points="96.904,130.77 124.936,130.77 110.921,106.491 "
+       id="polygon38"
+       transform="translate(-16.920152,-46.76542)" />
+      <polygon
+       points="159.986,130.77 145.979,106.491 131.958,130.77 "
+       id="polygon40"
+       transform="translate(-16.920152,-46.76542)" />
+      <polygon
+       points="145.979,159.106 159.986,134.825 131.958,134.825 "
+       id="polygon46"
+       transform="translate(-16.920152,-46.76542)" />
+      <polygon
+       points="110.921,159.106 124.936,134.825 96.904,134.825 "
+       id="polygon48"
+       transform="translate(-16.920152,-46.76542)" />
+      <polygon
+       points="142.467,161.133 128.446,136.846 114.433,161.133 "
+       id="polygon58"
+       transform="translate(-16.920152,-46.76542)" />
+      <polygon
+       points="128.446,189.463 142.467,165.182 114.433,165.182 "
+       id="polygon64"
+       transform="translate(-16.920152,-46.76542)" />
+    </g>
+  </g>
 </svg>

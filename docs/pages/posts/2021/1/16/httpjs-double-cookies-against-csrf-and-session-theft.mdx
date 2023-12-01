@@ -1,0 +1,57 @@
+# HTTP/JS-Double-Cookies Against CSRF And Session Theft
+
+<p className="text-xs text-right">January 16, 2021 by [patrickd](/about#patrickd)</p>
+
+Modern single page applications and mobile apps often use RESTlike API backends. These APIs are usually only intended to be used by their respective frontends and tend to use very simple authentication mechanisms: After having sent the user's credentials the response either sets Cookies, which will be automatically attached with every further request made, or the response body contains an access-token which the frontend will now manually attach to every further request made, eg. as query parameter.
+
+Both of these quite common methods have their strengths and weaknesses: Using cookies with the [`httpOnly`](https://owasp.org/www-community/HttpOnly) flag set will prevent the session being stolen as it will not be readable from JavaScript if there is an [XSS](https://owasp.org/www-community/attacks/xss/) issue. But it will open up vectors for [CSRF attacks](https://owasp.org/www-community/attacks/csrf) unless additional measures are put in place to prevent them. Cross Site Request Forgery means that an attacker could make the victims browser execute a malicious HTTP request, which will automatically have the users own cookies attached to it, making it look intentional and legitimate.
+
+On the other hand, not using cookies and manually attaching the access-token with JavaScript on each request has the exact opposite of issues: While it's no longer possible to do CSRF it's now quite easy to [steal a session](https://owasp.org/www-community/attacks/Session_hijacking_attack) using a XSS vulnerability allowing the attacker to copy the access-token and eg. use it in their own browser. While this is often prevented by locking a user's session to their IP address, it will likely cause UX problems since the users will often find themselves logged out after changing networks or when their dynamic IP changed on the next day.
+
+In this article I'd like to suggest a quite elegant way to combine these methods, gaining both of their advantages without any of their disadvantages.
+
+## Implementation
+
+Let's say we have a `POST /login{:http}` route where the frontend application will send a request body containing the `username` and `password` to after the user submitted the login form.
+
+```javascript showLineNumbers {9,10} filename="Login Controller"
+app.post('/login', async (req, res) => {
+  const = { username, password } = req.body;
+  // These credentials are then used to create a session for the user.
+  const session = SessionManager.login(username, password);
+  // This session will not have a single token but it will have 2 different
+  // tokens of which both are required for authenticating further requests.
+  const [ tokenA, tokenB ] = session.getTokens();
+  // Both of these tokens are now set as cookies.
+  res.cookie('http_accesstoken', tokenA, { httpOnly: true });
+  res.cookie('js_accesstoken', tokenB, { httpOnly: false });
+});
+```
+
+The response will now cause the browser to set two cookies:
+* `http_accesstoken` containing token A is set to be `httpOnly`, meaning JavaScript - that being the application or code of a XSS vulnerability - will not have access to its value.
+* `js_accesstoken` containing token B will be readable by the browser's scripts - purposefully so.
+
+Further requests made by the frontend app will now automatically have both cookies attached to them. But the API will only make use of the `http_accesstoken` cookie while it expects the frontend to have read the `js_accesstoken` cookie value and add it as a (for example) separate HTTP header on each future API request made.
+
+```javascript showLineNumbers {4,5} filename="Logout Controller"
+app.post('/logout', async (req, res) => {
+  // To prevent CSRF we will expect the non-httpOnly cookie value to come as
+  // a separate HTTP header set by the application using the API.
+  const tokenA = req.cookies.http_accesstoken;
+  const tokenB = req.headers['x-accesstoken'];
+  // We use both tokens to authenticate the session.
+  const session = SessionManager.authenticate([tokenA, tokenB]);
+  session.logout();
+  res.clearCookie('http_accesstoken');
+  res.clearCookie('js_accesstoken');
+});
+```
+
+This way both the backend and the frontend can manage their sessions solely via cookies. The frontend does not have to worry about separately storing the other token somewhere. If the user logs out the response will clear both tokens and there's no worry about clean up. If the frontend loads and finds a `js_accesstoken` cookie already set, it should do an authenticated test-request (eg. `GET /{:http}`) to see if the session belonging to these tokens is still active and valid.
+
+## Caveats
+
+Naturally this is not a bullet proof solution since the attacker could still prepare their XSS payload to not simply steal the session but, since stealing both tokens is impossible, immediately execute the malicious requests in the same manner that the real frontend application would. Such is only preventable by hardening the application against XSS as much as possible.
+
+It should also be mentioned that there are some other cookie flags that should be used for a real world implementation of this method: [`SameSite: Strict`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Cookies#SameSite_attribute) adds further protection against CSRF attacks and [`Secure`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Cookies#restrict_access_to_cookies) will make sure that the cookies are only send on encrypted HTTPS requests helping against Man-In-The-Middle attack vectors.

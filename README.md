@@ -1,53 +1,24 @@
-# Nextra
+# Ventral.Digital website
 
-Simple, powerful and flexible site generation framework with everything you love
-from Next.js.
+Based on the [Nextra Docs](https://github.com/shuding/nextra/tree/main/docs) with automatic IPFS deployment via [Fleek](https://fleek.co/).
 
-## Documentation
+## First-Time Setup
 
-[https://nextra.site](https://nextra.site)
+The repository uses [PNPM Workspaces](https://pnpm.io/workspaces) and
+[Turborepo](https://github.com/vercel/turborepo).
 
-## Development
+* `npm install -g pnpm` to install *pnpm*
+* `pnpm i` to install dependencies
+* `pnpm build` to build Nextra Core and Themes
 
-### Installation
+## Working on Content
 
-The Nextra repository uses [PNPM Workspaces](https://pnpm.io/workspaces) and
-[Turborepo](https://github.com/vercel/turborepo). To install dependencies, run
-`pnpm install` in the project root directory.
+Enter the `./docs` directory and start `pnpm dev` which will watch for changes while you edit files within `./docs/pages/`.
 
-### Build Nextra Core
+Check whether static page export works by running `pnpm build` there.
 
-```bash
-cd packages/nextra
-pnpm build
-```
+## License
 
-Watch mode: `pnpm dev`
+[Nextra](https://nextra.site) is licensed under the MIT License.
 
-### Build Nextra Theme
-
-```bash
-cd packages/nextra-theme-docs
-pnpm build
-```
-
-| Command           | Description              |
-| ----------------- | ------------------------ |
-| pnpm dev          | Watch mode               |
-| pnpm dev:layout   | Watch mode (layout only) |
-| pnpm dev:tailwind | Watch mode (style only)  |
-
-### Development
-
-You can also debug them together with a website locally. For instance, to start
-examples/docs locally, run
-
-```bash
-cd examples/docs
-pnpm dev
-```
-
-Any change to example/docs will be re-rendered instantly.
-
-If you update the core or theme packages, a rebuild is required. Or you can use
-the watch mode for both nextra and the theme in separated terminals.
+Actual website contents, such as texts and images, may be copied freely under the condition that the link to the original is referenced.

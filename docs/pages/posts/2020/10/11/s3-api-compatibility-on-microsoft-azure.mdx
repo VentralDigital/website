@@ -1,0 +1,120 @@
+# S3 API Compatibility On Microsoft Azure
+
+<p className="text-xs text-right">October 11, 2020 by [patrickd](/about#patrickd)</p>
+
+import { Callout } from 'nextra/components'
+
+<Callout type="warning">
+  **Note that this article is rather old and the proposed solution may no longer work with the steps described.**
+</Callout>
+
+
+Microsoft's Azure Cloud Service [Blob Storage](https://azure.microsoft.com/en-us/services/storage/blobs/) is an alternative to AWS S3's [Object Storage](https://aws.amazon.com/s3/?), but that doesn't mean it is intended as a drop-in replacement. While the S3 API is now widely considered a quasi-standard for cloud data storage, this was not the case when Azure Blob Storage was first created. While it too has a relatively simple HTTP API, the interfacing is still very different to S3.
+
+To establish compatibility between S3 API clients and the Azure Blob Storage we'll be using the [S3Proxy](https://github.com/gaul/s3proxy) project. It's a Java application that acts as a proxy between a S3 API client and the Azure Blob Storage Service by translating requests accordingly.
+
+## Prerequisites
+
+In this example setup the S3Proxy program will be deployed as a container to an [AKS Cluster](https://azure.microsoft.com/en-us/services/kubernetes-service/). Azure Kubernetes Service provides managed Kubernetes clusters that are easily set up, managed and monitored via the Azure Portal web interface.
+
+If you do not have an AKS yet, follow Microsoft's instructions on how to [setup a Cluster](https://docs.microsoft.com/en-us/azure/aks/kubernetes-walkthrough-portal#create-an-aks-cluster) with AKS. Furthermore you might want to set up an [HTTPS ingress](https://docs.microsoft.com/en-us/azure/aks/ingress-tls) that will allow you to securely expose the S3Proxy service on the Internet with SSL encryption.
+
+## Setup
+
+Once your AKS cluster is ready, create an [Azure Blob Storage Account](https://docs.microsoft.com/en-us/azure/storage/common/storage-account-create) that S3 Proxy will connect to in order to store files at. After it has been created successfully, navigate to _Access Keys_ and copy the name of your storage account and one of the keys displayed.
+
+<Callout type="warning">
+  When dealing with Access Keys from Azure Storage Accounts, make sure that they do NOT contain any special characters such as slashes. Otherwise you might run into issues when using them with S3Proxy. Within the Azure Portal you can keep regenerating new keys until you get one with only digits and letters (the `==` characters at the end are part of the base64 encoding and are fine).
+</Callout>
+
+The following is an example [manifest file](https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#creating-a-deployment) that uses an image from dockerhub ([andrewgaul/s3proxy](https://hub.docker.com/r/andrewgaul/s3proxy/)) which includes the S3Proxy in a way that allows us to simply configure it using environment variables:
+
+```yaml showLineNumbers {44,46,48,50,52} filename="s3proxy.yaml" copy
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: s3proxy
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: s3proxy
+  namespace: s3proxy
+spec:
+  selector:
+    app: s3proxy
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 80
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: s3proxy
+  namespace: s3proxy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: s3proxy
+  template:
+    metadata:
+      labels:
+        app: s3proxy
+    spec:
+      containers:
+      - name: s3proxy
+        image: andrewgaul/s3proxy:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 80
+        env:
+        - name: JCLOUDS_PROVIDER
+          value: azureblob
+        - name: JCLOUDS_IDENTITY
+          value: name-of-your-azure-storage-account
+        - name: JCLOUDS_CREDENTIAL
+          value: access-key-of-your-storage-account
+        - name: S3PROXY_IDENTITY
+          value: name-of-your-azure-storage-account
+        - name: S3PROXY_CREDENTIAL
+          value: access-key-of-your-storage-account
+        - name: JCLOUDS_ENDPOINT
+          value: https://name-of-your-azure-storage-account.blob.core.windows.net
+```
+
+Here you will use the Storage Account name and key that you previously copied from the _Access Keys_ page on your Storage Account's settings.
+
+<Callout type="warning">
+  Note that it's generally recommended to use [Secrets](https://kubernetes.io/docs/concepts/configuration/secret/#using-secrets-as-environment-variables) when handling credentials in Kubernetes.
+</Callout>
+
+
+After making your adjustments you may now deploy S3Proxy by executing `kubectl apply -f s3proxy.yaml{:bash}`.
+
+## Test
+
+You can test your S3Proxy setup using the [AWS CLI](https://aws.amazon.com/cli/) on your local computer. To do so first edit the `~/.aws/credentials` configuration file and add the following lines:
+
+```ini showLineNumbers filename="~/.aws/credentials" copy
+[azure]
+aws_access_key_id = name-of-your-azure-storage-account
+aws_secret_access_key = access-key-of-your-storage-account
+```
+
+Then add the following lines to your `~/.aws/config` file:
+
+```ini showLineNumbers filename="~/.aws/config" copy
+[azure]
+region = your-region
+output = json
+```
+
+With that you should be able to manage your Azure Blob Storage Account using the AWS CLI while specifying `--endpoint-url` and `--profile`:
+
+```bash
+# Create a bucket (actually called a collection on azure) named "my-files"
+aws --endpoint-url https://your-s3proxy-ingress.your-region.cloudapp.azure.com/ \
+    --profile azure s3 mb s3://my-files
+```

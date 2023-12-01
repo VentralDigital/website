@@ -1,0 +1,17 @@
+{
+  "iterating-collections-mongodb-nosql-operator-injection": {
+    "title": "Iterating Collections",
+    "href": "/posts/2020/7/25/iterating-collections-mongodb-nosql-operator-injection",
+    "newWindow": false
+  },
+  "cracking-sessions-mongodb-nosql-operator-injection": {
+    "title": "Cracking Sessions",
+    "href": "/posts/2020/8/9/cracking-sessions-mongodb-nosql-operator-injection",
+    "newWindow": false
+  },
+  "mongodb-nosql-operator-injection-mitigation": {
+    "title": "Mitigation",
+    "href": "/posts/2020/9/6/mongodb-nosql-operator-injection-mitigation",
+    "newWindow": false
+  }
+}

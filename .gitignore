@@ -1,10 +1,12 @@
 .DS_Store
 .next/
 node_modules/
+.pnpm-store
 *.log
 dist/
 .turbo/
 out/
+export/
 # Theme styles
 packages/nextra-theme-*/style.css
 

@@ -1,0 +1,174 @@
+# Cracking A Very Old Monero Wallet
+
+<p className="text-xs text-right">May 15, 2021 by [patrickd](/about#patrickd)</p>
+
+import { Callout } from 'nextra/components'
+
+You've probably heard stories like these before: Some years ago, someone played around with mining a Crypto Currency when it wasn't worth much, forgot about it and now that its price has gone up, they don't remember the Wallet's password anymore. It's the story we were recently approached with by a client who'd really like to have that money now.
+
+Unfortunately he did not only forget the Wallet's password, he also did not write down the recovery seed anywhere, so this doesn't leave a lot of other options aside from trying to open the Wallet by brute force.
+
+## Is this gonna be worth it?
+
+Furthermore he also is not quite sure about the amount of Monero that he might have mined back then: It could be anything between a few hundred to a few thousand Monero, which is, with current market prices anywhere between USD 50,000 and a few millions. But maybe it's less and not even worth the effort?
+
+Without having him send us the encrypted Wallet file itself for now, since he's probably worried about us running off with his potential riches, we asked for anything that could be a hint and luckily he had preserved the original wallet software and all of its files, which included a log that has some interesting information:
+
+```py
+2014-Jun-03 02:25:11.503828 bitmonero wallet v0.8.6.295(0.1-g5ceffa8)
+2014-Jun-03 02:25:11.983856 Generated new wallet: 48umVkxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxR8iM1F9cK6
+view key: 153bcd5xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxd260a
+2014-Jun-03 02:25:11.984856 **********************************************************************
+Your wallet has been generated.
+To start synchronizing with the daemon use "refresh" command.
+```
+
+The first hexdecimal string in the log file is most likely the Wallet's Address and if this were a Crypto Currency such as Bitcoin we could very easily find out the amount of Coins it holds. However Monero is a privacy focused Crypto Currency, this means that you cannot simply take the public key (from which the address is derived) of a Wallet and use a Blockchain explorer tool to look up its contents.
+
+According to the [Moneropedia](https://www.getmonero.org/resources/moneropedia/viewkey.html) you require the Private View Key in order to be able to check a Wallet's Transactions and therefore be able to determine how many Moneros a Wallet has. There's also a public view key that doesn't allow you to identify a Wallet's Transactions but rather whether a Block contains any of them or not – this is useful to avoid downloading Monero's complete Blockchain just to check your balance while still protecting your privacy.
+
+The log file appears to contain a View Key too, but it does not specify whether this the public or private one. Surely you'd not write a private key to a log file?
+
+In order to find out, we'll attempt to generate a [View Only Wallet](https://www.getmonero.org/resources/user-guides/view_only.html) which requires the only two things we might have: The Address and the Private View Key. Using Monero's CLI Wallet we follow the user guide's instructions:
+
+```bash
+$ monero-wallet-cli --generate-from-view-key viewonlywallet1
+This is the command line monero wallet. It needs to connect to a monero daemon to work correctly.
+WARNING: Do not reuse your Monero keys on another fork, UNLESS this fork has key reuse mitigations built in. Doing so will harm your privacy.
+
+Monero 'Oxygen Orion' (v0.17.1.9-release)
+Logging to monero-wallet-cli.log
+Standard address: 48umVkxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxR8iM1F9cK6
+Secret view key: 153bcd5xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxd260a
+
+Enter a new password for the wallet: test
+Confirm password: test
+Generated new wallet: 48umVkxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxR8iM1F9cK6
+```
+
+Seems like that worked! Apparently the log file really did contain the Private View Key and we now have a View-Only Wallet that allows checking the possible balance of the locked up Wallet. We sent the generated Wallet back to our client and waited for him to tell us whether we should continue.
+
+<Callout type="warning">
+  Note that a View-Only Wallet can only show a balance based on incoming transactions. Unless you are certain no outgoing transactions were sent from the Wallet, the displayed balance will likely be incorrect.
+</Callout>
+
+After several hours - of him waiting for the Blockchain to synchronize - he asked us to continue and attempt actual recovery of the funds and promised to make it worth our while should we succeed: We'd get 10% "finder's reward" under the condition that in any case we'd cover 10% of the costs. Sounds fair!
+
+## Trustless password cracking?
+
+When you generate a Monero Wallet, it creates two files: One file without any extension (eg. `wallet1`) and another file with the keys extension (`wallet1.keys`). Neither files contain any human readable information, likely due to being encrypted.
+
+We were wondering whether we had to crack the actual wallet or whether it might be possible the extract some kind of password hash from these files. This would allow us to attempt recovering the password without the client having to trust us with the original wallet files.
+
+The Monero Wallet software is fortunately open source and it's quite easy to find out how it checks whether the entered password is correct. We assumed that if there was something like a password hash, surely this check would make use of it.
+
+Within [`wallet2.cpp`](https://github.com/monero-project/monero/blob/master/src/wallet/wallet2.cpp) the `bool wallet2::verify_password(const epee::wipeable_string& password){:cpp}` method seemed like what were looking for, but it appears that there's likely no such thing as a hash since what it actually does is decrypting the *.keys* file with the specified password and then checking whether the decrypted contents make any sense. If they don't, the password must have been incorrect.
+
+While searching the Internet we actually found various Websites that claimed to be able to extract a Monero Wallet's "hash" which could then be used by cracking tools such as *John the Ripper* or *Hashcat*. Since this required "uploading" your .keys file, we initially thought that this might be some kind of scam attempting to steal peoples wallet files and cracking them before they do.
+
+It turns out that these websites are simply using the `monero2john.py` script that was added as a Tool as part of the [pull request](https://github.com/openwall/john/pull/3151) that added Monero Wallet cracking support to *John the Ripper*. And actually reading that python script's code quickly makes you realize that the "hash" generated here is actually just the .keys file's content encoded as hexdecimal string with `wallet-name:$monero$0*` prepended.
+
+In short, we'll have to ask our client to trust us and send us the full .keys file. And we also highly discourage uploading your Wallet files to any websites.
+
+## Is the Wallet too old?
+
+Now that we know *John the Ripper* ("jumbo version") supports cracking Monero Wallets it seems quite straight forward: First generate the password "hash" using the monero2john script and store its output in a so called password file, then run the john command specifying the password file as a target.
+
+Having read through the pull request though, there appears to be a caveat: Legacy Wallets (pre 2016) that did not use JSON as a format yet, are still supported by the official Monero Wallet software but this support has not been implemented in John. Thanks to the logfile we know that the Wallet in question is from 2014, so it's likely that John wont be able to crack it.
+
+In order to validate this, we generated 2 new wallets with `test` as a password: One wallet was created using the newest Wallet software available, the other one was generated using the original Wallet software send to us by our client (since this is a Windows executable we use wine to run it).
+
+Creating a legacy wallet:
+
+```bash
+$ WINEPREFIX=~/winero winecfg
+wine: created the configuration directory '/home/ubuntu/winero'
+wine: configuration in "/home/ubuntu/winero" has been updated.
+# Select Windows 7 in the configuration window! 
+$ mv simplewallet.exe winero/drive_c/
+$ cd winero/drive_c/
+$ WINEPREFIX=~/winero wine simplewallet.exe
+bitmonero wallet v0.8.6.295(0.1-g5ceffa8)
+Specify wallet file name (e.g., wallet.bin). If the wallet doesn't exist, it will be created.
+Wallet file name: pre2016-test
+The wallet doesn't exist, generating new one
+password: test
+Generated new wallet: 445Cu5fM6DP6j3srGLqob2MFPt8H6izheNxUbcoPfNo9csAVbWXZpwjFuuK9iwdQJ29THuC8cEiiqMMsJRA3oS86HZMkvWk
+view key: 8be096fbeca612d934a023f181072d33135e4e25d9d924a7b32eb7955e919d0e
+```
+
+Next, we create the password file for John containing "hashes" for both the legacy and the JSON format Wallet. We also create a wordlist containing only the one password we know will work: test.
+
+```bash
+$ monero2john.py winero/drive_c/pre2016-test.keys > hashes
+$ monero2john.py post2016-test/post2016-test.keys >> hashes
+$ echo "test" > wordlist
+```
+
+We can now have John work on these:
+
+```bash
+$ john --wordlist=wordlist hashes 
+Note: This format may emit false positives, so it will keep trying even after finding a possible candidate.
+Using default input encoding: UTF-8
+Loaded 2 password hashes with 2 different salts (monero, monero Wallet [Pseudo-AES / ChaCha / Various 32/64])
+Will run 8 OpenMP threads
+Press 'q' or Ctrl-C to abort, almost any other key for status
+Warning: Only 1 candidate left, minimum 8 needed for performance.
+test             (post2016-test.keys)     
+1g 0:00:00:00 DONE (2021-05-16 00:22) 2.173g/s 2.173p/s 4.347c/s 4.347C/s test
+Session completed.
+```
+
+As can be seen by the output, it is indeed true that using John as is will not work for the original Wallet file, since it was only able to "crack" the JSON format wallet.
+
+## Patching John
+
+Looking at the `monero_fmt_plug.c` that was added with the previously mentioned pull request, we can see that after attempting to decrypt the keys file, it will check whether the first 32 bytes contain the string `key_data` – if it does, the Wallet is considered cracked.
+
+```c filename="monero_fmt_plug.c excerpt" /key_data/
+chacha_decrypt_bytes(&ckey, cur_salt->ct + IVLEN + 2, out, 32, 8);
+if (memmem(out, 32, (void*)"key_data", 8)) {
+  cracked[index] = 1;
+```
+
+The reason behind this can be found out by adding a printf call that logs the 32 decrypted characters to console. For a supported JSON wallet the output will be something like this: `{"key_data":"\u0001\u0011\u0001\{:json}`. We can see that the string `key_data` is actually the first field it expects to be defined in the JSON.
+
+Doing the same for our legacy test Wallet, the output is `m_creation_timestamp` – which is neither JSON nor contains the currently expected string. The solution for adding legacy wallet support is therefore surprisingly simple: We check whether the decrypted characters contain `key_data` OR `m_creation_timestamp`.
+
+With this patched we can now rerun our compatibility test from before and we can see that it now indeed works for all Monero Wallet formats:
+
+```bash
+$ john --wordlist=wordlist hashes
+Note: This format may emit false positives, so it will keep trying even after finding a possible candidate.
+Using default input encoding: UTF-8
+Loaded 2 password hashes with 2 different salts (monero, monero Wallet [Pseudo-AES / ChaCha / Various 32/64])
+Will run 8 OpenMP threads
+Press 'q' or Ctrl-C to abort, almost any other key for status
+Warning: Only 1 candidate left, minimum 8 needed for performance.
+test             (post2016-test.keys)     
+test             (pre2016-test.keys)     
+2g 0:00:00:00 DONE (2021-05-16 01:40) 4.347g/s 2.173p/s 4.347c/s 4.347C/s test
+Session completed.
+```
+
+We created a [pull request](https://github.com/openwall/john/pull/4732) for adding these changes to the official John the Ripper jumbo repository.
+
+## ChaChaCha!
+
+After having looked at John's Monero plugin for a while now, we noticed that, aside from the JSON and non-JSON format Wallets, there's another backwards compatibility measure where we're curious whether it actually has a significant performance impact: For every cracking attempt, it first decrypts the keys file using the standard ChaCha20 algorithm and when that fails, tries it again with ChaCha8 – which is a modification that only does 8 rounds of mixing instead of the standard 20.
+
+We can very easily determine that Wallets generated by our client's original Wallet software appear to always use the modified ChaCha8. This effectively means that we can remove the first, and likely more expensive, attempt of decryption using ChaCha20.
+
+```bash
+# ChaCha20 + ChaCha8
+0g 0:00:04:47 DONE (2021-05-16 04:01) 0g/s 12.35p/s 12.35c/s 12.35C/s notused..sss
+# Only ChaCha8
+0g 0:00:04:38 DONE (2021-05-16 04:08) 0g/s 12.71p/s 12.71c/s 12.71C/s notused..sss
+```
+
+After actually testing the performance difference of the original and ChaCha8-only John – it turned out that the impact on cracking performance doesn't appear to be very significant.
+
+## Let's get crackin'
+
+We now have everything in place to actually start cracking the real wallet. Using wordlists of commonly used "lazy" passwords, strings mentioned in and around the wallet software and various hints from the client himself. Together with John's word mangling functionality this should already prove quite powerful. After that we'll likely not have much of a choice but to use brute force – up to the point where we think that continuing to keep trying will actually end up costing more than we could potentially unlock here.

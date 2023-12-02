@@ -1,0 +1,114 @@
+# Input Validation With JSON Schemas: Best Practices
+
+<p className="text-xs text-right">February 20, 2021 by [patrickd](/about#patrickd)</p>
+
+import { Callout } from 'nextra/components'
+
+In a [previous article](/posts/2020/9/6/mongodb-nosql-operator-injection-mitigation) we discussed how [AJV](https://www.npmjs.com/package/ajv) can be used to build API middlewares for validating user input with JSON schemas. This article builds on it by providing an example set of rules that can be implemented as a best practice when writing schemas.
+
+## Validate before usage
+
+<Callout>
+  It should generally be avoided to make use of any user input without validating it first.
+</Callout>
+
+This is one of the things that should be checked during code review but you might even want to consider having automated processes in place to detect these kinds of problems. This could mean making it impossible to use input variables without having applied a validator function on them, therefore causing an error. Or by implementing things like a custom ESLint rule that will check whether a variable seems to have been validated before usage – these are likely to be prone to false positives though.
+
+The following is a (incomplete) list of possible User Input sources in a typical web application:
+
+* HTTP Headers
+  * URI
+    * Path
+    * Path parameters (eg. `id` in `/user/:id`)
+    * Query parameters
+  * Host Name (maybe derived from other headers, eg. `X-Forwarded-Host`)
+  * Content Type
+  * Content Length
+  * Cookies (both their names and values)
+  * Referer
+  * IP Address (specifically when it's derived from other headers, eg. `X-Forwarded-For`)
+  * Protocol / Port (eg. `X-Forwarded-Proto`)
+  * User Agent
+  * ...
+* HTTP Body
+  * Raw/Binary (consider checking "magic bytes", running anti-virus, etc.)
+  * Serialized information (json, xml, etc.: decode and validate)
+  * Multi-Part-Uploads (part-separators, part-length, ...)
+  * ...
+* Web-Socket Messages
+* Database Entries created with User Input (these should already be validated, but usually not sanitized)
+* Cached User input
+* Forwarded User input (Inter-Process-Communication)
+* Fetched User input from 3rd-party APIs (even if it is not "User input", you may not want to fully trust the 3rd-parties security or consistency)
+* ...
+
+<Callout>
+  Remember that any validation made by your frontend clients can usually easily be bypassed and can't be relied upon.
+</Callout>
+
+But we still want to do as much validation as early as we can. Even if we already have some validation in place at deeper parts of our program (eg. Database Schemas), from a standpoint of application security these measures usually take effect "too late". We want to reject any unreasonable values from ever reaching our business logic in the first place. 
+
+## Validation should be as strict as reasonably possible
+
+<Callout>
+  Structure and contents of User Input should be within the expectations of our business logic.
+</Callout>
+
+To ensure this, we want to define our schemas as explicitly as possible, making sure that anything outside of expectations, is rejected by the validator function. This again, should be double-checked during manual code review and, if possible, through automated means.
+
+### `Object` validation
+
+As shown in the [previously](/posts/2020/9/6/mongodb-nosql-operator-injection-mitigation#validating-user-input), the JSON Schema validator AJV supports the automatic removal of any properties that are not explicitly defined within an Object's schema with `removeAdditional: true`.
+
+* **[`additionalProperties`](https://json-schema.org/understanding-json-schema/reference/object.html#properties) should always be present**
+  * Preferably we want to be able to always specify `additionalProperties: false` to ensure the removal of properties we do not expect to be present. Any properties that we do expect should be explicitly defined within the `properties`. It should not be forgotten to also set this on all Sub-Object's defined within the parent Object's properties.
+  * Business logic that requires allowing additional properties or generally, objects with unknown properties should be avoided. If this is not possible (for example for key-value maps) other restrictions should be enforced (such as [`propertyNames`](https://json-schema.org/understanding-json-schema/reference/object.html#property-names), [`patternProperties`](https://json-schema.org/understanding-json-schema/reference/object.html#pattern-properties), [`minProperties`, `maxProperties`](https://json-schema.org/understanding-json-schema/reference/object.html#size)).
+* **[`required`](https://json-schema.org/understanding-json-schema/reference/object.html#required-properties) should always be present**
+  * If possible, any fields used by our business logic should be required to be present. For more complicated cases, like where the presence of a field is only required if another field is present as well, the [`dependencies`](https://json-schema.org/understanding-json-schema/reference/object.html#dependencies) option can be used.
+  * Even if no properties can be specified as required, we should still explicitly state this fact within the schema by specifying an empty array.
+
+### `String` validation
+
+**One of the following options should always be present**, preferably used in the following order:
+
+1. [`enum`](https://json-schema.org/understanding-json-schema/reference/generic.html#enumerated-values)
+1. [`format`](https://json-schema.org/understanding-json-schema/reference/string.html#format) (build-in or custom)
+1. [`pattern`](https://json-schema.org/understanding-json-schema/reference/string.html#regular-expressions)
+  * The regular expression should match the full string (start with `^` and end with `$`).
+  * It should have an easy-to-understand explanation of what it is supposed to match in the code-comments (reading and understanding regular expressions is not easy).
+  * It should have a variation of unit tests ensuring it works as intended.
+  * Patterns that are re-used across various schemas should be defined as custom formats (and therefore used via the `format` option).
+1. [`minLength` & `maxLength`](https://json-schema.org/understanding-json-schema/reference/string.html#length)
+  * If there's no minimum length that can be derived from the implemented use-case, a minimum of `1` should be used to ensure truthyness of the value. If possible, maxima should follow already existing restrictions set by database schemas.
+  * Name, Address, Phone, Title and Identifier-like fields can generally be restricted to a lenient maximum of 512 characters.
+  * Free-Text and Description-like fields should be restricted to a reasonable maximum within the database's capabilities. For example, a lenient maximum of `1048576` (1 MiB) could be possible for MongoDB (which supports an overall 16MiB within a single document) assuming there aren't too many other fields allowing for such sizeable inputs.
+  * Use-cases that are re-used across various schemas should be defined as custom formats.
+
+### `Numeric` validation
+
+There are two numeric types, one for [whole numbers (`type: 'integer'`)](https://json-schema.org/understanding-json-schema/reference/numeric.html#integer) and one for [fractional numbers (`type: 'number'`)](https://json-schema.org/understanding-json-schema/reference/numeric.html#number). **Prefer `integer` over `number` whenever possible**.
+
+**One of the following options should always be present**, preferably used in the following order:
+
+1. [`enum`](https://json-schema.org/understanding-json-schema/reference/generic.html#enumerated-values)
+1. [`minimum`/`exclusiveMinimum` and/or `maximum`/`exclusiveMaximum`](https://json-schema.org/understanding-json-schema/reference/numeric.html#range)
+  * Whenever there are no clear minima or maxima based on the use-case, it should at least be ensured that numeric value has the correct sign (negative allowed? zero allowed? positive allowed?).
+  * Depending on how you continue to process the value, you might want to restrict the number to a range that prevents over or underflows.
+
+### `Array` validation
+
+* **The [`items`](https://json-schema.org/understanding-json-schema/reference/array.html#items) option should always be present** and define what type of values may be contained within the list or tuple.
+* **The [`uniqueItems`](https://json-schema.org/understanding-json-schema/reference/array.html#uniqueness) option should be present for scalar item values** and explicitly state whether duplicate values are allowed or not.
+* **The [`minItems` and `maxItems`](https://json-schema.org/understanding-json-schema/reference/array.html#length) options should be present.** If no maximum or minimum of allowed items can be derived from the use-case, a range of 1-1000 should suffice for most cases. Remember though that some technologies have hard limits (eg. MonoDB with 16MiB) – if it's possible for items to be very large, it might make sense to choose smaller limits. (In case of an array being restricted by both `enum` and `uniqueItems` it would not hurt to omit min/max restrictions since they'd be redundant).
+
+### Automatic defaults
+
+**The [`default`](https://json-schema.org/understanding-json-schema/reference/generic.html#annotations) option should be specified whenever possible.** Especially in cases when it should possible to omit values within the User Input that are still required by the business logic, the `default` option together with the `useDefaults: true` setting (during initialization of AJV) will ensure they are present as expected automatically.
+
+## Caveats
+
+It will often be difficult to come up with a reasonable minimum or maximum value – **when in doubt, pick a value based on the most extreme use-case you can come up with** but is unlikely to cause any problems within your system.
+
+Also, be especially careful when restricting validation of values belonging to existing data in your system. It might be that customers are currently using a value that lies outside of your defined minimum or maximum and that might cause them to no longer able to make updates or execute related actions. **Consider checking real-world data (how do customers actually use your product?) before deciding on restrictions.**
+
+As stated at the beginning, this is merely an example set of rules that can be used to build your own best practices upon. Depending on the technologies used in your project and its specifications, it might require many adjustments for you to make use of it. But it could, at least, offer a good basis to start with.

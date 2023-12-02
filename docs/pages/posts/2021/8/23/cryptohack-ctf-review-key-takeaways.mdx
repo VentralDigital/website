@@ -1,0 +1,67 @@
+# CryptoHack CTF: Key Takeaways
+
+<p className="text-xs text-right">August 23, 2021 by [patrickd](/about#patrickd)</p>
+
+[CryptoHack](https://cryptohack.org/) is a collection of Capture-The-Flag-like Challenges that intend to teach you modern cryptography, the math behind it and how to exploit it when implemented incorrectly. Since the Authors of the Platform ask participants not to share any instructions on how to solve the Challenges, this won't be a write-up but rather a spoiler-free list of realizations that one might have while solving the challenges.
+
+---
+
+## Use standards, use libraries and use them correctly
+
+If you've been doing any programming you should have heard by now that "reinventing the wheel" is usually considered a bad practice. One should always look for established and widely used libraries instead of re-implementing complex logic or algorithms from scratch.
+
+Especially learning about the mathematical intricacies in cryptography will bring that point home. Small errors or misunderstandings can introduce fatal flaws into your application's security. You'll be tempted to introduce optimizations, simplifications and shortcuts which will likely end up doing much more harm than good. Sometimes things that intuitively feel like genuine improvements, such as using even larger numbers than recommended, may actually have the opposite effect.
+
+CryptoHack will introduce you to many of these issues and their outcome, and it assured me of something I was already suspecting: I should definitely not try to use my own cryptographic inventions in production. Playing around with all the newly learned things and attempting to give them my own twist was certainly a fun experience, but one has to remember that standards like RSA have been published as scientific papers and have been analyzed, criticized and attacked by other researchers for years. Those standards have stood the test of time and had a lot of brainpower looking at how secure they really are - it's not very likely I'm smart enough to pull all that off alone.
+
+But even if you use libraries implementing established standards, there's still a big chance that it'll all be for naught because you are simply not using them in a proper manner. Since they are likely to provide flexibility for implementing a wide variety of different use cases, that flexibility will give you lots of opportunities to mess things up again. So even when utilizing trusted and widely used libraries, thinking you can blindly rely on them to do everything correctly out of the box, with default options or by simply copying and pasting the example code snippets, might end up shooting you in the foot.
+
+Therefore, you shouldn't dismiss the usefulness of understanding the principles behind the ciphers that you're planning to make use of even if you do not intend to implement them yourself.
+
+## What you lack in knowledge you can make up with OSINT experience
+
+While most challenges on CryptoHack start nice and easy, the difficulty ramps up pretty quickly and you'll soon find yourself blindly poking around at your code until it finally produces the solution - and that might even work, for a while. Then you'll quickly run into walls where the provided resources won't be enough to understand and solve the challenge. And this is where you can make use of and practice your information gathering skills.
+
+Remember that the challenges aren't entirely original. They are often based on bugs, issues and attacks that have been reported and probably explained somewhere on the Internet. Don't be intimidated if your search leads you to PDFs of scientific papers with complex mathematical formulas, skim over them to look what places could contain the information that you need and take them apart piece by piece.
+
+If you don't know where to start looking, note that these challenges are in the typical style of CTFs: Check for hints in the title or description of the challenge. If a word or a whole sentence doesn't fit into the context of cryptography, at least as far as you know now, you should probably search the Internet about it and find out why it was mentioned at all, since it's likely a clue.
+
+And lastly, if you're getting really frustrated there's always the chance that a similar challenge has been part of another CTF before. You can always look for writeups of those and even if you don't find the actual solution you'll still likely find helpful resources and tools. A good example is the [RsaCTFtool](https://github.com/Ganapati/RsaCtfTool), which is able to perform a variety of attacks on RSA that are typical for CTF challenges. Look at all of the attacks it supports, maybe there's one that matches what you're working on.
+
+
+## Python is excellent for experimenting with cryptography
+
+Python is well known for being the most popular language in the InfoSec scene, and that probably for good reasons. To me, it offers all the simplicity of being a high level scripting language while at the same time allowing you to work with low-level structures and interfaces.
+
+More than that, it really shines in cryptography. While most other languages I know of struggle with big numbers, Python not only supports them natively but has so many crypto-libraries making it easy to use while working on the challenges. It lets you easily generate primes, make use of modular arithmetic while using large exponents, and convert values between most of the encodings that you'll ever encounter in the real world.
+
+```python showLineNumbers {8} filename="RSA.py"
+from Crypto.Util.number import getPrime, bytes_to_long, long_to_bytes, inverse
+
+M = input('Enter Hex message: ')
+m = bytes_to_long(bytes.fromhex(M))
+
+p, q = getPrime(2048), getPrime(2048)
+N, phi = p*q, (p-1)*(q-1)
+e = N - phi
+d = inverse(e, phi)
+
+c = pow(m, e, N)
+C = long_to_bytes(c).hex()
+
+print(f'pubkey: {N}, {e}')
+print(f'ciphertext: {C}')
+
+assert m == pow(c, d, N)
+```
+
+Nice and short RSA implementation right? Did you spot a problem?
+
+
+## Cryptography is about more than encryption
+
+You have probably already heard about "digital-signatures" which provide proof that an encrypted message you received is authentic. But have you heard about how cryptography allows people to exchange secrets on a public medium without having ever met before? You are using standards like PEM, DER and x509 every day, but what do they actually do? Do you know how to calculate with probabilities to find out how random the numbers that your computer comes up with really are?
+
+From the historically grown mess that many of the standards are that we're using today, to the mind blowing and elegant mathematics beneath all of it. The CryptoHack challenges are a great exercise for anyone looking to brush up on their cryptography knowledge and, while sometimes a bit frustrating, I had a lot of fun trying to solve them while struggling with the complex mathematical concepts that I was completely ignorant of. Many thanks to the authors that provide us this incredible website free of charge.
+
+You can take a look at how far I managed to get at https://cryptohack.org/user/patrickd/

@@ -1,0 +1,387 @@
+# Learning Ethereum Virtual Machine Opcodes With EVM Puzzles
+
+<p className="text-xs text-right">February 24, 2022 by [patrickd](/about#patrickd)</p>
+
+[Franco Victorio](https://twitter.com/fvictorio_nan), one of the devs from [Hardhat](https://hardhat.org/), created a collection of "[EVM Puzzles](https://github.com/fvictorio/evm-puzzles)" that we'll be solving here. Consider attempting them yourself first before getting spoiled!
+
+## [Puzzle #1](https://github.com/fvictorio/evm-puzzles/blob/master/puzzles/puzzle_1.js)
+
+So first of all, how do these puzzles work? They all consist of the `puzzleCode`, which is a smart contract's binary code, that was annotated with human-readable opcode names as comments. These contracts are deployed and then we can send `data` (calldata) and `value` (wei) to them as part of a transaction. The goal of each puzzle is to create a transaction (by setting data and value) that will succeed (and doesn't revert).
+
+```javascript
+const puzzleCode = [
+  '36',   // CALLDATASIZE
+  '56',   // JUMP
+  'fdfd', // REVERT REVERT
+  'fdfd', // REVERT REVERT
+  'fdfd', // REVERT REVERT
+  '5b',   // JUMPDEST
+].join('')
+
+// Enter your solution here
+const solution = {
+  data: "0x",
+  value: 0
+}
+```
+
+The [evm.codes](https://www.evm.codes/) website has a handy table of all existing opcodes and what they do. Of these opcodes we need to prevent the instruction pointer to ever reach a `REVERT` or `INVALID`. Instead, we need it to either reach the end of the code or reach a `STOP` operation.
+
+When our `solution` is sent as a transaction to the contract's address, the EVM will always begin executing it with the instruction pointer on the first opcode. In the first puzzle that would be the `CALLDATASIZE` opcode. This pushes the length of our solution's `data` field onto the stack.
+
+The `JUMP` instruction tells the EVM to have the instruction pointer "jump" to another location in the bytecode. It gets this location by popping off the first value from the stack. It's important to note that only offsets where the `JUMPDEST` opcode is located are valid jumping targets.
+
+So knowing that we can now see that we have to influence the value that `CALLDATA` pushes onto the stack to ensure that `JUMP` makes the program continue at `JUMPDEST` reaching the valid end of bytecode. In this case, we can determine the offset of `JUMPDEST` simply by counting the number instructions, it's at 8 (start counting at 0) and that's also the number of bytes we have to send as `data`.
+
+To check this solution, edit it like this:
+
+```javascript
+const solution = {
+  data: "0x0000000000000000",
+  value: 0
+}
+```
+
+And then execute the script:
+
+```bash
+ubuntu@evmpuzzles:~/evm-puzzles$ npx hardhat run puzzles/puzzle_1.js
+Puzzle solved!
+```
+
+
+## [Puzzle #2](https://github.com/fvictorio/evm-puzzles/blob/master/puzzles/puzzle_2.js)
+
+```javascript
+const puzzleCode = [
+  '36',   // CALLDATASIZE
+  '38',   // CODESIZE
+  '03',   // SUB
+  '56',   // JUMP
+  'fdfd', // REVERT REVERT
+  'fdfd', // REVERT REVERT
+  '5b',   // JUMPDEST
+].join('')
+```
+
+This puzzle introduces the `CODESIZE` opcode which simply puts the size of the current contract's bytecode on top of the stack. Once deployed this value is static, and in this case we can once again simply count the number of instructions which is 9, and once again the `JUMPDEST` location is at 8.
+
+The `SUB` instruction subtracts the second value, from the stack, off the first one. In this case the stack would look like `[CODESIZE, CALLDATASIZE]` before the subtraction and `[CODESIZE - CALLDATASIZE]` after, because both values were popped off and the result was pushed on.
+
+This means we have to solve the following: `9 - CALLDATASIZE = 8` - and to do that we simply send a single byte as data. This will leave the value 8 on top of the stack and just like last time the `JUMP` can do its job.
+
+```javascript
+const solution = {
+  data: "0x00",
+  value: 0
+}
+```
+
+
+## [Puzzle #3](https://github.com/fvictorio/evm-puzzles/blob/master/puzzles/puzzle_3.js)
+
+```javascript
+const puzzleCode = [
+  '6000', // PUSH1 00
+  '35',   // CALLDATALOAD
+  '56',   // JUMP
+  'fdfd', // REVERT REVERT
+  'fdfd', // REVERT REVERT
+  'fdfd', // REVERT REVERT
+  '5b',   // JUMPDEST
+].join('')
+```
+
+The new `PUSH1` instruction simply pushes a single byte on top of the stack, the byte that follows immediately after the instruction in the bytecode: `00`. This zero value is then consumed by `CALLDATALOAD` as an offset of where to start reading the call data. It reads 32 bytes from our transaction `data` and pushes it onto the stack. If it finds less than 32 bytes to copy it will add zeros as padding to reach that length.
+
+So whatever we send as calldata here will get pushed onto the stack and then consumed by `JUMP`. This means we simply have to send the correct offset for the jump destination as data, which is 10 in this case or `0x0a` in hexadecimal. But since this would become `0x0a00000000000000000000000000000000000000000000000000000000000000` after padding, which is a [really large number](https://eth-toolbox.com/?target=evm-words&evm-value=0x0a00000000000000000000000000000000000000000000000000000000000000#bp-evm-words), we have to make sure to send the full 32 byte word with `0x0a` being the least significant byte.
+
+```javascript
+const solution = {
+  data: "0x000000000000000000000000000000000000000000000000000000000000000a",
+  value: 0
+}
+```
+
+
+## [Puzzle #4](https://github.com/fvictorio/evm-puzzles/blob/master/puzzles/puzzle_4.js)
+
+```javascript
+const puzzleCode = [
+  '6000', // PUSH1 00
+  '35',   // CALLDATALOAD
+  '38',   // CODESIZE
+  '18',   // XOR
+  '56',   // JUMP
+  'fdfd', // REVERT REVERT
+  'fdfd', // REVERT REVERT
+  'fdfd', // REVERT REVERT
+  '5b',   // JUMPDEST
+].join('')
+```
+
+The `XOR` opcode is similar to `SUB`, it takes two inputs from the stack, applies the exclusive-or operation on them, finally pushing the result back.
+
+What's effectively happening here is the following: `jumpTo(calldata ^ codesize)`. And the location we want to jump to is 12 (`0x0c`) while the codesize is 13 (`0x0d`). This means we have to solve `calldata ^ 0x0d = 0x0c` which we can by doing `0x0d ^ 0x0c = calldata = 0x01`.
+
+Sending a 32 byte word with a value of 1, will be XORed with 13, which results in 12, pointing to the correct `JUMPDEST`:
+
+```javascript
+const solution = {
+  data: "0x0000000000000000000000000000000000000000000000000000000000000001",
+  value: 0
+}
+```
+
+
+## [Puzzle #5](https://github.com/fvictorio/evm-puzzles/blob/master/puzzles/puzzle_5.js)
+
+```javascript
+const puzzleCode = [
+  '34',     // CALLVALUE
+  '610004', // PUSH2 0004
+  '01',     // ADD
+  '56',     // JUMP
+  'fdfd',   // REVERT REVERT
+  'fdfd',   // REVERT REVERT
+  '5b',     // JUMPDEST
+].join('')
+```
+
+This time the puzzle uses the `value`, which is the amount of wei, sent with the transaction, instead of the transaction `data` itself. `CALLVALUE` simply pushes this amount of wei onto the stack. After that a `PUSH2` operation pushes the two bytes following it onto the stack: `0004` or simply a 4.
+
+You have probably already guessed that `ADD` stands for addition. In pseudocode this puzzle can be rewritten as `jumpTo(value + 4)`. The `JUMPDEST` is at offset 10, which means we need to send 6 wei to make it jump there.
+
+```javascript
+const solution = {
+  data: "0x",
+  value: 6
+}
+```
+
+
+## [Puzzle #6](https://github.com/fvictorio/evm-puzzles/blob/master/puzzles/puzzle_6.js)
+
+```javascript
+const puzzleCode = [
+  '34',     // CALLVALUE
+  '80',     // DUP1
+  '02',     // MUL
+  '6009',   // PUSH1 09
+  '14',     // EQ
+  '600d',   // PUSH1 0d
+  '57',     // JUMPI
+  'fdfd',   // REVERT REVERT
+  'fdfd',   // REVERT REVERT
+  '5b',     // JUMPDEST
+].join('')
+```
+
+A whole bunch of new opcodes are introduced in this puzzle. Starting with the easiest one, `MUL` which is the opcode for multiplication and works just like `SUB`, `ADD` and `XOR` did. `EQ` is also quite similar, but instead of calculating with the first two stack items, it compares them and pushes a `1` if they're equal and otherwise a `0` back onto the stack.
+
+Then there's `DUP1` which simply duplicates the first stack item. For example if your stack looks like `[1, 2, 3]` it will be `[1, 1, 2, 3]` after `DUP1` was executed.
+
+Finally there's `JUMPI` which is a conditional `JUMP`. Additionally to the destination offset, it consumes another stack item and checks whether it equals 0. If it's anything other than 0 it will jump to the location specified by the first stack item.
+
+The puzzle can be rewritten like this:
+
+```javascript
+if (value * value == 9) {
+  jumpTo(0x0d)
+}
+```
+
+This time the correct jump destination is already hardcoded. Instead, we have to specify a value of wei to send which ensures that `JUMPI` does jump at all. And as you can already tell from the pseudocode, that value must be 3.
+
+```javascript
+const solution = {
+  data: "0x",
+  value: 3
+}
+```
+
+To easier understand what's happening, here's how the stack changes after each instruction:
+
+```bash
+0x00   CALLVALUE       [3]
+0x01   DUP1            [3, 3]
+0x02   MUL             [9]
+0x03   PUSH1 09        [9, 9]
+0x05   EQ              [1]
+0x06   PUSH1 0d        [0x0d, 1]
+0x08   JUMPI           []            ---|
+0x09   REVERT                           |
+0x0a   REVERT                           |
+0x0b   REVERT                           |
+0x0c   REVERT                           |
+0x0d   JUMPDEST        []            <--|
+       STOP
+```
+
+
+## [Puzzle #7](https://github.com/fvictorio/evm-puzzles/blob/master/puzzles/puzzle_7.js)
+
+```javascript
+const puzzleCode = [
+  '36',     // CALLDATASIZE
+  '6003',   // PUSH1 03
+  '10',     // LT
+  '6009',   // PUSH1 09
+  '57',     // JUMPI
+  'fdfd',   // REVERT REVERT
+  '5b',     // JUMPDEST
+  '34',     // CALLVALUE
+  '36',     // CALLDATASIZE
+  '02',     // MUL
+  '6008',   // PUSH1 08
+  '14',     // EQ
+  '6014',   // PUSH1 14
+  '57',     // JUMPI
+  'fd',     // REVERT
+  '5b',     // JUMPDEST
+].join('')
+```
+
+This puzzle is quite a bit more complex but it only introduces one new opcode: `LT` or lower-than, is similar to `EQ` in that it compares the first two items on stack and pushes 1 or 0 as a result:
+
+* `[1, 2]` - `1 < 2`? - Yes (`1`)
+* `[2, 1]` - `2 < 1`? - No (`0`)
+
+The first part of the puzzle (until the first `REVERT`s) can be rewritten like this:
+
+```javascript
+if (3 < CALLDATASIZE) {
+  jumpTo(0x09)
+}
+```
+
+The second part like this:
+
+```javascript
+if (CALLDATASIZE * CALLVALUE == 8) {
+  jumpTo(0x14)
+}
+```
+
+Since the length of our calldata must be greater than 3, and when multiplied with the value it must result in 8, it must be that we have to send 4 bytes and 2 wei.
+
+```javascript
+const solution = {
+  data: "0x00000000",
+  value: 2
+}
+```
+
+Let's once again see how this transaction is actually being executed within the EVM:
+
+```bash
+0x00   CALLDATASIZE   [4]
+0x01   PUSH1 03       [3, 4]
+0x03   LT             [1]
+0x04   PUSH1 09       [0x09, 1]
+0x06   JUMPI          []            ---|
+0x07   REVERT                          |
+0x08   REVERT                          |
+0x09   JUMPDEST       []            <--|
+0x0a   CALLVALUE      [2]
+0x0b   CALLDATASIZE   [4, 2]
+0x0c   MUL            [8]
+0x0d   PUSH1 08       [8, 8]
+0x0f   EQ             [1]
+0x10   PUSH1 14       [0x14, 1]
+0x12   JUMPI          []            ---|
+0x13   REVERT                          |
+0x14   JUMPDEST       []            <--|
+       STOP
+```
+
+
+## [Puzzle #8](https://github.com/fvictorio/evm-puzzles/blob/master/puzzles/puzzle_8.js)
+
+```javascript
+const puzzleCode = [
+  '38',     // CODESIZE
+  '34',     // CALLVALUE
+  '90',     // SWAP1
+  '11',     // GT
+  '6008',   // PUSH1 08
+  '57',     // JUMPI
+  'fd',     // REVERT
+  '5b',     // JUMPDEST
+  '36',     // CALLDATASIZE
+  '610003', // PUSH2 03
+  '90',     // SWAP1
+  '06',     // MOD
+  '15',     // ISZERO
+  '34',     // CALLVALUE
+  '600a',   // PUSH1 0a
+  '01',     // ADD
+  '57',     // JUMPI
+  'fdfd',   // REVERT REVERT
+  'fdfd',   // REVERT REVERT
+  '5b',     // JUMPDEST
+].join('')
+```
+
+It doesn't take much to guess that `GT` indeed stands for greater-than and works just like `LT`. And yet another comparing opcode is introduced with `ISZERO`, but this one only consumes one item of the stack's top and pushes a `1` or a `0` depending whether that value was a zero or not.
+
+Next is the `MOD` operator, which allows calculation of the modulo and works just like the other arithmetic instructions.
+
+The use of `SWAP1` in this puzzle appears to have been added for creating confusion by switching the first two value of the stack around (eg. [1, 2] becomes [2, 1]).
+
+With that in mind, puzzle can again be broken down into two parts:
+
+```javascript
+if (CODESIZE > CALLVALUE) {
+  jumpTo(0x08)
+}
+```
+
+```javascript
+if (CALLDATASIZE % 3 == 0) {
+  jumpTo(0x0a + CALLVALUE)
+}
+```
+
+The size of the bytecode is a static value of 26, and the first condition is that the sent wei value is smaller than that. It's also required that `CALLDATASIZE % 3 = 0`, which means we can send any length of data as long as it's a multiple of 3 - let's just send 3 bytes!
+
+The final `JUMPDEST` is at offset 0x19 and depends on the wei value sent: `0x0a + CALLVALUE = 0x19` (or simply `10 + 15 = 25`). Sending 15 wei is also smaller than 26 and therefore passing the first condition as well.
+
+```javascript
+const solution = {
+  data: "0x000000",
+  value: 15
+}
+```
+
+Once more, step by step:
+
+```bash
+0x00   CODESIZE      [26]
+0x01   CALLVALUE     [15, 26]
+0x02   SWAP1         [26, 15]
+0x03   GT            [1]
+0x04   PUSH1 08      [0x08, 1]
+0x06   JUMPI         []            ---|
+0x07   REVERT                         |
+0x08   JUMPDEST      []            <--|
+0x09   CALLDATASIZE  [3]
+0x0a   PUSH2 0003    [3, 3]
+0x0d   SWAP1         [3, 3]
+0x0e   MOD           [0]
+0x0f   ISZERO        [1]
+0x10   CALLVALUE     [15, 1]
+0x11   PUSH1 0a      [0x0a, 15, 1]
+0x13   ADD           [0x18, 1]
+0x14   JUMPI         []            ---|
+0x15   REVERT                         |
+0x16   REVERT                         |
+0x17   REVERT                         |
+0x18   REVERT                         |
+0x19   JUMPDEST      []            <--|
+       STOP
+```
+
+---
+
+That's it already! Although these puzzles were rather simple they were still good fun and I'm looking forward to solving more of them in the future.

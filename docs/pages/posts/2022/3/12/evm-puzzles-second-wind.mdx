@@ -1,0 +1,363 @@
+# EVM Puzzles – Second Wind
+
+<p className="text-xs text-right">March 12, 2022 by [patrickd](/about#patrickd)</p>
+
+Just shortly after publishing my [write-up on Franco Victorio's EVM Puzzles](https://ventral.digital/posts/2022/2/24/learning-ethereum-virtual-machine-opcodes-with-evm-puzzles) he finished to ["Re-write the whole thing"](https://twitter.com/fvictorio_nan/status/1500312282567434242)!
+
+It's now interactive, meaning you no longer have to edit the puzzle files to solve them but instead just type your solution directly into the console. And instead of having to look at the bytecode embedded in JavaScript, it now too is nicely displayed within the console with colors and addresses. But most importantly, the puzzles themselves have changed and there's now 10 of them!
+
+Note that I'll assume you've read my [previous blog post](/posts/2022/2/24/learning-ethereum-virtual-machine-opcodes-with-evm-puzzles/) already, or that you've solved the old version, since I'll not explain the opcodes that were already discussed there in detail again.
+
+
+## Puzzle #1
+
+```plaintext
+00      34      CALLVALUE
+01      56      JUMP
+02      FD      REVERT
+03      FD      REVERT
+04      FD      REVERT
+05      FD      REVERT
+06      FD      REVERT
+07      FD      REVERT
+08      5B      JUMPDEST
+09      00      STOP
+
+? Enter the value to send:
+```
+
+The new first puzzle is very similar to the old one, just this time the `JUMP`'s destination value is not based on `CALLDATASIZE` (the length of data sent) but instead taken from the `CALLVALUE`. Here we no longer have to do any counting in order to determine where we want to jump to, we can just directly read the address of the `JUMPDEST` opcode which is 08.
+
+So let's send a transaction value of 8 as solution, which will cause a jump to the only available jump-destination and then ends the execution without error. It doesn't really matter that `STOP` is the next instruction after `JUMPDEST` since that's implicitly the case at the end of an EVM program anyway.
+
+
+## Puzzle #2
+
+```plaintext
+00      34      CALLVALUE
+01      38      CODESIZE
+02      03      SUB
+03      56      JUMP
+04      FD      REVERT
+05      FD      REVERT
+06      5B      JUMPDEST
+07      00      STOP
+08      FD      REVERT
+09      FD      REVERT
+
+? Enter the value to send:
+```
+
+Once more, very similar to the previous version with the biggest difference in it using the value instead of calldata-size again. The `CODESIZE` is 10 (last address + 1) and the only `JUMPDEST` is located at offset 06.
+
+We need to calculate `CODESIZE` minus the value we send, and have the result be 6. Therefore, sending a 4 is the solution.
+
+This time it was essential that `STOP` came after `JUMPDEST` since otherwise, the instruction pointer would have run into a `REVERT` causing a failure of execution.
+
+
+## Puzzle #3
+
+```plaintext
+00      36      CALLDATASIZE
+01      56      JUMP
+02      FD      REVERT
+03      FD      REVERT
+04      5B      JUMPDEST
+05      00      STOP
+
+? Enter the calldata:
+```
+
+It appears `CALLDATASIZE` is now being introduced as a new "mechanic". Again, we can see that the only valid jump destination is located at 04, which means we'll have to send any 4 bytes (eg. `00000000`) as transaction calldata in order to reach the end.
+
+
+## Puzzle #4
+
+```plaintext
+00      34      CALLVALUE
+01      38      CODESIZE
+02      18      XOR
+03      56      JUMP
+04      FD      REVERT
+05      FD      REVERT
+06      FD      REVERT
+07      FD      REVERT
+08      FD      REVERT
+09      FD      REVERT
+0A      5B      JUMPDEST
+0B      00      STOP
+
+? Enter the value to send:
+```
+
+This code will calculate `CODESIZE ^ CALLVALUE` and use the result as jump target with the only valid jump-destination being at 0A (or 10 in decimal). With the code size being 12, what we have to solve here is `12 ^ CALLVALUE = 10` or `12 ^ 10 = CALLVALUE`:
+
+```plaintext
+0  1  1  0  0 |     12
+0  1  0  1  0 | XOR 10
+______________|_______
+0  0  1  1  0 |    = 6
+```
+
+The solution is 6!
+
+
+## Puzzle #5
+
+```plaintext
+00      34          CALLVALUE
+01      80          DUP1
+02      02          MUL
+03      610100      PUSH2 0100
+06      14          EQ
+07      600C        PUSH1 0C
+09      57          JUMPI
+0A      FD          REVERT
+0B      FD          REVERT
+0C      5B          JUMPDEST
+0D      00          STOP
+0E      FD          REVERT
+0F      FD          REVERT
+
+? Enter the value to send:
+```
+
+The first 3 lines do `CALLDATA * CALLDATA` and later that result is compared to `0100`. Only if that yields 1 (true) the `JUMPI` will jump to the `JUMPDEST` at offset 0C.
+
+The `0100` bytes are 256 in decimal and its square root is 16, which is the solution.
+
+
+## Puzzle #6
+
+```plaintext
+00      6000      PUSH1 00
+02      35        CALLDATALOAD
+03      56        JUMP
+04      FD        REVERT
+05      FD        REVERT
+06      FD        REVERT
+07      FD        REVERT
+08      FD        REVERT
+09      FD        REVERT
+0A      5B        JUMPDEST
+0B      00        STOP
+
+? Enter the calldata:
+```
+
+Here the calldata itself is actually being pushed on the stack and used as jump-destination offset. Just like in the old Puzzle #3, we can't simply send the offset `0a` as calldata since it would be padded by 31 zero-values and become a much larger number.
+
+To prevent that, we again have to send 32 bytes: `0x000000000000000000000000000000000000000000000000000000000000000a`.
+
+
+## Puzzle #7
+
+```plaintext
+00      36        CALLDATASIZE
+01      6000      PUSH1 00
+03      80        DUP1
+04      37        CALLDATACOPY
+05      36        CALLDATASIZE
+06      6000      PUSH1 00
+08      6000      PUSH1 00
+0A      F0        CREATE
+0B      3B        EXTCODESIZE
+0C      6001      PUSH1 01
+0E      14        EQ
+0F      6013      PUSH1 13
+11      57        JUMPI
+12      FD        REVERT
+13      5B        JUMPDEST
+14      00        STOP
+
+? Enter the calldata:
+```
+
+Things get a lot more interesting now, with the introduction of the `CREATE` opcode that deploys a new contract. Immediately after the contract was created, it fetches the size of its bytecode using `EXTCODESIZE` and compares it to 1. Therefore only if the newly deployed contract has a code size of 1 it will make the jump and stop without reverting.
+
+A `CREATE` consumes 3 items from the stack: A *value* of wei to transfer, an *offset* of where the new contract's bytecode is located in the current contract's memory and the *length* of said bytecode. So far the puzzles never touched memory, but this changes with `CALLDATACOPY` which also takes its 3 parameters from the stack: The memory *destination* offset to copy bytes from calldata to, starting at the specified *offset* and again the final item is the *length*.
+
+Let's look at how the stack changes instruction by instruction:
+
+```plaintext
+00      36        CALLDATASIZE    [CALLDATASIZE]
+01      6000      PUSH1 00        [00, CALLDATASIZE]
+03      80        DUP1            [00, 00, CALLDATASIZE] (memoryOffset, calldataOffset, length)
+04      37        CALLDATACOPY    []
+```
+
+The effect so far is simply that all of the calldata was copied into memory - both calldata and memory have exactly the same contents now. After this, the `CREATE` is called similarly, telling it to create a contract with the calldata as bytecode which it can copy from memory:
+
+```plaintext
+05      36        CALLDATASIZE    [CALLDATASIZE]
+06      6000      PUSH1 00        [00, CALLDATASIZE]
+08      6000      PUSH1 00        [00, 00, CALLDATASIZE] (weiValue, memoryOffset, length)
+0A      F0        CREATE          [ADDRESS]
+```
+
+As hinted before, the address returned by `CREATE` is then consumed by `EXTCODESIZE`:
+
+```plaintext
+0A      F0        CREATE          [ADDRESS]
+0B      3B        EXTCODESIZE     [EXTCODESIZE]
+0C      6001      PUSH1 01        [01, EXTCODESIZE]
+0E      14        EQ              [(EXTCODESIZE == 1)]
+0F      6013      PUSH1 13        [13, (EXTCODESIZE == 1)]
+11      57        JUMPI           []
+```
+
+At this point, the obvious solution would appear to be sending a single byte, which is then deployed as a new contract's bytecode. But the description of the `CREATE` operation is misleading because what it expects to find in the memory location you point to is not the runtime bytecode to deploy, but the construction bytecode!
+
+During all of these puzzles we have been looking at the runtime bytecode, so it is easy to forget that every contract is first initialized by a separate piece of code. If you're familiar with Solidity: it's basically the code that you'd put into the constructor. OpenZeppelin has a great blog post about [Deconstructing a Solidity Contract](https://blog.openzeppelin.com/deconstructing-a-solidity-contract-part-ii-creation-vs-runtime-6b9d60ecb44c/), explaining the difference and what is really going on under the hood.
+
+What this init bytecode needs to do in short, is returning the actual runtime bytecode that should be deployed as a new contract, and to do that it has to use the `RETURN` opcode. Return takes *offset* and *size* parameters from stack which is a location within memory that should be copied.
+
+To solve this puzzle we have to return a single byte as runtime bytecode within the construction bytecode. Since we don't care what this byte is and because memory is zero-initialized we don't have to actually write any code to memory before returning. We can just tell it to return 1 byte at any offset:
+
+```plaintext
+00      6001      PUSH1 01        [01]
+01      6000      PUSH1 00        [00, 01] (offset, size)
+02      F3        RETURN          []
+```
+
+Since this is really short we don't need an assembler, we can just concatenate the opcodes and end up with `0x60016000F3` as the solution.
+
+
+## Puzzle #8
+
+```plaintext
+00      36        CALLDATASIZE
+01      6000      PUSH1 00
+03      80        DUP1
+04      37        CALLDATACOPY
+05      36        CALLDATASIZE
+06      6000      PUSH1 00
+08      6000      PUSH1 00
+0A      F0        CREATE
+0B      6000      PUSH1 00
+0D      80        DUP1
+0E      80        DUP1
+0F      80        DUP1
+10      80        DUP1
+11      94        SWAP5
+12      5A        GAS
+13      F1        CALL
+14      6000      PUSH1 00
+16      14        EQ
+17      601B      PUSH1 1B
+19      57        JUMPI
+1A      FD        REVERT
+1B      5B        JUMPDEST
+1C      00        STOP
+
+? Enter the calldata:
+```
+
+The beginning of the puzzle is exactly the same as in the previous one: All calldata is copied into memory and is then used as construction bytecode by `CREATE`.
+
+Things get interesting afterwards:
+
+```plaintext
+0A      F0        CREATE          [ADDRESS]
+0B      6000      PUSH1 00        [00, ADDRESS]
+0D      80        DUP1            [00, 00, ADDRESS]
+0E      80        DUP1            [00, 00, 00, ADDRESS]
+0F      80        DUP1            [00, 00, 00, 00, ADDRESS]
+10      80        DUP1            [00, 00, 00, 00, 00, ADDRESS]
+11      94        SWAP5           [ADDRESS, 00, 00, 00, 00, 00]
+12      5A        GAS             [GAS, ADDRESS, 00, 00, 00, 00, 00]
+13      F1        CALL            [SUCCESS]
+```
+
+While it looks awfully complicated, this basically just prepares the stack for executing the `CALL` opcode, which as the name suggests, calls into the bytecode of another contract.
+
+1. The amount of gas that should be made available for the execution of the contract being called. Here it's the result of the `GAS` opcode that returns the overall amount of gas still available.
+2. The target address of the account to call into. Here it's the address that was returned by `CREATE`, meaning the puzzle will be calling into the contract deployed using our calldata.
+3. The amount of Wei to send as value. Here no ether (00) is sent during the call.
+4. The memory offset where the arguments passed during the call are stored.
+5. The size of the argument data to pass from memory. Here it's 00 meaning no argument data is passed and the memory offset (00) is also irrelevant.
+6. The memory offset where the returned data should be stored to.
+7. The size of the returned data that should be copied into memory. Here it's 00 meaning none of the returned data (if there were any) should be copied into memory, also making the memory destination offset (00) irrelevant.
+
+In summary, we're calling into the contract that was just deployed using the sent calldata. For this puzzle to succeed we need the "success" return value of the `CALL` opcode to be EQual to 00. That means that the call into the contract must fail, we need it to `REVERT`.
+
+The solution is similar to the previous one in that we again have to create construction bytecode that deploys a contract with a single byte, but this time the byte must be 0xFD, the `REVERT` opcode:
+
+```plaintext
+00      60FD      PUSH1 FD        [FD]
+01      6000      PUSH1 00        [00, FD] (offset, value)
+02      53        MSTORE8         [] // Wrote REVERT to memory
+03      6001      PUSH1 01        [01]
+04      6000      PUSH1 00        [00, 01] (offset, size)
+05      F3        RETURN          [] // Returns REVERT from memory
+```
+
+Using the `MSTORE8` opcode we can write a single byte to memory. Using that, the construction bytecode we have to send as calldata is `0x60FD60005360016000F3`.
+
+
+## Puzzle #9
+
+```plaintext
+00      36        CALLDATASIZE
+01      6003      PUSH1 03
+03      10        LT
+04      6009      PUSH1 09
+06      57        JUMPI
+07      FD        REVERT
+08      FD        REVERT
+09      5B        JUMPDEST
+0A      34        CALLVALUE
+0B      36        CALLDATASIZE
+0C      02        MUL
+0D      6008      PUSH1 08
+0F      14        EQ
+10      6014      PUSH1 14
+12      57        JUMPI
+13      FD        REVERT
+14      5B        JUMPDEST
+15      00        STOP
+
+? Enter the value to send:
+? Enter the calldata:
+```
+
+See [Puzzle #7 of the previous version](/posts/2022/2/24/learning-ethereum-virtual-machine-opcodes-with-evm-puzzles).
+
+
+## Puzzle #10
+
+```plaintext
+00      38          CODESIZE
+01      34          CALLVALUE
+02      90          SWAP1
+03      11          GT
+04      6008        PUSH1 08
+06      57          JUMPI
+07      FD          REVERT
+08      5B          JUMPDEST
+09      36          CALLDATASIZE
+0A      610003      PUSH2 0003
+0D      90          SWAP1
+0E      06          MOD
+0F      15          ISZERO
+10      34          CALLVALUE
+11      600A        PUSH1 0A
+13      01          ADD
+14      57          JUMPI
+15      FD          REVERT
+16      FD          REVERT
+17      FD          REVERT
+18      FD          REVERT
+19      5B          JUMPDEST
+1A      00          STOP
+
+? Enter the value to send:
+? Enter the calldata:
+```
+
+See [Puzzle #8 of the previous version](/posts/2022/2/24/learning-ethereum-virtual-machine-opcodes-with-evm-puzzles).
+
+
+## Conclusion
+
+Most of the changes in this version are user experience improvements, only Puzzle #7 and #8 are fresh additions. But they were great ones at that! With the introduction of the `CREATE` and `CALL` opcodes they force you to become familiar with the concept of construction and runtime bytecode which is important to understand even when developing with a high-level language such as Solidity.

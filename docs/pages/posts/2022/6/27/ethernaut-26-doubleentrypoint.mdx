@@ -1,0 +1,148 @@
+# Ethernaut: #26 DoubleEntryPoint
+
+<p className="text-xs text-right">June 27, 2022 by [patrickd](/about#patrickd)</p>
+
+Some time ago Ethernaut got the new [**DoubleEntryPoint**](https://ethernaut.openzeppelin.com/level/0x128BA32Ec698610f2fF8f010A7b74f9985a6D17c) level based on a novel compound vulnerability. I've avoided reading anything about it until I finally have to time solve this challenge in an unbiased manner, and today is the day!
+
+import { Callout } from 'nextra/components'
+
+<Callout type="info">
+  Since some have asked: There's no write-up series of Ethernaut on this Blog, I didn't see the point since there were already so many existing ones on the Internet when I solved it
+</Callout>
+
+---
+
+>This level features a `CryptoVault` with special functionality, the `sweepToken` function. This is a common function to retrieve tokens stuck in a contract. The `CryptoVault` operates with an `underlying` token that can't be swept, being it an important core's logic component of the `CryptoVault`, any other token can be swept.
+>
+>The underlying token is an instance of the DET token implemented in `DoubleEntryPoint` contract definition and the `CryptoVault` holds 100 units of it. Additionally the `CryptoVault` also holds 100 of `LegacyToken LGT`.
+>
+>In this level you should figure out where the bug is in `CryptoVault` and protect it from being drained out of tokens.
+>
+>The contract features a `Forta` contract where any user can register its own `detection bot` contract. Forta is a decentralized, community-based monitoring network to detect threats and anomalies on DeFi, NFT, governance, bridges and other Web3 systems as quickly as possible. Your job is to implement a `detection bot` and register it in the `Forta` contract. The bot's implementation will need to raise correct alerts to prevent potential attacks or bug exploits.
+
+Right away I was a little confused, so we're not supposed to exploit this to pass the level but write a "detection bot" with Forta? Huh, maybe it'll make sense once we understand the bug... From the description alone it sounds like there might be some unintended way to "sweep" the underlying token despite the Vault's attempts to prevent that.
+
+
+## Code Review
+
+Looking at the source code, the first thing popping out was the definition of a `DelegateERC20` interface. Maybe the challenge has something to do with the Vault delegate-calling into a Token whose source code we can control? But then why is there an "original Sender" parameter passed? That wouldn't be necessary for a delegate-call since the `msg.sender` would be preserved...
+
+```typescript
+interface DelegateERC20 {
+  function delegateTransfer(address to, uint256 value, address origSender) external returns (bool);
+}
+```
+
+I've only heard high level explanations about what Forta is and does so far and had assumed, like it sounds in the description too, that it was an off-chain monitoring network - so seeing detection bots apparently being executed on-chain here is rather confusing to me. Maybe it's just for demonstrative purposes in this challenge? Let's skip over it for now.
+
+```typescript
+interface IDetectionBot {
+    function handleTransaction(address user, bytes calldata msgData) external;
+}
+
+interface IForta {
+    function setDetectionBot(address detectionBotAddress) external;
+    function notify(address user, bytes calldata msgData) external;
+    function raiseAlert(address user) external;
+}
+
+contract Forta is IForta { ... }
+```
+
+Then we find the `CryptoVault` contract with that `sweepToken` function this challenge seems to be centered around:
+
+```typescript
+function sweepToken(IERC20 token) public {
+    require(token != underlying, "Can't transfer underlying token");
+    token.transfer(sweptTokensRecipient, token.balanceOf(address(this)));
+}
+```
+
+It's clear that this will simply transfer out the full balance of any token specified as long as it's not the underlying token. It should also be said that both the `underlying` and `sweptTokensRecipient` appear to be unchangeable once set during construction/initialization of the Vault. But this also means that even if we're able to "drain" the Vault of its underlying token, it would just go into a wallet of the Vault creators and not into ours. So, assuming they're not gonna run away with it, that wouldn't mean a loss of funds but at least a disruption of Vault services. Now it makes sense why the goal is to write a monitoring bot here, it's good to be notified when something like this happens!
+
+But I don't see any issues with this code by itself, so most likely we'll be able to find something weird in the "Legacy Token" contract. And indeed:
+
+```typescript
+function delegateToNewContract(DelegateERC20 newContract) public onlyOwner {
+    delegate = newContract;
+}
+
+function transfer(address to, uint256 value) public override returns (bool) {
+    if (address(delegate) == address(0)) {
+        return super.transfer(to, value);
+    } else {
+        return delegate.delegateTransfer(to, value, msg.sender);
+    }
+}
+```
+
+The "Legacy Token" appears to be just that, it's a normal ERC20 Token at the beginning and then over the course of its lifetime the owner may decide to have transfers point to a new Token (presumably the underlying DET Token in this case). To do so it's not using anything fancy like a delegate-call as I had expected at first. It's simply calling a privileged `delegateTransfer()` function on the new Token to freely transfer funds (which should make sure that only the Legacy Token can call this).
+
+As expected, the Vault's underlying "DoubleEntryPointToken" makes sure that `delegateTransfer()` can only be called by the `legacyToken` by using a modifier. There's also a `fortaNotify` middleware that sets the whole detection bot thing in motion and can revert the call if it detects evil function calls.
+
+```typescript
+constructor(address legacyToken, address vaultAddress, address fortaAddress, address playerAddress) public {
+    delegatedFrom = legacyToken;
+    ...
+}
+
+...
+
+function delegateTransfer(
+    address to,
+    uint256 value,
+    address origSender
+) public override onlyDelegateFrom fortaNotify returns (bool) {
+    _transfer(origSender, to, value);
+    return true;
+}
+```
+
+
+## Writing the 'Detection Bot'
+
+So in summary: The vulnerability is that it's possible to bypass the `require(token != underlying, "Can't transfer underlying token");` check by calling the `sweepToken()` function with the Legacy Token. The legacy token will tell the underlying token to sweep the entire Vault's balance to the `sweptTokensRecipient`, likely causing a disturbance for Vault users.
+
+Now we need to write a "DetectionBot" contract that reacts to funds being moved out of the Vault. This contract should implement a `handleTransaction()` function which gets passed the Ethernaut player's address and the raw calldata of the `delegateTransfer()` function call.
+
+```typescript
+interface IDetectionBot {
+    function handleTransaction(address user, bytes calldata msgData) external;
+}
+```
+
+Using that calldata we can determine if the `origSender` is the address of the CryptoVault contract and if so we can call `raiseAlert()` on Forta with the `user` that was passed to us to make sure the `delegateTransfer()` function call will revert:
+
+```typescript
+contract MyDetectionBot is IDetectionBot {
+    address constant VAULT = 0x1533776a77f494131709c3320220B54810553dce;
+    function handleTransaction(address user, bytes calldata msgData) external {
+        (,,address origSender) = abi.decode(msgData[4:], (address, uint256, address));
+        if (origSender == VAULT) {
+            IForta(msg.sender).raiseAlert(user);
+        }
+    }
+}
+```
+
+Don't forget that calldata from `msg.data` is prefixed by the 4-byte function signature! Luckily byte arrays located in calldata can be easily sliced in Solidity with brackets: `[start:length]`. In this case we'll skip the first 4 bytes and omit the length, this will default to return the full length. After removing the signature we can use `abi.decode()` on the leftover ABI encoded part of the byte array.
+
+After deploying this, it has to be registered with the Forta contract by calling `setDetectionBot()` from the player address' wallet. Then we click the big "Submit Instance" Button and..
+
+>Congratulations!
+>
+>This is the **first experience you have with a** [**Forta bot**](https://docs.forta.network/en/latest/).
+>
+>Forta comprises a decentralized network of independent node operators who scan all transactions and block-by-block state changes for outlier transactions and threats. When an issue is detected, node operators send alerts to subscribers of potential risks, which enables them to take action.
+>
+>**The presented example is just for educational purpose since Forta bot is not modeled into smart contracts. In Forta, a bot is a code script to detect specific conditions or events, but when an alert is emitted it does not trigger automatic actions - at least not yet.** In this level, the bot's alert effectively trigger a revert in the transaction, deviating from the intended Forta's bot design.
+>
+>Detection bots heavily depends on contract's final implementations and some might be upgradeable and break bot's integrations, but to mitigate that you can even create a specific bot to look for contract upgrades and react to it. Learn how to do it [here](https://docs.forta.network/en/latest/quickstart/).
+>
+>You have also passed through a recent security issue that has been uncovered during OpenZeppelin's latest [collaboration with Compound protocol](https://compound.finance/governance/proposals/76).
+>
+>Having tokens that present a double entry point is a non-trivial pattern that might affect many protocols. This is because it is commonly assumed to have one contract per token. But it was not the case this time :) You can read the entire details of what happened [here](https://blog.openzeppelin.com/compound-tusd-integration-issue-retrospective/).
+
+Thankfully this congratulation message clears up my confusion about Forta Bots - they do actually run off-chain and are apparently written in TypeScript, JavaScript or Python. So then, this wasn't a real Forta Bot experience though? And the bug itself wasn't well hidden at all? Wait, was this whole thing just part of Fortas marketing campaign?!
+
+Oh well.

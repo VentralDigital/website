@@ -34,3 +34,25 @@ code.text-\[\.9em\] {
     display: none;
   }
 }
+
+/* Severities */
+span[s="0"] code { /* Fixed */
+  color: white;
+  background: mediumseagreen;
+}
+span[s="1"] code { /* Minor */
+  color: white;
+  background: darkgray;
+}
+span[s="2"] code { /* Medium */
+  color: white;
+  background: orange;
+}
+span[s="3"] code { /* Major */
+  color: white;
+  background: indianred;
+}
+span[s="4"] code { /* Critical */
+  color: white;
+  background: red;
+}

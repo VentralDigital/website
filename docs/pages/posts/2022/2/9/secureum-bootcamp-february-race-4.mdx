@@ -1,0 +1,324 @@
+# Secureum Bootcamp Epoch∞ - February RACE #4
+
+import { Callout } from 'nextra/components'
+
+<Callout>
+[Bootcamp Epoch 0 has finished, but Epoch Infinity has just begun!](https://twitter.com/0xRajeev/status/1470910752085065731)
+
+This is the a write-up of first quiz from Secureum Epoch Infinity. Note that it was given the name RACE 4 because several quizzes of the previous Epoch 0 were selected to represent the first RACEs (slot-4 -> RACE-0; slot-5 -> RACE-1; slot-7 -> RACE-2; slot-8 -> RACE-3).
+</Callout>
+
+<Callout type="info">
+  This quiz had a strict time limit of 16 minutes for 8 questions, no pause. Choose all and *only* correct answers.
+
+  Syntax highlighting was omitted since the original quiz did not have any either.
+</Callout>
+
+<p className="text-xs text-right">February 9, 2022 by [patrickd](/about#patrickd)</p>
+
+<style jsx>{`
+  input[type=checkbox] {
+    width: 15px;
+    height: 15px;
+  }
+  li {
+    padding: 0.5em;
+  }
+`}</style>
+
+export function HiddenSolution({ children }) {
+  return (
+    <details closed className="last-of-type:mb-0 rounded-lg bg-neutral-50 dark:bg-neutral-800 p-2 mt-4">
+      <summary>
+        <strong className="text-lg">Solution</strong>
+      </summary>
+      <div className="nx-p-2">{children}</div>
+    </details>
+  )
+}
+
+---
+
+### Code
+
+<Callout type="info">
+All 8 questions in this quiz are based on the `InSecureum` contract. This is the same contract you will see for all the 8 questions in this quiz. `InSecureum` is adapted from a widely used ERC20 contract.
+</Callout>
+
+
+```plaintext showLineNumbers filename="InSecureum.sol"
+pragma solidity 0.8.10;
+
+import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/token/ERC20/IERC20.sol";
+import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/utils/Context.sol";
+
+contract InSecureum is Context, IERC20, IERC20Metadata {
+    mapping(address => uint256) private _balances;
+    mapping(address => mapping(address => uint256)) private _allowances;
+    uint256 private _totalSupply;
+    string private _name;
+    string private _symbol;
+
+    constructor(string memory name_, string memory symbol_) {
+        _name = name_;
+        _symbol = symbol_;
+    }
+
+    function name() public view virtual override returns (string memory) {
+        return _name;
+    }
+
+    function symbol() public view virtual override returns (string memory) {
+        return _symbol;
+    }
+
+    function decimals() public view virtual override returns (uint8) {
+        return 8;
+    }
+
+    function totalSupply() public view virtual override returns (uint256) {
+        return _totalSupply;
+    }
+
+    function balanceOf(address account) public view virtual override returns (uint256) {
+        return _balances[account];
+    }
+
+    function transfer(address recipient, uint256 amount) public virtual override returns (bool) {
+        _transfer(_msgSender(), recipient, amount);
+        return true;
+    }
+
+    function allowance(address owner, address spender) public view virtual override returns (uint256) {
+        return _allowances[owner][spender];
+    }
+
+    function approve(address spender, uint256 amount) public virtual override returns (bool) {
+        _approve(_msgSender(), spender, amount);
+        return true;
+    }
+
+    function transferFrom(
+        address sender,
+        address recipient,
+        uint256 amount
+    ) public virtual override returns (bool) {
+        uint256 currentAllowance = _allowances[_msgSender()][sender];
+        if (currentAllowance != type(uint256).max) {
+            unchecked {
+                _approve(sender, _msgSender(), currentAllowance - amount);
+            }
+        }
+        _transfer(sender, recipient, amount);
+        return false;
+    }
+
+    function increaseAllowance(address spender, uint256 addedValue) public virtual returns (bool) {
+        _approve(_msgSender(), spender, _allowances[_msgSender()][spender] + addedValue);
+        return true;
+    }
+
+    function decreaseAllowance(address spender, uint256 subtractedValue) public virtual returns (bool) {
+        uint256 currentAllowance = _allowances[_msgSender()][spender];
+        require(currentAllowance > subtractedValue, "ERCH20: decreased allowance below zero");
+        _approve(_msgSender(), spender, currentAllowance - subtractedValue);
+        return true;
+    }
+
+    function _transfer(
+        address sender,
+        address recipient,
+        uint256 amount
+    ) internal virtual {
+        require(sender != address(0), "ERC20: transfer from the zero address");
+        require(recipient != address(0), "ERC20: transfer to the zero address");
+        uint256 senderBalance = _balances[sender];
+        require(senderBalance >= amount, "ERC20: transfer amount exceeds balance");
+        unchecked {
+            _balances[sender] = senderBalance - amount;
+        }
+        _balances[recipient] += amount;
+        emit Transfer(sender, recipient, amount);
+    }
+
+    function _mint(address account, uint256 amount) external virtual {
+        _totalSupply += amount;
+        _balances[account] = amount;
+        emit Transfer(address(0), account, amount);
+    }
+
+    function _burn(address account, uint256 amount) internal virtual {
+        require(account != address(0), "ERC20: burn from zero address");
+        require(_balances[account] >= amount, "ERC20: burn amount exceeds balance");
+        unchecked {
+            _balances[account] = _balances[account] - amount;
+        }
+        _totalSupply -= amount;
+        emit Transfer(address(0), account, amount);
+    }
+
+    function _approve(
+        address owner,
+        address spender,
+        uint256 amount
+    ) internal virtual {
+        require(spender != address(0), "ERC20: approve from the zero address");
+        require(owner != address(0), "ERC20: approve to the zero address");
+        _allowances[owner][spender] += amount;
+        emit Approval(owner, spender, amount);
+    }
+}
+```
+
+### Question 1 of 8
+
+`InSecureum` implements
+
+<ul>
+  <li><input type="checkbox" /> A. Atypical `decimals` value  </li>
+  <li><input type="checkbox" /> B. Non-standard `decreaseAllowance` and `increaseAllowance`  </li>
+  <li><input type="checkbox" /> C. Non-standard `transfer`  </li>
+  <li><input type="checkbox" /> D. None of the above  </li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, B.**
+
+The decimals value follows the standard but it typically returns `18` (`8` is atypical), imitating the relationship between Ether and Wei. The `decreaseAllowance` and `increaseAllowance` functions were introduced in the OpenZeppelin ERC20 implementation to mitigate frontrunning issues of the standard `approve`, but they are not part of the ERC20 standard. The `transfer` function is part of the standard though.
+</HiddenSolution>
+
+---
+
+### Question 2 of 8
+
+In `InSecureum`
+
+<ul>
+  <li><input type="checkbox" /> A. `decimals()` can have `pure` state mutability instead of `view`  </li>
+  <li><input type="checkbox" /> B. `_burn()` can have `external` visibility instead of `internal`  </li>
+  <li><input type="checkbox" /> C. `_mint()` should have `internal` visibility instead of `external`  </li>
+  <li><input type="checkbox" /> D. None of the above  </li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, C.**
+
+Since `decimals()` returns a constant hardcoded value without accessing storage other non-calldata information it can indeed be declared as `pure`. Generally, functions prefixed with underscores should be internal or should not have the prefix. Making `_burn()` external would currently allow anyone to burn anyone else's balance. And the fact that `_mint()` is currently external allows anyone to mint as many InSecureum tokens as they wish.
+</HiddenSolution>
+
+---
+
+### Question 3 of 8
+
+`InSecureum transferFrom()`
+
+<ul>
+  <li><input type="checkbox" /> A. Is susceptible to an integer underflow  </li>
+  <li><input type="checkbox" /> B. Has an incorrect allowance check  </li>
+  <li><input type="checkbox" /> C. Has an optimization indicative of unlimited approvals  </li>
+  <li><input type="checkbox" /> D. None of the above  </li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, B, C.**
+
+The subtraction within the `unchecked` block effectively allows anyone to steal anyone else's full token balance since subtracting from an allowance of `0` will cause an integer underflow and the allowance value will wrap `(0 - 1 == type(uint256).max){:solidity}`. The fact that the function won't revert when subtracting from the allowance due to the `unchecked` block, can by itself be seen as an incorrect allowance check. The other check, skipping allowance subtraction when an "infinite approval" was given by setting the allowance to the maximum value of `uint256`, appears to be correct. Since the special handling for unlimited approvals prevents unnecessary storage updates, it is indicative of an optimization.
+</HiddenSolution>
+
+---
+
+### Question 4 of 8
+
+In `InSecureum`
+
+<ul>
+  <li><input type="checkbox" /> A. `increaseAllowance` is susceptible to an integer overflow  </li>
+  <li><input type="checkbox" /> B. `decreaseAllowance` is susceptible to an integer overflow  </li>
+  <li><input type="checkbox" /> C. `decreaseAllowance` does not allow reducing allowance to zero  </li>
+  <li><input type="checkbox" /> D. `decreaseAllowance` can be optimised with `unchecked{}`  </li>
+</ul>
+
+<HiddenSolution>
+**Correct is C, D.**
+
+Neither function make use of the `unchecked` block which would allow integer overflows to happen in this version of solidity. The `decreaseAllowance` function does indeed not allow reducing the allowance to zero since the requirement enforces that the `subtractedValue` must always be smaller than `currentAllowance`. It would be better to use `>=` here to allow allowance reductions to zero. That requirement does make solidity's own integer underflow check for `currentAllowance - subtractedValue` redundant, so it could indeed be optimised with unchecked{}.
+</HiddenSolution>
+
+---
+
+### Question 5 of 8
+
+`InSecureum _transfer()`
+
+<ul>
+  <li><input type="checkbox" /> A. Is missing a zero-address validation  </li>
+  <li><input type="checkbox" /> B. Is susceptible to an integer overflow  </li>
+  <li><input type="checkbox" /> C. Is susceptible to an integer underflow  </li>
+  <li><input type="checkbox" /> D. None of the above  </li>
+</ul>
+
+<HiddenSolution>
+**Correct is D.**
+
+All of the addresses `_transfer()` uses are checked to make sure they're not zero-addresses. Neither integer overflows nor underflows are possible with this solidity version without the use of `unchecked{}`.
+</HiddenSolution>
+
+---
+
+### Question 6 of 8
+
+`InSecureum _mint()`
+
+<ul>
+  <li><input type="checkbox" /> A. Is missing a zero-address validation  </li>
+  <li><input type="checkbox" /> B. Has an incorrect event emission  </li>
+  <li><input type="checkbox" /> C. Has an incorrect update of account balance  </li>
+  <li><input type="checkbox" /> D. None of the above  </li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, C.**
+
+The `_mint` function is currently not ensuring that the receiving address is non-zero. The event emission appears to be correctly following IERC20: `event Transfer(address indexed from, address indexed to, uint256 value);{:solidity}`. This mint implementation overwrites the accounts current balance instead of adding to it.
+</HiddenSolution>
+
+---
+
+### Question 7 of 8
+
+`InSecureum _burn()`
+
+<ul>
+  <li><input type="checkbox" /> A. Is missing a zero-address validation  </li>
+  <li><input type="checkbox" /> B. Has an incorrect event emission  </li>
+  <li><input type="checkbox" /> C. Has an incorrect update of account balance  </li>
+  <li><input type="checkbox" /> D. None of the above  </li>
+</ul>
+
+<HiddenSolution>
+**Correct is B.**
+
+It correctly applies zero-address validation on the account to burn from. The event permission is incorrect, `from` and `to` need to be switched around to follow the IERC20 interface: `event Transfer(address indexed from, address indexed to, uint256 value);{:solidity}`. The balance update is correct and although an `unchecked` block is used, no underflow can happen thanks to the requirement before.
+</HiddenSolution>
+
+---
+
+### Question 8 of 8
+
+`InSecureum _approve()`
+
+<ul>
+  <li><input type="checkbox" /> A. Is missing a zero-address validation  </li>
+  <li><input type="checkbox" /> B. Has incorrect error messages  </li>
+  <li><input type="checkbox" /> C. Has an incorrect update of allowance  </li>
+  <li><input type="checkbox" /> D. None of the above  </li>
+</ul>
+
+<HiddenSolution>
+**Correct is B, C.**
+
+Although no zero-address validation is missing the error messages have been confused with each other. The update of allowances is currently incorrect since it only adds the amount to the current allowance instead of setting it to the amount overwriting the old value.
+</HiddenSolution>
+
+---

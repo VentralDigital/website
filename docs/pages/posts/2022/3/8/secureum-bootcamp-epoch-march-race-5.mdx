@@ -1,0 +1,475 @@
+# Secureum Bootcamp Epoch∞ - February RACE #5
+
+import { Callout } from 'nextra/components'
+
+This is a write-up of the [Secureum Bootcamp Race 5 Quiz of Epoch Infinity](https://twitter.com/0xRajeev/status/1470910752085065731) with solutions.
+
+<Callout type="info">
+  This quiz had a strict time limit of 16 minutes for 8 questions, no pause. Choose all and *only* correct answers.
+
+  Syntax highlighting was omitted since the original quiz did not have any either.
+</Callout>
+
+<p className="text-xs text-right">March 8, 2022 by [patrickd](/about#patrickd)</p>
+
+<style jsx>{`
+  input[type=checkbox] {
+    width: 15px;
+    height: 15px;
+  }
+  li {
+    padding: 0.5em;
+  }
+`}</style>
+
+export function HiddenSolution({ children }) {
+  return (
+    <details closed className="last-of-type:mb-0 rounded-lg bg-neutral-50 dark:bg-neutral-800 p-2 mt-4">
+      <summary>
+        <strong className="text-lg">Solution</strong>
+      </summary>
+      <div className="nx-p-2">{children}</div>
+    </details>
+  )
+}
+
+---
+
+### Code
+
+<Callout type="info">
+All 8 questions in this quiz are based on the `InSecureum` contract. This is the same contract you will see for all the 8 questions in this quiz. `InSecureum` is adapted from a well-known contract.
+</Callout>
+
+
+```plaintext showLineNumbers filename="InSecureum.sol"
+pragma solidity ^0.8.0;
+
+import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/token/ERC1155/IERC1155.sol";
+import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/token/ERC1155//IERC1155Receiver.sol";
+import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/token/ERC1155//extensions/IERC1155MetadataURI.sol";
+import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/utils/Address.sol";
+import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/utils/Context.sol";
+import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/utils/introspection/ERC165.sol";
+
+contract InSecureum is Context, ERC165, IERC1155, IERC1155MetadataURI {
+
+    mapping(uint256 => mapping(address => uint256)) private _balances;
+    mapping(address => mapping(address => bool)) private _operatorApprovals;
+    string private _uri;
+
+    constructor(string memory uri_) {
+        _setURI(uri_);
+    }
+
+    function supportsInterface(bytes4 interfaceId) public view virtual override(ERC165, IERC165) returns (bool) {
+        return
+            interfaceId == type(IERC1155).interfaceId ||
+            interfaceId == type(IERC1155MetadataURI).interfaceId ||
+            super.supportsInterface(interfaceId);
+    }
+
+    function uri(uint256) public view virtual override returns (string memory) {
+        return _uri;
+    }
+
+    function balanceOf(address account, uint256 id) public view virtual override returns (uint256) {
+        require(account != address(0), "ERC1155: balance query for the zero address");
+        return _balances[id][account];
+    }
+
+    function balanceOfBatch(address[] memory accounts, uint256[] memory ids)
+        public
+        view
+        virtual
+        override
+        returns (uint256[] memory)
+    {
+        uint256[] memory batchBalances = new uint256[](accounts.length);
+        for (uint256 i = 0; i < accounts.length; ++i) {
+            batchBalances[i] = balanceOf(accounts[i], ids[i]);
+        }
+        return batchBalances;
+    }
+
+    function setApprovalForAll(address operator, bool approved) public virtual override {
+        _setApprovalForAll(_msgSender(), operator, approved);
+    }
+
+    function isApprovedForAll(address account, address operator) public view virtual override returns (bool) {
+        return _operatorApprovals[account][operator];
+    }
+
+    function safeTransferFrom(
+        address from,
+        address to,
+        uint256 id,
+        uint256 amount,
+        bytes memory data
+    ) public virtual override {
+        require(
+            from == _msgSender() || isApprovedForAll(from, _msgSender()),
+            "ERC1155: caller is not owner nor approved"
+        );
+        _safeTransferFrom(from, to, id, amount, data);
+    }
+
+    function safeBatchTransferFrom(
+        address from,
+        address to,
+        uint256[] memory ids,
+        uint256[] memory amounts,
+        bytes memory data
+    ) public virtual override {
+        require(
+            from == _msgSender() || isApprovedForAll(from, _msgSender()),
+            "ERC1155: transfer caller is not owner nor approved"
+        );
+        _safeBatchTransferFrom(from, to, ids, amounts, data);
+    }
+
+    function _safeTransferFrom(
+        address from,
+        address to,
+        uint256 id,
+        uint256 amount,
+        bytes memory data
+    ) public virtual {
+        address operator = _msgSender();
+        uint256 fromBalance = _balances[id][from];
+        unchecked {
+            fromBalance = fromBalance - amount;
+        }
+        _balances[id][from] = fromBalance;
+        _balances[id][to] += amount;
+
+        emit TransferSingle(operator, from, to, id, amount);
+        _doSafeTransferAcceptanceCheck(operator, from, to, id, amount, data);
+    }
+
+    function _safeBatchTransferFrom(
+        address from,
+        address to,
+        uint256[] memory ids,
+        uint256[] memory amounts,
+        bytes memory data
+    ) internal virtual {
+        require(to != address(0), "ERC1155: transfer to the zero address");
+        address operator = _msgSender();
+        for (uint256 i = 0; i < ids.length; ++i) {
+            uint256 id = ids[i];
+            uint256 amount = amounts[i];
+            uint256 fromBalance = _balances[id][from];
+            fromBalance = fromBalance - amount;
+            _balances[id][to] += amount;
+        }
+        emit TransferBatch(operator, from, to, ids, amounts);
+        _doSafeBatchTransferAcceptanceCheck(operator, from, to, ids, amounts, data);
+    }
+
+    function _setURI(string memory newuri) internal virtual {
+        _uri = newuri;
+    }
+
+    function _mint(
+        address to,
+        uint256 id,
+        uint256 amount,
+        bytes memory data
+    ) internal virtual {
+        require(to != address(0), "ERC1155: mint to the zero address");
+        address operator = _msgSender();
+        _balances[id][to] += amount;
+        emit TransferSingle(operator, address(0), to, id, amount);
+        _doSafeTransferAcceptanceCheck(operator, address(0), to, id, amount, data);
+    }
+
+    function _mintBatch(
+        address to,
+        uint256[] memory ids,
+        uint256[] memory amounts,
+        bytes memory data
+    ) internal virtual {
+        address operator = _msgSender();
+        require(operator != address(0), "ERC1155: mint from the zero address");
+        for (uint256 i = 0; i < ids.length; i++) {
+            _balances[ids[i]][to] += amounts[i];
+        }
+        emit TransferBatch(operator, address(0), to, amounts, ids);
+        _doSafeBatchTransferAcceptanceCheck(operator, address(0), to, ids, amounts, data);
+    }
+
+    function _burn(
+        address from,
+        uint256 id,
+        uint256 amount
+    ) internal virtual {
+        require(from != address(0), "ERC1155: burn from the zero address");
+        address operator = _msgSender();
+        uint256 fromBalance = _balances[id][from];
+        _balances[id][from] = fromBalance - amount;
+        emit TransferSingle(operator, from, address(0), id, amount);
+    }
+
+    function _burnBatch(
+        address from,
+        uint256[] memory ids,
+        uint256[] memory amounts
+    ) internal virtual {
+        require(from != address(0), "ERC1155: burn from the zero address");
+        address operator = _msgSender();
+        for (uint256 i = 0; i < ids.length; i++) {
+            uint256 id = ids[i];
+            uint256 amount = amounts[i];
+            uint256 fromBalance = _balances[id][from];
+            require(fromBalance >= amount, "ERC1155: burn amount exceeds balance");
+            unchecked {
+                _balances[id][from] = fromBalance - amount;
+            }
+        }
+        emit TransferBatch(operator, from, address(0), ids, amounts);
+    }
+
+    function _setApprovalForAll(
+        address owner,
+        address operator,
+        bool approved
+    ) internal virtual {
+        require(owner != operator, "ERC1155: setting approval status for self");
+        _operatorApprovals[owner][operator] = approved;
+        emit ApprovalForAll(owner, operator, approved);
+    }
+
+    function _doSafeTransferAcceptanceCheck(
+        address operator,
+        address from,
+        address to,
+        uint256 id,
+        uint256 amount,
+        bytes memory data
+    ) private {
+        if (isContract(to)) {
+            try IERC1155Receiver(to).onERC1155Received(operator, from, id, amount, data) returns (bytes4 response) {
+                if (response == IERC1155Receiver.onERC1155Received.selector) {
+                    revert("ERC1155: ERC1155Receiver rejected tokens");
+                }
+            } catch Error(string memory reason) {
+                revert(reason);
+            } catch {
+                revert("ERC1155: transfer to non ERC1155Receiver implementer");
+            }
+        }
+    }
+
+    function _doSafeBatchTransferAcceptanceCheck(
+        address operator,
+        address from,
+        address to,
+        uint256[] memory ids,
+        uint256[] memory amounts,
+        bytes memory data
+    ) private {
+        if (isContract(to)) {
+            try IERC1155Receiver(to).onERC1155BatchReceived(operator, from, ids, amounts, data) returns (
+                bytes4 response
+            ) {
+                if (response != IERC1155Receiver.onERC1155BatchReceived.selector) {
+                    revert("ERC1155: ERC1155Receiver rejected tokens");
+                }
+            } catch Error(string memory reason) {
+                revert(reason);
+            } catch {
+                revert("ERC1155: transfer to non ERC1155Receiver implementer");
+            }
+        }
+    }
+
+    function isContract(address account) internal view returns (bool) {
+        return account.code.length == 0;
+    }
+}
+```
+
+### Question 1 of 8
+
+`InSecureum balanceOf()`
+
+<ul>
+  <li><input type="checkbox" /> A. May be optimised by caching state variable in local variable</li>
+  <li><input type="checkbox" /> B. May be optimised by changing state mutability from `view` to `pure`</li>
+  <li><input type="checkbox" /> C. May be optimised by changing its visibility to `external`</li>
+  <li><input type="checkbox" /> D. None of the above  </li>
+</ul>
+
+<HiddenSolution>
+**Correct is D.**
+
+Since the `_balances` state variable is only accessed once and immediately returned, caching doesn't make sense.
+
+State mutability can't be changed to `pure` since the function accesses a state variable, that requires at least `view`.
+
+It can't be changed to `external` because it is currently being called internally by the `balanceOfBatch()` function.
+</HiddenSolution>
+
+---
+
+### Question 2 of 8
+
+In `InSecureum`, array lengths mismatch check is missing in
+
+<ul>
+  <li><input type="checkbox" /> A. `balanceOfBatch()`</li>
+  <li><input type="checkbox" /> B. `_safeBatchTransferFrom()`</li>
+  <li><input type="checkbox" /> C. `_mintBatch()`</li>
+  <li><input type="checkbox" /> D. `_burnBatch()`</li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, B, C, D.**
+
+The public function `balanceOfBatch()` receives a list of `accounts` and a list of `ids`, both of which items get passed on to `balanceOf(accounts[i], ids[i]);{:solidity}`. To ensure that neither array is accessed out-of-bounds, it should be checked whether both lists are of the same length.
+
+Neither the internal function `_safeBatchTransferFrom()` nor its public caller function `safeBatchTransferFrom()` check the length of passed `ids` and `amounts`. Therefore the check is missing.
+
+The internal functions `_mintBatch()` and `_burnBatch()` are currently never called, but a contract extending InSecureum might. It would make sense to check the lengths of passed `ids` and `amounts` in them, so that public functions calling them do not need to remember to do so.
+</HiddenSolution>
+
+---
+
+### Question 3 of 8
+
+The security concern(s) with `InSecureum _safeTransferFrom()` is/are
+
+<ul>
+  <li><input type="checkbox" /> A. Incorrect visibility  </li>
+  <li><input type="checkbox" /> B. Susceptible to an integer underflow  </li>
+  <li><input type="checkbox" /> C. Missing zero-address validation  </li>
+  <li><input type="checkbox" /> D. None of the above  </li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, B, C.**
+
+It is prefixed with an underscore, which is usually an indication of an `internal` visibility, and it's also called by a similarly named public `safeTransferFrom()` function that applies more input validation before calling it. This validation ensures that the sender actually has approval for the transfer of funds, which would be bypassed by this function being public. It should instead be `internal` allowing an inheriting contract to internally call it.
+
+The new `fromBalance` is calculated within an `unchecked{}` block, bypassing integer underflow prevention measures of Solidity version `0.8.0^`. Since the `fromBalance` isn't checked for whether there's a sufficient balance for a transfer, this effectively allows sending unlimited amounts to the specified recipient.
+
+Neither `safeTransferFrom()` nor `_safeTransferFrom()` are checking whether the `to` address is non-zero, making it possible to accidentally burn tokens.
+</HiddenSolution>
+
+---
+
+### Question 4 of 8
+
+The security concern(s) with `InSecureum _safeBatchTransferFrom()` is/are
+
+<ul>
+  <li><input type="checkbox" /> A. Missing array lengths mismatch check </li>
+  <li><input type="checkbox" /> B. Susceptibility to an integer underflow  </li>
+  <li><input type="checkbox" /> C. Incorrect balance update </li>
+  <li><input type="checkbox" /> D. None of the above </li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, C.**
+
+The fact that the array lengths mismatch check is missing has already been determined in Question #2.
+
+There's no usage of an `unchecked{}` block, therefore an integer underflow cannot happen with this Solidity version.
+
+The new value of `fromBalance` is calculated but it's never actually updated in storage. This effectively allows sending the same tokens unlimited amount of times.
+</HiddenSolution>
+
+---
+
+### Question 5 of 8
+
+The security concern(s) with `InSecureum _mintBatch()` is/are
+
+<ul>
+  <li><input type="checkbox" /> A. Missing array lengths mismatch check </li>
+  <li><input type="checkbox" /> B. Incorrect event emission  </li>
+  <li><input type="checkbox" /> C. Allows burning of tokens  </li>
+  <li><input type="checkbox" /> D. None of the above  </li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, B, C.**
+
+The fact that the array lengths mismatch check is missing has already been determined in Question #2.
+
+Comparing the emission of the `TransferBatch` event to other occurrences, it appears that `ids` and `amounts` have been accidentally swapped.
+
+The zero-address check incorrectly ensures that the sender is non-zero (which would never be possible anyway) instead of ensuring that the receiving account is non-zero. This effectively allows minting to the zero-address, burning all minted tokens immediately.
+</HiddenSolution>
+
+---
+
+### Question 6 of 8
+
+The security concern(s) with `InSecureum _burn()` is/are
+
+<ul>
+  <li><input type="checkbox" /> A. Missing zero-address validation  </li>
+  <li><input type="checkbox" /> B. Susceptibility to an integer underflow  </li>
+  <li><input type="checkbox" /> C. Incorrect balance update  </li>
+  <li><input type="checkbox" /> D. None of the above  </li>
+</ul>
+
+<HiddenSolution>
+**Correct is D.**
+
+The zero-address validation exists and is correctly checking the value of `from`.
+
+There's no usage of an `unchecked{}` block, therefore an integer underflow cannot happen with this Solidity version.
+
+The balance appears to be correctly updated after subtraction.
+</HiddenSolution>
+
+---
+
+### Question 7 of 8
+
+The security concern(s) with `InSecureum _doSafeTransferAcceptanceCheck()` is/are
+
+<ul>
+  <li><input type="checkbox" /> A. `isContract` check on incorrect address </li>
+  <li><input type="checkbox" /> B. Incorrect check on return value </li>
+  <li><input type="checkbox" /> C. Call to incorrect `isContract` implementation </li>
+  <li><input type="checkbox" /> D. None of the above  </li>
+</ul>
+
+<HiddenSolution>
+**Correct is B, C.**
+
+The `isContract()` function is correctly called on `to`, which is the receiving address that is potentially a contract that this function is supposed to check support of ERC1155, before tokens are sent to it, since they'd otherwise be stuck in a contract not supporting this standard.
+
+Comparing `_doSafeTransferAcceptanceCheck()` and `_doSafeBatchTransferAcceptanceCheck()` shows a clear discrepancy when checking the return value, with the batch function's implementation correctly checking support for the ERC1155 standard. This function is in fact currently doing the opposite, ensuring that tokens are only sent to contracts that do NOT support it.
+
+The `isContract()` function currently returns `true` if the passed address is in fact NOT a contract (has a code length of 0). It should instead return true only when the address has a code length larger than 0, showing that there's currently a contract residing at `account`.
+</HiddenSolution>
+
+---
+
+### Question 8 of 8
+
+The security concern(s) with `InSecureum isContract()` implementation is/are
+
+<ul>
+  <li><input type="checkbox" /> A. Incorrect visibility </li>
+  <li><input type="checkbox" /> B. Incorrect operator in the comparison  </li>
+  <li><input type="checkbox" /> C. Unnecessary because Ethereum only has Contract accounts  </li>
+  <li><input type="checkbox" /> D. None of the above  </li>
+</ul>
+
+<HiddenSolution>
+**Correct is B.**
+
+A visibility of `internal` allowing inheriting contracts to use it appears appropriate.
+
+The comparison should indeed be "bigger-than-zero" instead of "equals-zero", for the reasons explained for the previous question.
+
+Ethereum not only has Contract accounts but also EOA (Externally Owned Accounts), which do not have any contract code but an off-chain public-private keypair instead.
+</HiddenSolution>
+
+---

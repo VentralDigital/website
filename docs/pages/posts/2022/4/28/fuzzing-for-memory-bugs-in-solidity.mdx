@@ -1,0 +1,177 @@
+# Fuzzing For Memory Bugs In Solidity
+
+<p className="text-xs text-right">April 28, 2022 by [patrickd](/about#patrickd)</p>
+
+When reviewing Solidity code that makes use of assembly, one of the most common errors is that the memory is incorrectly read from or written to. This article explains how fuzzing can be used to look for these types of issues that aren't simple to notice due to the difficult readability of Yul.
+
+To discuss this, we'll look at the same library that I've used as an example for the [Solidity Fuzzing Boilerplate](https://github.com/patrickd-/solidity-fuzzing-boilerplate#solidity-fuzzing-boilerplate) template: [Gonçalo Sá's](https://twitter.com/GNSPS) [Solidity Bytes Arrays Utils](https://github.com/GNSPS/solidity-bytes-utils), more specifically its [`slice(bytes,start,length)`](https://github.com/GNSPS/solidity-bytes-utils/blob/master/contracts/BytesLib.sol#L228-L295) function. You're probably already familiar with slicing functions: In this implementation, it takes a byte array and returns a part of it as a new byte array, with the specified length, starting at the specified offset. In languages like JavaScript it's a built-in feature, while [in Solidity it's (currently) only available for byte arrays located in the msg's `calldata`](https://github.com/patrickd-/cheatsheet.sol/blob/main/contracts/cheatsheet.sol#L507-L512).
+
+So to slice byte arrays located in memory, we can, and should, make use of established utility libraries instead of rolling our own. The one we'll be using here is optimized to minimize gas usage and for that it makes use of assembly. [Most of the function is, in fact, written in assembly](https://github.com/GNSPS/solidity-bytes-utils/blob/master/contracts/BytesLib.sol#L228-L295).
+
+When reviewing it, the following questions should arise:
+
+- When it accesses the memory belonging to the passed byte array, does it only read as much as it should?
+- How does it deal with pollution of bytes that are within the same 32-bytes "slot" that the byte array lives in but aren't part of the array?
+- Are there `start` or `length` parameter values that will make it read memory not belonging to the byte array?
+- Does it correctly handle empty byte arrays that [only have a length](https://github.com/patrickd-/cheatsheet.sol/blob/main/contracts/cheatsheet.sol#L207-L209) but no value following it?
+- When initializing the new byte array for the return value, does it correctly increase the [free memory pointer](https://github.com/patrickd-/cheatsheet.sol/blob/main/contracts/cheatsheet.sol#L237), so it won't be overwritten by new memory values later?
+- Is there a case where it writes to an incorrect location in memory?
+- Does it write more bytes to the last memory "slot" of the slice than it should, potentially polluting it?
+
+import { Callout } from 'nextra/components'
+
+<Callout>
+  Although the EVM allows accessing bytes within memory individually, Solidity manages memory in chunks of 32-bytes, which is why they're called "slots" throughout this article.
+</Callout>
+
+
+## Basic Differential Fuzzing Testcase
+
+To start, we'll write a simple differential fuzzing test, meaning we'll give the fuzzer's input to two implementations and compare the outputs, if they differ, we've found an issue. Since the fuzzers will call our testcase as an external function, we can access the input-bytearray via the calldata data location allowing us to test the library against Solidity's own slicing function:
+
+```solidity
+function test_BytesLib_slice(bytes calldata input, uint256 start, uint256 length) external {
+    // Skip invalid fuzzer inputs that would cause the library to revert and the test to fail.
+    unchecked {
+        assuming(length + 31 >= length);
+        assuming(start + length >= start);
+    }
+    assuming(input.length >= start + length);
+
+    // We can compare the library's result with Solidity's calldata slicing.
+    bytes memory outputA = input[start : start + length];
+    bytes memory outputB = BytesLib.slice(input, start, length);
+
+    // Same output?
+    assert(keccak256(outputA) == keccak256(outputB));
+}
+```
+
+
+This basic testcase can now be extended to check for memory issues too, but first, a quick reminder of Solidity's memory layout:
+
+```plaintext
+╔══════════════╤══════════════════════════════════════════════════════════════════╗
+║ address      │ 32-byte memory "slots"                                           ║
+╟──────────────┼──────────────────────────────────────────────────────────────────╢
+║ from    0x00 │ 0000000000000000000000000000000000000000000000000000000000000000 ║ // Solidity's "Scratch Space"
+║ until   0x3f │ 0000000000000000000000000000000000000000000000000000000000000000 ║
+╟──────────────┼──────────────────────────────────────────────────────────────────╢
+║ 0x40 to 0x5f │ 0000000000000000000000000000000000000000000000000000000000000080 ║ // Solidity's "Free Memory Pointer"
+╟──────────────┼──────────────────────────────────────────────────────────────────╢
+║ 0x60 to 0x7f │ 0000000000000000000000000000000000000000000000000000000000000000 ║ // Solidity's "Zero Slot"
+╟──────────────┼──────────────────────────────────────────────────────────────────╢
+║ 0x80 to 0x9f │ 0000000000000000000000000000000000000000000000000000000000000000 ║ // Available free memory
+║ 0xa0 to 0xbf │ 0000000000000000000000000000000000000000000000000000000000000000 ║
+║ 0xc0 to 0xdf │ 0000000000000000000000000000000000000000000000000000000000000000 ║
+║ ...          │ ...                                                              ║
+╚══════════════╧══════════════════════════════════════════════════════════════════╝
+```
+
+In the beginning, when a contract's bytecode is invoked, Solidity reserves the first 128 bytes for internal purposes. Of these, you're usually only interested in the "Free Memory Pointer" when writing assembly embedded within Solidity. It should always contain the current address of the first free byte - at the start always `0x80`, which is the first available byte after the reserved memory space.
+
+Before the assertion is checked, memory should look similar to this for a call of `slice(hex'f00b4334', 1, 2)`:
+
+```plaintext
+╔══════════════╤══════════════════════════════════════════════════════════════════╗
+║ address      │ 32-byte memory "slots"                                           ║
+╟──────────────┼──────────────────────────────────────────────────────────────────╢
+║ from    0x00 │ 0000000000000000000000000000000000000000000000000000000000000000 ║ // Solidity's "Scratch Space"
+║ until   0x3f │ 0000000000000000000000000000000000000000000000000000000000000000 ║
+╟──────────────┼──────────────────────────────────────────────────────────────────╢
+║ 0x40 to 0x5f │ 0000000000000000000000000000000000000000000000000000000000000??? ║ // Solidity's "Free Memory Pointer"
+╟──────────────┼──────────────────────────────────────────────────────────────────╢
+║ 0x60 to 0x7f │ 0000000000000000000000000000000000000000000000000000000000000000 ║ // Solidity's "Zero Slot"
+╟──────────────┼──────────────────────────────────────────────────────────────────╢
+║ ...          │ ...                                                              ║
+╟──────────────┼──────────────────────────────────────────────────────────────────╢
+║              │ 0000000000000000000000000000000000000000000000000000000000000002 ║ // outputA's length
+║              │ 0b43000000000000000000000000000000000000000000000000000000000000 ║ // outputA's value
+║              │ 0000000000000000000000000000000000000000000000000000000000000004 ║ // input's length
+║              │ f00b433400000000000000000000000000000000000000000000000000000000 ║ // input's value
+║              │ 0000000000000000000000000000000000000000000000000000000000000002 ║ // outputB's length
+║              │ 0b43000000000000000000000000000000000000000000000000000000000000 ║ // outputB's value
+╚══════════════╧══════════════════════════════════════════════════════════════════╝
+```
+
+First, note that byte arrays are always stored in memory as two parts: The first 32 bytes are the array's length, and based on that the following slot(s) store the actual value (which is left-aligned). Related to this, it's important to note that an empty byte array only has a length, there's no value following after it. You might also be wondering why the input is stored after outputA. Remember that the input isn't initially stored in memory but taken from calldata. Only when it is passed to the slice function (where it's declared as `bytes memory _bytes`), Solidity will copy it to memory.
+
+With that, the test should pass as expected, since both Solidity and the library returned `0x0b43` as results.
+
+## Extending with Memory Checks
+
+A simple way to now extend the testcase to also check for memory access issues is by adding a bunch of junk:
+
+```solidity
+function test_BytesLib_slice(bytes calldata input, uint256 start, uint256 length) external {
+    // Skip invalid fuzzer inputs that would cause the library to revert and the test to fail.
+    unchecked {
+        assuming(length + 31 >= length);
+        assuming(start + length >= start);
+    }
+    assuming(input.length >= start + length);
+
+    // We can compare the libraries result with Solidity's calldata slicing.
+    bytes memory outputA = input[start : start + length];
+
+    // Surround memory of input with some junk that could be accidentially read/overwritten by lib.
+    bytes memory preJunk1 = hex'abcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd';
+    bytes memory memInput = input;
+    bytes memory preJunk2 = hex'abcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd';
+
+    bytes memory outputB = BytesLib.slice(memInput, start, length);
+
+    // Fill memory with more junk that could overwrite memory of lib return value (if free mem pointer wasn't updated).
+    bytes memory postJunk = hex'abcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd';
+
+    // Check whether input passed was modified.
+    assert(keccak256(input) == keccak256(memInput));
+    // Check whether preJunk was overwritten by lib.
+    assert(keccak256(preJunk1) == keccak256(postJunk));
+    assert(keccak256(preJunk2) == keccak256(postJunk));
+    // Whether library read and used preJunk, or whether postJunk overwrote return value, can be detected by comparison with correct result.
+    assert(keccak256(outputA) == keccak256(outputB));
+}
+```
+
+By adding junk around the input in memory, we can check whether the slice function tried reading the input from the wrong memory address. If there's a case where this happens, the junk will likely influence the output value of the library, which will be detected by the original assertion. Whether the library overwrote the passed input byte array (or any of the junk around it), can also be easily covered with a few more assertions.
+
+Lastly, we can check whether there's a case when the library does not properly increase the Free Memory Pointer for the return value. This can be done by simply setting a new byte array after we got the output - if the pointer wasn't increased, the library's output should be overwritten by junk.
+
+Although this won't make cases fail where the slice function makes unnecessary reads or writes that don't influence the output (but waste gas), it should at least detect the most critical errors made when assembly is used.
+
+Here's how the same call should look in memory with these changes:
+
+```plaintext
+╔══════════════╤══════════════════════════════════════════════════════════════════╗
+║ address      │ 32-byte memory "slots"                                           ║
+╟──────────────┼──────────────────────────────────────────────────────────────────╢
+║ from    0x00 │ 0000000000000000000000000000000000000000000000000000000000000000 ║ // Solidity's "Scratch Space"
+║ until   0x3f │ 0000000000000000000000000000000000000000000000000000000000000000 ║
+╟──────────────┼──────────────────────────────────────────────────────────────────╢
+║ 0x40 to 0x5f │ 0000000000000000000000000000000000000000000000000000000000000??? ║ // Solidity's "Free Memory Pointer"
+╟──────────────┼──────────────────────────────────────────────────────────────────╢
+║ 0x60 to 0x7f │ 0000000000000000000000000000000000000000000000000000000000000000 ║ // Solidity's "Zero Slot"
+╟──────────────┼──────────────────────────────────────────────────────────────────╢
+║ ...          │ ...                                                              ║
+╟──────────────┼──────────────────────────────────────────────────────────────────╢
+║              │ 0000000000000000000000000000000000000000000000000000000000000002 ║ // outputA's length
+║              │ 0b43000000000000000000000000000000000000000000000000000000000000 ║ // outputA's value
+║              │ 0000000000000000000000000000000000000000000000000000000000000020 ║ // preJunk1's length
+║              │ abcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd ║ // preJunk1's value
+║              │ 0000000000000000000000000000000000000000000000000000000000000004 ║ // input's length
+║              │ f00b433400000000000000000000000000000000000000000000000000000000 ║ // input's value
+║              │ 0000000000000000000000000000000000000000000000000000000000000020 ║ // preJunk2's length
+║              │ abcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd ║ // preJunk2's value
+║              │ 0000000000000000000000000000000000000000000000000000000000000002 ║ // outputB's length
+║              │ 0b43000000000000000000000000000000000000000000000000000000000000 ║ // outputB's value
+║              │ 0000000000000000000000000000000000000000000000000000000000000020 ║ // postJunk's length
+║              │ abcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd ║ // postJunk's value
+╚══════════════╧══════════════════════════════════════════════════════════════════╝
+```
+
+You can notice that because of the byte array lengths, the input isn't actually immediately surrounded by junk as you might have expected. But at least when checking for issues that overwrote the memory that shouldn't be much of a concern, since a changed length will also mean a changed keccak256-hash of that variable. But if you want the junk to be as close as possible you can, instead of putting it into `bytes`, put it into a struct that has a `bytes32` property (which has no length prefix in memory).
+
+## Conclusion
+
+There's still more that we can extend the testcase with to add even deeper memory checks, but many of these will require assembly as well and that'd be a bit much for a single article. As an exercise in that regard, you can check out the [full example testcase](https://github.com/patrickd-/solidity-fuzzing-boilerplate/blob/main/src/test/example/BytesLib.sol#L31-L39) that adds a check for memory pollution of the library's output.

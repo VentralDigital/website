@@ -1,0 +1,180 @@
+# More EVM Puzzles - Part 3
+
+<p className="text-xs text-right">June 6, 2022 by [patrickd](/about#patrickd)</p>
+
+This continues the series on [Dalton Sweeney](https://twitter.com/DaltonSweeney9)'s ["10 more EVM puzzles"](https://github.com/daltyboy11/more-evm-puzzles) collection. If this is all new to you, you should probably check out [Part 1](/posts/2022/5/24/more-evm-puzzles-part-1) first.
+
+
+## Puzzle #5
+
+```plaintext
+00      6020      PUSH1 20
+02      36        CALLDATASIZE
+03      11        GT
+04      6008      PUSH1 08
+06      57        JUMPI
+07      FD        REVERT
+08      5B        JUMPDEST
+09      36        CALLDATASIZE
+0A      6000      PUSH1 00
+0C      6000      PUSH1 00
+0E      37        CALLDATACOPY
+0F      36        CALLDATASIZE
+10      59        MSIZE
+11      03        SUB
+12      6003      PUSH1 03
+14      14        EQ
+15      6019      PUSH1 19
+17      57        JUMPI
+18      FD        REVERT
+19      5B        JUMPDEST
+1A      00        STOP
+
+? Enter the calldata:
+```
+
+This one starts easy: The calldata we send must be longer than 32 (`0x20`) bytes for the first `JUMPI` to succeed. Then all of the calldata is copied to memory at offset `0x0`. Then `CALLDATASIZE` is subtracted from `MSIZE` and the result of this subtraction must be 3 for the final jump to succeed as well.
+
+[evm.codes](https://www.evm.codes/#59) tells us that `MSIZE` returns "the size of active memory in bytes". But there's an important detail: "The size is always a multiple of a word (32 bytes)". So even if we only sent 33 bytes as calldata which were copied to memory, `MSIZE` would instead return 64 as value.
+
+This also means the solution is quite simple: Sending 61 bytes will yield a difference of 3 from the subtraction and is also of a greater size than 32 to make the first jump.
+
+```
+? Enter the calldata: 0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+
+Puzzle solved!
+```
+
+Knowing this little fact on how memory expansion works in the EVM made solving this puzzle quite easy.
+
+
+## Puzzle #6
+
+```plaintext
+00      7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF0      PUSH32 FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF0
+21      34                                                                      CALLVALUE
+22      01                                                                      ADD
+23      6001                                                                    PUSH1 01
+25      14                                                                      EQ
+26      602A                                                                    PUSH1 2A
+28      57                                                                      JUMPI
+29      FD                                                                      REVERT
+2A      5B                                                                      JUMPDEST
+2B      00                                                                      STOP
+
+? Enter the value to send:
+```
+
+Seems like the "gimmick" on this one is integer overflows. Right at the beginning, a really large number is pushed onto the stack, so large in fact that just adding 16 will make it overflow and flip to 0. But for the jump condition to succeed it needs to be a 1 - so we need to send 17!
+
+```
+? Enter the value to send: 17
+
+Puzzle solved!
+```
+
+
+## Puzzle #7
+
+```plaintext
+00      5A        GAS
+01      34        CALLVALUE
+02      5B        JUMPDEST
+03      6001      PUSH1 01
+05      90        SWAP1
+06      03        SUB
+07      80        DUP1
+08      6000      PUSH1 00
+0A      14        EQ
+0B      6011      PUSH1 11
+0D      57        JUMPI
+0E      6002      PUSH1 02
+10      56        JUMP
+11      5B        JUMPDEST
+12      5A        GAS
+13      90        SWAP1
+14      91        SWAP2
+15      03        SUB
+16      60A6      PUSH1 A6
+18      14        EQ
+19      601D      PUSH1 1D
+1B      57        JUMPI
+1C      FD        REVERT
+1D      5B        JUMPDEST
+1E      00        STOP
+
+? Enter the value to send:
+```
+
+This one's got a loop! Right after pushing the initial amount of `GAS` onto the stack, we enter the first loop:
+
+
+```plaintext
+# It gets the call value and subtracts 1 from it.
+01      34        CALLVALUE
+02      5B        JUMPDEST
+03      6001      PUSH1 01
+05      90        SWAP1
+06      03        SUB
+# It duplicates the result of the subtraction for the next loop round (instead of using call value again).
+07      80        DUP1
+# If the result of the subtraction was zero we exit the loop.
+08      6000      PUSH1 00
+0A      14        EQ
+0B      6011      PUSH1 11
+0D      57        JUMPI
+# If not, we keep looping.
+0E      6002      PUSH1 02
+10      56        JUMP
+```
+
+If we'd send a value of 0 it would end up looping until it runs out of gas, because the integer will underflow resulting in the largest possible number to count down from. But as long as we send any value that ensures we have enough gas left at the end of the loop, we should be fine. If we'd for example send a 1 as a value, the result of the subtraction would immediately yield a 0 and it would never loop to begin with. Sending a 2 would loop exactly once and then exit, and so on..
+
+```plaintext
+00      5A        GAS            [initialGas]
+...                              [0, initialGas]
+12      5A        GAS            [gasAfterLoop, 0, initialGas]
+13      90        SWAP1          [0, gasAfterLoop, initialGas]
+14      91        SWAP2          [initialGas, gasAfterLoop, 0]
+15      03        SUB            [initialGas-gasAfterLoop, 0]
+16      60A6      PUSH1 A6       [0xa6, initialGas-gasAfterLoop, 0]
+18      14        EQ             [0xa6==initialGas-gasAfterLoop, 0]
+19      601D      PUSH1 1D       [0x1d, 0xa6==initialGas-gasAfterLoop, 0]
+1B      57        JUMPI          [0]
+1C      FD        REVERT
+1D      5B        JUMPDEST       [0]
+1E      00        STOP           [0]
+```
+
+Immediately after the loop it pushes the now still left gas onto the stack again. You can also see that the final value from the loop, which will always be 0, is still left on the stack even though it's never used again, which is why there are a bunch of confusing swaps happening. But all that's actually being done here is determining the gas that was consumed during the loop by subtracting the second `GAS` instruction's value from the first one. The result of this subtraction is then compared with `0xA6`, or 166 in decimal.
+
+In summary: We have to send a transaction `value` that'll cause the loop to consume exactly 166 gas.
+
+```plaintext
+00      5A        GAS           2gas  │
+01      34        CALLVALUE     2gas  │
+02      5B        JUMPDEST      1gas  ┢━<━┓
+03      6001      PUSH1 01      3gas  ┃   ┃
+05      90        SWAP1         3gas  ┃   ┃
+06      03        SUB           3gas  ┃   ┃
+07      80        DUP1          3gas  ┃   ┃
+08      6000      PUSH1 00      3gas  ┃   ┃
+0A      14        EQ            3gas  ┃   ┃
+0B      6011      PUSH1 11      3gas  ┃   ┃
+0D      57        JUMPI        10gas  ┠──────┐
+0E      6002      PUSH1 02      3gas  ┃   ┃  │
+10      56        JUMP          8gas  ┗━>━┛  │
+11      5B        JUMPDEST      1gas  <──────┘
+```
+
+The instructions around the loop will consume 5gas while a normal loop execution will cost 43gas. The final loop skips a few instructions, pricing it at 32gas.
+
+So what we have to determine is the `CALLVALUE` we have to send for `5 + 43*(CALLVALUE-1) + 32 = 166`, which is 4.
+
+```
+? Enter the value to send: 4
+
+Puzzle solved!
+```
+
+It should be noted though that gas prices for instructions aren't completely fixed. Their cost might change in the future which would likely break this puzzle.

@@ -3,5 +3,40 @@
     "title": "Part #1: Setup And Challenges 1 To 4",
     "href": "/posts/2021/11/13/damn-vulnerable-defi-v2-part-1-setup-and-challenges-1-to-4/",
     "newWindow": false
+  },
+  "damn-vulnerable-defi-v2-5-the-rewarder": {
+    "title": "#5 The Rewarder",
+    "href": "/posts/2021/12/1/damn-vulnerable-defi-v2-5-the-rewarder/",
+    "newWindow": false
+  },
+  "damn-vulnerable-defi-v2-6-selfie": {
+    "title": "#6 Selfie",
+    "href": "/posts/2022/2/21/damn-vulnerable-defi-v2-6-selfie/",
+    "newWindow": false
+  },
+  "damn-vulnerable-defi-v2-7-compromised": {
+    "title": "#7 Compromised",
+    "href": "/posts/2022/2/22/damn-vulnerable-defi-v2-7-compromised/",
+    "newWindow": false
+  },
+  "damn-vulnerable-defi-v2-8-puppet": {
+    "title": "#8 Puppet",
+    "href": "/posts/2022/2/23/damn-vulnerable-defi-v2-8-puppet/",
+    "newWindow": false
+  },
+  "damn-vulnerable-defi-v2-9-puppet-v2": {
+    "title": "#9 Puppet V2",
+    "href": "/posts/2022/2/28/damn-vulnerable-defi-v2-9-puppet-v2/",
+    "newWindow": false
+  },
+  "damn-vulnerable-defi-v2-10-free-rider": {
+    "title": "#10 Free Rider",
+    "href": "/posts/2022/3/2/damn-vulnerable-defi-v2-10-free-rider/",
+    "newWindow": false
+  },
+  "damn-vulnerable-defi-v2-11-backdoor": {
+    "title": "#11 Backdoor",
+    "href": "/posts/2022/6/28/damn-vulnerable-defi-v2-11-backdoor/",
+    "newWindow": false
   }
 }

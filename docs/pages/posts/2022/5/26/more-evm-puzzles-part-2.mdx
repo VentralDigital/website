@@ -1,0 +1,157 @@
+# More EVM Puzzles - Part 2
+
+<p className="text-xs text-right">May 26, 2022 by [patrickd](/about#patrickd)</p>
+
+This continues the series on [Dalton Sweeney](https://twitter.com/DaltonSweeney9)'s ["10 more EVM puzzles"](https://github.com/daltyboy11/more-evm-puzzles) collection. If you haven't read it yet, you should probably check out [Part 1](/posts/2022/5/24/more-evm-puzzles-part-1) first.
+
+## Puzzle #3
+
+```plaintext
+00      36        CALLDATASIZE
+01      6000      PUSH1 00
+03      6000      PUSH1 00
+05      37        CALLDATACOPY
+06      36        CALLDATASIZE
+07      6000      PUSH1 00
+09      6000      PUSH1 00
+0B      F0        CREATE
+0C      6000      PUSH1 00
+0E      80        DUP1
+0F      80        DUP1
+10      80        DUP1
+11      93        SWAP4
+12      5A        GAS
+13      F4        DELEGATECALL
+14      6005      PUSH1 05
+16      54        SLOAD
+17      60AA      PUSH1 AA
+19      14        EQ
+1A      601E      PUSH1 1E
+1C      57        JUMPI
+1D      FE        INVALID
+1E      5B        JUMPDEST
+1F      00        STOP
+
+? Enter the calldata:
+```
+
+Just like in the previous puzzle, there's only one `JUMPDEST` we have to reach located at offset `0x1E` and all we have to make sure to get there is, that the `EQ` comparison before the `JUMP` succeeds.
+
+This is actually the first time that storage is touched during these puzzles: `SLOAD` will consume one item from the stack as "key" and push the "value" it found there to stack. It's a simple read operation from a key-value store.
+
+We can see that the jump-condition can be written as: `SLOAD(0x05) == 0xAA`, basically we have to make sure that the value for the storage key `0x05` equals `0xAA`. There's no `SSTORE` opcode writing to storage though, but there is a `DELEGATECALL`, meaning that we can run code of another smart contract on our context, which includes storage.
+
+The entire first part of the bytecode before the `CREATE` opcode is the same as before, so we'll again be able to deploy a contract via the calldata we send. Similarly, the bytecode before the `DELEGATECALL` is almost the same as it was for the `CALL` in the previous puzzle. The only difference is that one less `0x00` is duplicated, because there's no "value" to send here - that wouldn't make sense since any wei we send with the call would end up at the same contract again due to delegation.
+
+In summary: We have to send construction bytecode that returns runtime bytecode of a contract that'll store the value `0xAA` at the key `0x05`. After it was deployed that runtime bytecode will be delegate-called and we'll write to the puzzle's storage instead of the storage of the contract that was deployed. This storage value is then checked and if it was correctly set we'll successfully jump to the end.
+
+#### Runtime Bytecode
+
+```plaintext
+00      60AA      PUSH1 AA        [0xAA]
+02      6005      PUSH1 05        [0x05, 0x0A] (key, value)
+04      55        SSTORE          []
+```
+
+This time we don't actually have to `RETURN` anything, instead we can just `STOP` (which is implicit at the end of bytecode) after writing to storage.
+
+Runtime bytecode: `0x60AA600555`
+
+#### Construction Bytecode
+
+```plaintext
+00      6460AA600555      PUSH5 60AA600555        [0x60AA600555]
+06      6000              PUSH1 00                [0x0, 0x60AA600555] (offset, value)
+08      52                MSTORE                  []
+00      600A              PUSH1 0A                [0x0A]
+02      601B              PUSH1 1B                [0x1B, 0x0A] (offset, size)
+04      F3                RETURN                  []
+```
+
+Like last time, we write the runtime bytecode to memory so we can `RETURN` it during initiation.
+
+Construction Bytecode: `0x6460AA600555600052600A601BF3`
+
+#### Solution
+
+```
+? Enter the calldata: 0x6460AA600555600052600A601BF3
+
+Puzzle solved!
+```
+
+This was relatively easy to solve since we could mostly re-purpose the simple solution from Puzzle #2.
+
+## Puzzle #4
+
+```plaintext
+00      30        ADDRESS
+01      31        BALANCE
+02      36        CALLDATASIZE
+03      6000      PUSH1 00
+05      6000      PUSH1 00
+07      37        CALLDATACOPY
+08      36        CALLDATASIZE
+09      6000      PUSH1 00
+0B      30        ADDRESS
+0C      31        BALANCE
+0D      F0        CREATE
+0E      31        BALANCE
+0F      90        SWAP1
+10      04        DIV
+11      6002      PUSH1 02
+13      14        EQ
+14      6018      PUSH1 18
+16      57        JUMPI
+17      FD        REVERT
+18      5B        JUMPDEST
+19      00        STOP
+
+? Enter the value to send:
+? Enter the calldata:
+```
+
+We can see a new combination of opcodes here: First `ADDRESS` which pushes the puzzle contract's own address onto the stack, and then `BALANCE` which consumes this address and returns the amount of ether the account at said address has, in this case: The puzzle's balance which we can manipulate by sending value when prompted.
+
+Ignoring the first balance that is pushed onto the stack, what follows is the same `CREATE` operation as in the previous puzzles with the only difference that this time the entire puzzle's balance is forwarded to the contract being created.
+
+```plaintext
+00      30        ADDRESS         [AddressOfPuzzle]
+01      31        BALANCE         [BalanceOfPuzzle]
+...                               Balance of Puzzle is sent to new contract...
+0D      F0        CREATE          [AddressOfNewContract, OldBalanceOfPuzzle]
+0E      31        BALANCE         [BalanceOfNewContract, OldBalanceOfPuzzle]
+0F      90        SWAP1           [OldBalanceOfPuzzle, BalanceOfNewContract]
+10      04        DIV             [OldBalanceOfPuzzle//BalanceOfNewContract]
+11      6002      PUSH1 02        [0x02, OldBalanceOfPuzzle//BalanceOfNewContract]
+13      14        EQ              [OldBalanceOfPuzzle//BalanceOfNewContract == 0x02]
+```
+
+Immediately after, the returned address of the newly created contract is then consumed to obtain its balance. The old balance of the puzzle is then integer-divided by the current balance of the new contract and the result of this division must be 2 in order for the jump to happen. But without doing anything the result would currently always be 1.
+
+So to solve this puzzle the construction bytecode we send as calldata has to send away half of its balance. For example, if we send 4 wei to the puzzle, our contract receiving them has to burn 2 wei so that 4//2 == 2. The construction bytecode doesn't have to return any runtime bytecode since that's not necessary for it to simply hold on the the remaining balance.
+
+```plaintext
+0C      6000      PUSH1 00        [0x0]
+0E      80        DUP1            [0x0, 0x0]
+0E      80        DUP1            [0x0, 0x0, 0x0]
+0F      80        DUP1            [0x0, 0x0, 0x0, 0x0]
+0C      6002      PUSH1 02        [2, 0x0, 0x0, 0x0, 0x0]
+11      81        DUP2            [0x0, 2, 0x0, 0x0, 0x0, 0x0]
+13      5A        GAS             [GAS, 0x0, 2, 0x0, 0x0, 0x0, 0x0] (gas, address, value, argsOffset, argsSize, retOffset, retSize)
+00      F1        CALL            []
+07      6000      PUSH1 00        [0x0]
+09      80        DUP1            [0x0, 0x0] (offset, size)
+0B      F3        RETURN          []
+```
+
+The above construction bytecode sends 2 wei to the 0x0 address in order to burn it and then returns nothing as runtime bytecode.
+
+```
+? Enter the value to send: 4
+? Enter the calldata: 0x60008080806002815AF1600080F3
+
+Puzzle solved!
+```
+
+Initially I forgot that the old balance of the puzzle is used. Assuming that it's the current one I thought about having to send some of the balance back to the puzzle. Since sending value with `CALL` would trigger the puzzle's bytecode again though the only way to do that would be deploying another contract that uses `SELFDESTRUCT` to inject value into the puzzle without that happening. Surprised by how convoluted this solution seemed, I later noticed the challenge was actually way easier than that - took me a while though.

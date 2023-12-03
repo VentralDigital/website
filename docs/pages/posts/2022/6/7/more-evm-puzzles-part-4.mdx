@@ -1,0 +1,232 @@
+# More EVM Puzzles - Part 4
+
+<p className="text-xs text-right">June 7, 2022 by [patrickd](/about#patrickd)</p>
+
+This concludes the series on [Dalton Sweeney](https://twitter.com/DaltonSweeney9)'s ["10 more EVM puzzles"](https://github.com/daltyboy11/more-evm-puzzles) collection. If you're looking for the start, take a look at [Part 1](/posts/2022/5/24/more-evm-puzzles-part-1).
+
+## Puzzle #8
+
+```plaintext
+00      34        CALLVALUE
+01      15        ISZERO
+02      19        NOT
+03      6007      PUSH1 07
+05      57        JUMPI
+06      FD        REVERT
+07      5B        JUMPDEST
+08      36        CALLDATASIZE
+09      6000      PUSH1 00
+0B      6000      PUSH1 00
+0D      37        CALLDATACOPY
+0E      36        CALLDATASIZE
+0F      6000      PUSH1 00
+11      6000      PUSH1 00
+13      F0        CREATE
+14      47        SELFBALANCE
+15      6000      PUSH1 00
+17      6000      PUSH1 00
+19      6000      PUSH1 00
+1B      6000      PUSH1 00
+1D      47        SELFBALANCE
+1E      86        DUP7
+1F      5A        GAS
+20      F1        CALL
+21      6001      PUSH1 01
+23      14        EQ
+24      6028      PUSH1 28
+26      57        JUMPI
+27      FD        REVERT
+28      5B        JUMPDEST
+29      47        SELFBALANCE
+2A      14        EQ
+2B      602F      PUSH1 2F
+2D      57        JUMPI
+2E      FD        REVERT
+2F      5B        JUMPDEST
+30      00        STOP
+
+? Enter the calldata: 0x
+
+Puzzle solved!
+```
+
+Yes, that's right, I solved it immediately without reading by simply pressing enter on accident. What the heck just happened here?
+
+```plaintext
+00      34        CALLVALUE        [0]
+01      15        ISZERO           [1]
+02      19        NOT              [0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe]
+03      6007      PUSH1 07         [0x07, 0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe]
+05      57        JUMPI            []
+06      FD        REVERT
+07      5B        JUMPDEST         []
+```
+
+Right at the start it checks whether the call value sent is zero, which is strange since we were never given a chance to specify it.. Anyway, the result of this check is then inverted with `NOT`. Note that inverting a number 1 of type uint256 flips all of its bits, that means it doesn't turn into 0 but into the biggest number possible minus one. Since `JUMPI` jumps for any value different from 0, it would've jumped no matter which value we'd have sent since any non-zero value would have resulted in `0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff` after the inversion. So it seems we can just completely ignore this part...
+
+```plaintext
+08      36        CALLDATASIZE     [0]
+09      6000      PUSH1 00         [0, 0]
+0B      6000      PUSH1 00         [0, 0, 0] (destOffset, offset, size)
+0D      37        CALLDATACOPY     []
+0E      36        CALLDATASIZE     [0]
+0F      6000      PUSH1 00         [0, 0]
+11      6000      PUSH1 00         [0, 0, 0] (value, offset, size)
+13      F0        CREATE           [ADDRESS]
+14      47        SELFBALANCE      [0, ADDRESS]
+15      6000      PUSH1 00         [0, 0, ADDRESS]
+17      6000      PUSH1 00         [0, 0, 0, ADDRESS]
+19      6000      PUSH1 00         [0, 0, 0, 0, ADDRESS]
+1B      6000      PUSH1 00         [0, 0, 0, 0, 0, ADDRESS]
+1D      47        SELFBALANCE      [0, 0, 0, 0, 0, 0, ADDRESS]
+1E      86        DUP7             [ADDRESS, 0, 0, 0, 0, 0, 0, ADDRESS]
+1F      5A        GAS              [GAS, ADDRESS, 0, 0, 0, 0, 0, 0, ADDRESS] (gas, address, value, argsOffset, argsSize, retOffset, retSize)
+20      F1        CALL             [SUCCESS, 0, ADDRESS]
+21      6001      PUSH1 01         [1, SUCCESS, 0, ADDRESS]
+23      14        EQ               [1, 0, ADDRESS]
+24      6028      PUSH1 28         [0x28, 1, 0, ADDRESS]
+26      57        JUMPI            [0, ADDRESS]
+27      FD        REVERT
+28      5B        JUMPDEST         [0, ADDRESS]
+```
+
+We sent no calldata but it'll still attempt copying it to memory here. Then it'll deploy that empty calldata as initialization bytecode which doesn't return anything, so basically we're successfully deploying an empty contract. This contract is then immediately called. The puzzle obtains its own account balance using the `SELFBALANCE` opcode which is used for the first time here, and it would send all of this balance during the call if it had any. As things stand, this is a call made against an address that contains empty bytecode and the call succeeds. You shouldn't be surprised by that, after all we already know that we don't have to write `STOP` at the end of a contract. So an empty contract is just like a contract that has a single `STOP` instruction.
+
+Furthermore, we can even send invalid calldata that'll result in the `CREATE` opcode to fail and return the zero-address. Calls made to the zero-address will also succeed without reverting since it too has empty bytecode, like any uninitialized address. It's actually harder to fail this puzzle than to win it since we'd have to make the call fail by deploying runtime bytecode that'll revert.
+
+```plaintext
+29      47        SELFBALANCE      [0, 0, ADDRESS]
+2A      14        EQ               [1, ADDRESS]
+2B      602F      PUSH1 2F         [0x2F, 1, ADDRESS]
+2D      57        JUMPI            [ADDRESS]
+2E      FD        REVERT
+2F      5B        JUMPDEST         [ADDRESS]
+30      00        STOP             [ADDRESS]
+```
+
+Finally, it checks whether the `SELFBALANCE` after the successful call is the same as the balance was before the call.
+
+So what was actually supposed to happen here? I think the first part was supposed to ensure that value must have been sent to the puzzle. Then all of this value would have been sent to the contract created using the specified calldata. This contract would have needed to send all of this value back to the puzzle contract to pass the final check. But it wouldn't have been able to do that via the `CALL` opcode since that would execute the puzzle code again which would send it away to another contract it created. Instead, the contract we created via calldata would've had to use the `SELFDESTRUCT` opcode to inject the value back into the puzzle during the call.
+
+The key takeaway here is that although uint256 are used as booleans by the EVM (0 is false, non-0 is true) doesn't mean that inverting it via `NOT` opcode will result in flipping the boolean, rather than that it'll flip every single byte in the uint256, and that is something that can be easily missed!
+
+## Puzzle #9
+
+```plaintext
+00      34        CALLVALUE
+01      6000      PUSH1 00
+03      52        MSTORE
+04      6020      PUSH1 20
+06      6000      PUSH1 00
+08      20        SHA3
+09      60F8      PUSH1 F8
+0B      1C        SHR
+0C      60A8      PUSH1 A8
+0E      14        EQ
+0F      6016      PUSH1 16
+11      57        JUMPI
+12      FD        REVERT
+13      FD        REVERT
+14      FD        REVERT
+15      FD        REVERT
+16      5B        JUMPDEST
+17      00        STOP
+
+? Enter the value to send:
+```
+
+Right away, we're storing the `CALLVALUE` we send to offset `0x0` in memory. Then 2 new opcodes are introduced:
+
+You've probably heard about `SHA3` before. It's a one-way hashing algorithm, the EVM makes this algorithm available to us via this instruction and passes it the data to hash via memory. Two items will be consumed from stack: The "offset" specifying where it should begin hashing the data and the "size" telling it when to stop. The resulting 256 bit long hash will be pushed as a new item onto the stack. Here, we'll always be hashing the first memory slot, which are the first 32 bytes (`0x20`).
+
+The `SHR` opcode stands for SHift Right, and that's exactly what it does on the bit level. It too consumes two items from the stack: The number of times to shift right and the value that should be shifted. For example, if the first item would be a 2 and the second a 17 (`00010001`), the result would be 4 (`00000100`). In case of this puzzle, we're always shifting 248 (`0xF8`) times and the value being shifted is the SHA-3 hash that was calculated just before.
+
+In case of the stack, we're shifting a value with 256 bits though: `256 - 248` is 8, and that means that everything except the first byte (most-left, or highest order) of the hash is shifted into nothingness. Finally the usual comparison and jump: Only if this byte is equal to `0xA8` the puzzle is solved!
+
+In summary: We need to find an integer value to send whose hash starts with `0xA8`.
+
+Since hashing algorithms are one-way functions, there's no way to say which values will produce it without guessing. Luckily it's only about the first byte, and that should be pretty easy to stumble upon even when just continuously increasing the value by one.
+
+So what's the laziest way to do this? A shellscript! Don't judge me, it works and it only took me a couple minutes:
+
+```bash
+#!/bin/bash
+COUNTER=1
+rm solutions/solution_9.json
+while [ $? == 1 ]
+do
+     printf "$COUNTER\nn\n" | npx hardhat play
+     COUNTER=$[$COUNTER +1]
+     rm solutions/solution_9.json
+done
+```
+
+Granted, it's not performant what so ever, but I didn't expect it to be a high number anyway, and it wasn't. It was 47, which is `0xa813484aef6fb598f9f753daf162068ff39ccea4075cb95e1a30f86995b5b7ee` and `0x00000000000000000000000000000000000000000000000000000000000000a8` after being shifted right.
+
+```
+? Enter the value to send: 47
+
+Puzzle solved!
+```
+
+
+## Puzzle #10
+
+```plaintext
+00      6020                                                                    PUSH1 20
+02      6000                                                                    PUSH1 00
+04      6000                                                                    PUSH1 00
+06      37                                                                      CALLDATACOPY
+07      6000                                                                    PUSH1 00
+09      51                                                                      MLOAD
+0A      7FF0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0      PUSH32 F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0
+2B      16                                                                      AND
+2C      6020                                                                    PUSH1 20
+2E      6020                                                                    PUSH1 20
+30      6000                                                                    PUSH1 00
+32      37                                                                      CALLDATACOPY
+33      6000                                                                    PUSH1 00
+35      51                                                                      MLOAD
+36      17                                                                      OR
+37      7FABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB      PUSH32 ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB
+58      14                                                                      EQ
+59      605D                                                                    PUSH1 5D
+5B      57                                                                      JUMPI
+5C      FD                                                                      REVERT
+5D      5B                                                                      JUMPDEST
+5E      00                                                                      STOP
+
+? Enter the calldata:
+```
+
+Right at the beginning, the first 32 bytes (`0x20`) from calldata are copied to the first memory slot, where it's immediately read from again using `MLOAD`. Afterwards, a bitwise `AND` is applied to it with `0xF0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0`. This means that only the upper 4 bits of each byte from the first 32 bytes we sent as calldata are still there. The lower 4 bits have been "masked" out and the result is left on the top of the stack.
+
+The next 32 bytes from calldata are now copied to memory overwriting the first ones. This word of bytes is again loaded onto stack like before with `MLOAD` and then `OR`ed with the result of the `AND` operation. The `JUMPI` condition to solve the puzzle is that the result of these operations ends up being equal to `0xABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB`.
+
+If we call the first word from calldata A and the second word B, the following is the "formula" we have to solve here:
+
+```
+(A & 0xF0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0) | B = 0xABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB
+```
+
+If we send zeros for A the result of the `AND` operation will be a zero-word too. That way we can discard A completely and just send the end result as B:
+
+```
+0x0000000000000000000000000000000000000000000000000000000000000000 | B = 0xABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB
+```
+
+Putting the words together as a single calldata, this is indeed a solution:
+
+```
+? Enter the calldata: 0x0000000000000000000000000000000000000000000000000000000000000000ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB
+
+Puzzle solved!
+```
+
+But bit-masking is an interesting thing to understand: If we had sent `0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA` as A, it would've ended up as `0xA0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0` after the `AND` operation masked out the lower bits. Then we could've sent `0x0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B` as B which, `OR`ed with A, would've produced the desired result too:
+
+```
+? Enter the calldata: 0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B
+
+Puzzle solved!
+```

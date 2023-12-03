@@ -1,0 +1,511 @@
+# Secureum Bootcamp CARE: Sushi's BentoBox Strategies
+
+<p className="text-xs text-right">February 10, 2022 by [patrickd](/about#patrickd)</p>
+
+This report is the result of [Secureum Bootcamp's Epoch 0, second phase](https://secureum.substack.com/p/secureum-bootcamp-for-smart-contract), CARE (Comprehensive Audit Readiness Evaluation) which is intended as a way to improve a project's security stance in preparation for an Audit, allowing Auditors to spend more time looking for critical issues. As such, this review centers mostly around the [Security 201 Pitfalls](https://secureum.substack.com/p/security-pitfalls-and-best-practices-101) & [Best Practices](https://secureum.substack.com/p/security-pitfalls-and-best-practices-201) that were taught during the Bootcamp. Despite that, and the fact that the review is done by me alone, this is still a best-effort approach to find as many issues beyond that as possible.
+
+---
+
+## Scope
+
+Focus of this review are [BentoBox](https://github.com/sushiswap/bentobox/) [Strategy](https://github.com/sushiswap/bentobox-strategies) contracts belonging to the [Sushi/SushiSwap ecosystem](https://github.com/sushiswap), of the commit hash [`be407e27cd1a9ca8060ef9a389d1cf01b4e5540e`](https://github.com/sushiswap/bentobox-strategies/commit/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e):
+
+* [`contracts/BaseStrategy.sol`](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/BaseStrategy.sol)
+* [`contracts/strategies/AaveStrategy.sol`](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/strategies/AaveStrategy.sol)
+
+The following additional information was provided:
+
+> Knowledge of how BentoBox interacts with the strategies is crucial for understanding the bentobox-strategies. Pay special attention to the BentoBox “harvest” and “setStrategy” methods.
+>
+> **Tests and Utilities:**
+> Set up a .env file and include an alchemy API key. (note: the block number used for forks might have to be updated if there is no access to an archive node).
+>
+> **Key risks:**
+> * Ensure Base strategy does not misreport profit or losses to BentoBox.
+> * Ensure no loss of funds can happen from external actors.
+> * Ensure BentoBox can always swap a strategy for a new one (‘strategy.exit()’ call should never fail)
+> * Ensure the Aave strategy correctly deposits and withdrawals from the Aave lending platform.
+
+---
+
+## Timeline
+
+The review was conducted in **December 2021** over a period of two weeks, from Monday the 6th until Friday the 17th. In the first week, the focus was on gaining a general understanding of the BentoBox project and the Sushi ecosystem from reading documentation, blog posts and exploring the codebase. After checking for 201 Secureum Security Pitfalls & Best Practices on contracts in scope, analyzers such as [Slither v0.8.2](https://github.com/crytic/slither/releases/tag/0.8.2), [MythX](https://mythx.io/), and [smartdec's SmartCheck](https://github.com/smartdec/smartcheck) were run. The second week was focused on manual review for the above-mentioned Key Risks and finished by setting up fuzzable properties for them in [Echidna](https://github.com/crytic/echidna).
+
+---
+
+## Findings
+
+| Count | Severity                  | Description |
+|-------|---------------------------|-------------|
+| 0     | <span s={4}>`Critical`</span> | Directly exploitable security vulnerabilities that need to be fixed.
+| 1     | <span s={3}>`Major`</span>    | Security vulnerabilities that may not be directly exploitable or may require certain conditions in order to be exploited. All major issues should be addressed. |
+| 5     | <span s={2}>`Medium`</span>   | Objective in nature but are not security vulnerabilities. Should be addressed unless there is a clear reason not to. |
+| 11    | <span s={1}>`Minor`</span>    | Subjective in nature. They are typically suggestions around best practices or readability. Code maintainers should use their own judgment as to whether to address such issues. |
+
+
+Before publishing the report, the code was roughly checked for whether and which issues have been addressed. Those findings have been marked as <span s={0}>`FIXED`</span> fixed when sufficient mitigation was found.
+
+---
+
+### <a id="maj-1" href="#maj-1"><span s={3}>`#1 Major`</span></a>: Utility function enables privilege escalation/abuse
+
+Identified during manual review. Related checklist items would be **160. Trusted actors**, **161. Privileged roles and EOAs** and **181. Trust issues** of [Security Pitfalls & Best Practices 201](https://secureum.substack.com/p/security-pitfalls-and-best-practices-201).
+
+#### Description
+
+Governance of the BentoBox contract and its Strategies is, [according to documentation](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/BaseStrategy.sol#L15), under control of the [Sushi Operations MultiSig](https://docs.sushi.com/governance/current-governance-model), which requires at least 3 signatures for a change to pass.
+
+This is rather centralized and requires some trust of the users in the Ops Team. To restrict the powers of the operations team, some measures were taken such as the 2-weeks-delay when setting new Strategies ([`STRATEGY_DELAY`](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/bentobox/BentoBoxV1.sol#L709)) allowing the Sushi community to review Strategies before they take effect. There's also the [`BaseStrategy.afterExit()`](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/BaseStrategy.sol#L254-L263) function that allows powerful arbitrary calls to be made for the purposes of rescuing funds, but it can only be used once the Strategy has been exited and all funds have been withdrawn from the Strategy.
+
+The utility function [`swapExactTokensForUnderlying()`](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/BaseStrategy.sol#L283) introduced by the abstract BaseStrategy contract allows bypassing these measures and will affect all Strategy implementations inheriting it. The requirement of the exploit scenario is that either the Ops MultiSig Wallet has been compromised or that at least 3 bad actors within the Operations Team collude.
+
+#### Exploit Scenario
+
+1. Ops MultiSig (OMS) calls [`BentoBox.setStrategy()`](https://github.com/sushiswap/bentobox/blob/master/contracts/BentoBox.sol#L419) in order to replace the current AaveStrategy with a new Strategy, waits for the 2-week-delay to pass, but does not call it again yet for the Strategy-change to take effect.
+1. OMS adds a new path via [`BaseStrategy.setAllowedPath()`](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/BaseStrategy.sol#L269) allowing swapping of aTokens to WETH (or any other asset that is not the invested [`strategyToken`](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/BaseStrategy.sol#L21) itself).
+1. OMS adds an Executor it has full control over via [`BaseStrategy.setStrategyExecutor()`](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/BaseStrategy.sol#L136), if one isn't already under control of OMS.
+1. OMS uses Executor and calls [`BaseStrategy.swapExactTokensForUnderlying()`](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/BaseStrategy.sol#L283) to swap all aTokens with newly added swapping path.
+1. OMS now calls [`BentoBox.setStrategy()`](https://github.com/sushiswap/bentobox/blob/master/contracts/BentoBox.sol#L419) again for the Strategy-change to take effect, which makes BentoBox call [`BaseStrategy.exit()`](https://github.com/sushiswap/bentobox/blob/master/contracts/BentoBox.sol#L431).
+1. Exit appears to have succeeded, but all of the Strategy's funds are still in the Strategy contract.
+1. OMS is now able to do arbitrary calls via [`BentoBox.afterExit()`](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/BaseStrategy.sol#L254), allowing all of the Strategy funds to be stolen.
+
+The impact of this scenario can further be increased by raising the Strategy target percentage (via [`setStrategyTargetPercentage()`](https://github.com/sushiswap/bentobox/blob/master/contracts/BentoBox.sol#L400)) to 95% ([`MAX_TARGET_PERCENTAGE`](https://github.com/sushiswap/bentobox/blob/master/contracts/BentoBox.sol#L81)) of the BentoBox's funds and rebalancing them into the active Strategy (using [`harvest(token, true, 0)`](https://github.com/sushiswap/bentobox/blob/master/contracts/BentoBox.sol#L463)).
+
+#### Recommendation
+
+To prevent this specific exploit scenario, ensure that all swap paths must end with the [`strategyToken`](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/BaseStrategy.sol#L21) to be valid. This should ensure that when swapping happens with Strategy funds, they will be withdrawn by BentoBox when the Strategy is exited. That way the powers of the Sushi Operations MultiSig should again be appropriately restricted, at least within expectations.
+
+---
+
+### <a id="med-1" href="#med-1"><span s={2}>`#1 Medium`</span><span s={0}>`FIXED`</span></a>: `setAllowedPath()` incorrectly logs array length instead of index
+
+Identified during manual review. A possible corresponding checklist item would be **173. Auditing/logging issues** of [Security Pitfalls & Best Practices 201](https://secureum.substack.com/p/security-pitfalls-and-best-practices-201).
+
+#### Description
+
+The `LogSetAllowedPath` event logs the `pathId` which is the index of a path within the `_allowedSwapPaths` array:
+
+[**contracts/BaseStrategy.sol#L43**](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/BaseStrategy.sol#L43)
+```solidity
+event LogSetAllowedPath(uint256 indexed pathId, bool allowed);
+```
+
+The `setAllowedPath()` function incorrectly logs the array length after a new path was added instead of the index of the new path:
+
+[**contracts/BaseStrategy.sol#L269-L272**](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/BaseStrategy.sol#L269-L272)
+```solidity
+function setAllowedPath(address[] calldata path) external onlyOwner {
+    _allowedSwapPaths.push(path);
+    emit LogSetAllowedPath(_allowedSwapPaths.length, true);
+}
+```
+
+Incorrect logging of the `pathId` could cause wrong assumptions for the operations team (owner) when maintaining the `_allowedSwapPaths` array contents. It could for example lead to an incorrect path being disabled via `disallowPath()`.
+
+#### Recommendation
+
+Correctly log the index as `pathId` instead, for example, by calculating `_allowedSwapPaths.length - 1`.
+
+#### Resolution
+
+Allowed swap path logic has been changed and the `LogSetAllowedPath` event does no longer exist.
+
+---
+
+### <a id="med-2" href="#med-2"><span s={2}>`#2 Medium`</span></a>: Unclear, possibly incorrect, Access Control
+
+Identified during manual review. The corresponding checklist items would be **148. Access control specification**, possibly also **4. Incorrect access control** and **150 Missing modifiers** of [Security Pitfalls & Best Practices 101](https://secureum.substack.com/p/security-pitfalls-and-best-practices-101) and [Security Pitfalls & Best Practices 201](https://secureum.substack.com/p/security-pitfalls-and-best-practices-201).
+
+#### Description
+
+There's no specification regarding Access Control, the system actors, and the actions they are allowed to take. This forces Auditors to infer intention from the implementation making it difficult to distinguish between oversight and a purposeful choice.
+
+An example of this issue would be the [`BaseStrategy.skim()`](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/BaseStrategy.sol#L142-L144) function, which has no access control at all, allowing any external actors to trigger the investment of funds, even if the caller isn't the BentoBox contract or even when the strategy was already exited and is therefore considered inactive:
+
+[**contracts/BaseStrategy.sol#L142-L144**](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/BaseStrategy.sol#L142-L144)
+```solidity
+function skim(uint256 amount) external override {
+    _skim(amount);
+}
+```
+
+[**contracts/strategies/AaveStrategy.sol#L73-L75**](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/strategies/AaveStrategy.sol#L73-L75)
+```solidity
+function _skim(uint256 amount) internal override {
+    aaveLendingPool.deposit(address(strategyToken), amount, address(this), 0);
+}
+```
+
+While this is not a direct vulnerability that could cause a loss of funds under normal circumstances, I was unable to infer a good reason for this function to lack all of the modifiers similar functions such as `harvest()`, `withdraw()` and `exit()` have.
+
+#### Recommendation
+
+Create an Access control specification that describes how the various system actors, their access control privileges and trust assumptions are intended to be in great detail.
+
+Add appropriate modifiers (most likely `isActive` and `onlyBentoBox`) to the `skim()` function or add inline documentation on why these were skipped on purpose.
+
+---
+
+### <a id="med-3" href="#med-3"><span s={2}>`#3 Medium`</span></a>: Lack of Specification
+
+Identified during manual review. The corresponding checklist item is **136. System specification** of [Security Pitfalls & Best Practices 201](https://secureum.substack.com/p/security-pitfalls-and-best-practices-201).
+
+#### Description
+
+The lack of any specification forces Auditors to infer the intent from the implementation and the context of it being a BentoBox Strategy. In comparison, the [BentoBox contracts](https://github.com/sushiswap/bentobox) have [formal specifications](https://github.com/sushiswap/bentobox/tree/master/spec), validated by the [Certora prover](https://www.certora.com/). The BentoBox repository also contains a [`CompoundStrategy.sol`](https://github.com/sushiswap/bentobox/blob/master/contracts/strategies/CompoundStrategy.sol) implementation with its corresponding specification [compoundStrategy.spec](https://github.com/sushiswap/bentobox/blob/master/spec/compoundStrategy.spec). It's likely that these specifications can be reused for the [github.com/sushiswap/bentobox-strategies](https://github.com/sushiswap/bentobox-strategies) repository with reasonable effort.
+
+#### Recommendation
+
+While it would have been best to create a human-readable specification before the implementation was done, in this case, it would still be beneficial to create a formal specification that can prove, together with automated tests, that the implementation was done correctly and will stay so after future changes.
+
+I would recommend creating a formal specification based on the Certora prover specs already available in the [BentoBox](https://github.com/sushiswap/bentobox) repository.
+
+---
+
+### <a id="med-4" href="#med-4"><span s={2}>`#4 Medium`</span></a>: Lack of Documentation
+
+Identified during manual review. The corresponding checklist items are **137. System documentation** and possibly **188. Clarity issues** of [Security Pitfalls & Best Practices 201](https://secureum.substack.com/p/security-pitfalls-and-best-practices-201).
+
+
+#### Description
+
+The documentation of the contracts in scope currently consists only of their inline comments and a single [README.md](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/README.md) file. While these have decent quality, there's still a lack of higher-level documentation, especially compared to the documentation that the [BentoBox repository](https://github.com/sushiswap/bentobox/) is offering in comparison (eg. on [dev.sushi.com](https://dev.sushi.com/bentobox-1/bentobox-vault)).
+
+Specific examples of a lack of documentation:
+
+* While some instructions on how to run the tests were provided together with the CARE project information, they should have been part of the public documentation in the repository. Additionally, the instructions were insufficient and unclear requiring a lot more setup and investigation until I was finally able to run the tests locally. For example, it is not sufficient to specify an Alchemy API key, a [Infura Key](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/.env.example#L5) was required as well to get them running. And while it is mentioned that the block number used for the fork might need to be adjusted if the user doesn't have a very expensive infura subscription to access mainnet archive data, it is not explained that this needs to be done within the [JavaScript code of the tests](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/test/AaveStrategyMainnet.ts#L43) themselves. These difficulties in combination with the fact that on [GitLab CI the tests are currently failing](https://github.com/sushiswap/bentobox-strategies/runs/4417891520?check_suite_focus=true) as well, does not induce confidence in the testsuite.
+* Whether Aave's V1 or V2 contracts are used is not clearly documented anywhere and requires some research to be determined. Similarly, there's the question of why Uniswap V2 is used instead of the current V3, especially since in the code it is specified as being "[legacy](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/BaseStrategy.sol#L63)".
+* There's also an apparent lack of documentation on how to use and handle the lifecycle of a BentoBox Strategy for Sushi's operations team. Setting and replacing strategies, harvesting rewards properly, handling emergencies, and available ways to attempt the rescue of funds, are all manual steps members of the Ops Team have to understand and apply properly. A lack of clarity on how to handle them can lead to security issues or loss of funds, especially if people in the team, and therefore implicit knowledge, are lost. A specific example would be the fact that Strategies are one-time use, once exited, they can still be set as valid Strategy and they will still be able to receive tokens from BentoBox, but skimming will fail, requiring the use of `afterExit()` to rescue the funds. The fact that Strategies must not be re-used should be clearly documented both for the Ops Team and the community.
+
+#### Recommendation
+
+Additionally to what already exists, write high-level documentation similarly to how it was done for BentoBox.
+
+Specific recommendations for the mentioned examples:
+
+* Create public and more detailed instructions on how tests can be run and explain how to do so while lacking access to costly subscriptions. Consider the introduction of more environment variables that allow easily tweaking test parameters without the need of changing hardcoded constants. Fix the CI pipelines on GitHub and add badges for test success and coverage to the readme file.
+* Document the versions used of all external contracts and libraries, and explain the choice of using versions that are older than what is currently available. Additionally to documenting the commit hash that was used during deployment in the readme, also document the configuration values that were passed to the constructor during deployment and link them to the appropriate transaction on etherscan.
+* Create public, playbook-like documentation for the Sushi Ops Team to ensure that even after a long time or after the team was replaced by new members, knowledge on the maintenance and incident handling for BentoBox Strategies isn't forgotten and can be made use of without requiring long investigations. Especially during emergency-like situations, where time is of the essence to save funds, this will likely prove useful.
+
+---
+
+### <a id="med-5" href="#med-5"><span s={2}>`#5 Medium`</span></a>: Lack of Test Coverage
+
+Identified during manual review. The corresponding checklist item is **155. Tests** of [Security Pitfalls & Best Practices 201](https://secureum.substack.com/p/security-pitfalls-and-best-practices-201).
+
+#### Description
+
+The coverage of the existing automated tests is lacking, especially in regards to the key risks that were identified for CARE.
+
+Specific cases that have been identified as lacking a test:
+
+* Function and access control of BaseStrategy's [`getAllowedPath()`, `setAllowedPath()`, `disallowPath()`](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/BaseStrategy.sol#L265-L278) and [`setStrategyExecutor()`](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/BaseStrategy.sol#L136-L139) functions.
+* Whether BaseStrategy's [`isActive`](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/BaseStrategy.sol#L115) modifier functions correctly, preventing access after the Strategy was exited, and is applied to all appropriate functions.
+* Whether the [`BaseStrategy.afterExit()`](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/BaseStrategy.sol#L254-L263) function can only be accessed by the contract owner (testing for `onlyOwner` modifier) and that it can only be successfully called once the Strategy was exited.
+* Whether the [`maxChangeAmount`](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/BaseStrategy.sol#L37) parameter, set by [`BaseStrategy.safeHarvest()`](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/BaseStrategy.sol#L164) and used by [`BaseStrategy.harvest()`](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/BaseStrategy.sol#L180), works as expected.
+* Whether the [slippage protection](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/BaseStrategy.sol#L297-L299) offered by the `amountOutMin` parameter of [`BaseStrategy.swapExactTokensForUnderlying()`](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/BaseStrategy.sol#L283-L304) functions correctly.
+* Whether the internal [`BaseStrategy._swap()`](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/BaseStrategy.sol#L307-L320) function still works correctly for paths with more than 2 assets.
+* Whether [`BaseStrategy.exit()`](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/BaseStrategy.sol#L240-L250) still works as expected during exceptional situations (eg. [Aave protocol was hacked and less strategy tokens are available than the contract has aTokens](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/strategies/AaveStrategy.sol#L93-L95), [withdrawal failed with error but exit still succeeds](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/strategies/AaveStrategy.sol#L91-L92)).
+* Whether checks in [`BaseStrategy.harvest()`](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/BaseStrategy.sol#L179), preventing harvest of senders other than the strategy itself, are implemented correctly.
+
+#### Recommendation
+
+Improve test coverage by implementing the specific cases above and by checking the coverage report. Aim for a minimum measured coverage of 100% and make sure that paths aren't only covered but also properly tested. At the moment many of the tests make simple greater-than-checks instead of checking for specific values, which counts towards coverage but might still allow for issues to slip through in regards to profit reporting. The tests currently also always assume that a profit was made, the handling of losses is currently not tested.
+
+Furthermore, I'd recommend a separation of tests between the AaveStrategy implementations and the BaseStrategy. Many tests are specific to the base contract but are duplicated in both [`AaveStrategyMainnet.ts`](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/test/AaveStrategyMainnet.ts) and [`AaveStrategyPolygon.ts`](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/test/AaveStrategyPolygon.ts). To do that, you could create a barebones implementation contract or simply use the [`ExampleImplementation.sol`](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/ExampleImplementation.sol) contract that already exists.
+
+---
+
+### <a id="min-1" href="#min-1"><span s={1}>`#1 Minor`</span></a>: Unnecessarily copied and adjusted code
+
+Identified during manual review. The corresponding checklist item is **190. Cloning issues** of [Security Pitfalls & Best Practices 201](https://secureum.substack.com/p/security-pitfalls-and-best-practices-201) and **3. Multiple Solidity pragma** as a side effect, see [Security Pitfalls & Best Practices 101](https://secureum.substack.com/p/security-pitfalls-and-best-practices-101).
+
+#### Description
+
+The file [contracts/bentobox/BentoBoxV1.sol](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/bentobox/BentoBoxV1.sol) is a copy from [contracts/flat/BentoBoxFlat.sol](https://github.com/sushiswap/bentobox/blob/master/contracts/flat/BentoBoxFlat.sol) of the [BentoBox](https://github.com/sushiswap/bentobox). However, the [`STRATEGY_DELAY` constant was adjusted from `2 weeks` to `0`](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/bentobox/BentoBoxV1.sol#L709), which was not documented (except for the inline comment `// yeehaw`). This was likely done to be able to more easily set and change strategies during testing, it can however cause incorrect assumptions and confusion for developers and auditors. It also causes issues with some analysis tools that are unable to handle multiple incompatible Solidity versions within the same project, requiring manual assistance to be run.
+
+#### Recommendation
+
+The BentoBoxV1 contract appears to be only used within tests, and in those, it is not actually deployed but only attached to an existing BentoBox contract from a chain fork. Using an Interface here instead should be sufficient and allow the removal of [BentoBoxV1.sol](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/bentobox/BentoBoxV1.sol).
+
+If there's a reason for keeping the copied code in the repository, this should be properly documented, especially where it was copied from, which version, and what changes were made for what reasons.
+
+---
+
+### <a id="min-2" href="#min-2"><span s={1}>`#2 Minor`</span></a>: Missing Address Validation
+
+Identified during manual review. The corresponding checklist item is **49. Missing zero address validation** of [Security Pitfalls & Best Practices 101](https://secureum.substack.com/p/security-pitfalls-and-best-practices-101) and potentially **165. Configuration issues** of [Security Pitfalls & Best Practices 201](https://secureum.substack.com/p/security-pitfalls-and-best-practices-201).
+
+Also identified by [Slither v0.8.2](https://github.com/crytic/slither/releases/tag/0.8.2):
+
+```
+BaseStrategy.afterExit(address,uint256,bytes).to (contracts/BaseStrategy.sol#255) lacks a zero-check on :
+                - (success,None) = to.call{value: value}(data) (contracts/BaseStrategy.sol#262)
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#missing-zero-address-validation
+```
+
+#### Description
+
+The [`BaseStrategy.afterExit()`](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/BaseStrategy.sol#L254-L263) function is available to the Sushi Ops Team as a way to rescue funds after usage of the Strategy has ended. One such case would be rescuing ether funds that were sent to the contract on accident. Due to the missing zero-address validation, it might happen that instead of rescuing the funds they will be burned on accident.
+
+Other than that, due to the usage of a send-funds-and-skim pattern, invalid [`strategyToken` and `bentoBox`](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/BaseStrategy.sol#L70-L71) parameters used during construction could lead to a scenario where funds have already been sent to the strategy but cannot be skimmed. In such a case the `exit()` function might not be callable either, which would prevent any rescue of the funds using the `afterExit()` function.
+
+#### Recommendation
+
+Consider introducing a zero-address validation for the [`BaseStrategy.afterExit()`](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/BaseStrategy.sol#L254-L263) function and constructor parameters.
+
+Introduce a process that makes sure the correct values have been set post-deployment before a strategy is used.
+
+---
+
+### <a id="min-3" href="#min-3"><span s={1}>`#3 Minor`</span></a>: Emergency exits delayed by setStrategy
+
+Identified during manual review. The issue is related to checklist item **135. Guarded launch via emergency shutdown** of [Security Pitfalls & Best Practices 201](https://secureum.substack.com/p/security-pitfalls-and-best-practices-201).
+
+
+#### Description
+
+BentoBox's [`setStrategy()`](https://github.com/sushiswap/bentobox/blob/master/contracts/BentoBox.sol#L419) function enforces a two-week delay for setting new strategies allowing the community to review them before they actually take effect. But since Strategies can only be exited when a new one is set, this also prevents emergency exits eg. when there are issues with the Strategie's underlying protocol.
+
+A way to bypass this restriction is using [`setStrategyTargetPercentage()`](https://github.com/sushiswap/bentobox/blob/master/contracts/BentoBox.sol#L400), setting the percentage to `0`, and triggering a harvest for re-balancing.
+
+#### Recommendation
+
+Since BentoBox has already been deployed and further code changes are difficult to introduce, it would make sense to at least document the bypass for the Sushi Ops Team to ensure awareness of this measure once an emergency happens and urgent action needs to be taken.
+
+---
+
+### <a id="min-4" href="#min-4"><span s={1}>`#4 Minor`</span></a>: Limit usage of new Strategies
+
+Identified during manual review. The corresponding checklist item is **128. Guarded launch via asset limits** of and **129. Guarded launch via asset types** of [Security Pitfalls & Best Practices 201](https://secureum.substack.com/p/security-pitfalls-and-best-practices-201).
+
+#### Description
+
+Each BentoBox Strategy implementation is likely to use different underlying protocols which means that there could be undiscovered issues when first using one. The [`MAX_TARGET_PERCENTAGE`](https://github.com/sushiswap/bentobox/blob/master/contracts/BentoBox.sol#L81) limit of 95% is extremely high and its immediate usage could lead to a near-total loss of funds when used with a vulnerable Strategy. There's also no restriction to how many BentoBox assets can be using the same Strategy code at once.
+
+#### Recommendation
+
+The process of introducing a new Strategy to a BentoBox asset should always include an initial limitation to the target percentage to ensure that the impact of undiscovered issues is limited. This limit to the percentage can then slowly be raised over time with increased confidence in the Strategy's implementation. It would also be better to initially only use a Strategy for a single or few assets and only increase the number of assets once confidence in the Strategy is sufficient.
+
+---
+
+### <a id="min-5" href="#min-5"><span s={1}>`#5 Minor`</span></a>: Administrative functions should emit events
+
+Identified during manual review. The corresponding checklist items are **45. Missing events** of [Security Pitfalls & Best Practices 101](https://secureum.substack.com/p/security-pitfalls-and-best-practices-101) and **173. Auditing/logging issues**, **201. Principle of Compromise Recording** of [Security Pitfalls & Best Practices 201](https://secureum.substack.com/p/security-pitfalls-and-best-practices-201).
+
+#### Description
+
+No events are emitted in `BaseStrategy` for [`afterExit()`](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/BaseStrategy.sol#L254-L263) function that allows arbitrary calls to be made by the owner and [`swapExactTokensForUnderlying()`](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/BaseStrategy.sol#L283-L304) which allows executors to convert funds.
+
+#### Recommendation
+
+Add events for these administrative functions and ensure they are being monitored for misusage.
+
+The other critical functions `harvest()`, `withdraw()` and `exit()`, can only be called by the BentoBox contract which already has separate events for logging after calling these functions.
+
+---
+
+### <a id="min-6" href="#min-6"><span s={1}>`#6 Minor`</span><span s={0}>`FIXED`</span></a>: Public functions should be external
+
+Identified by [Slither v0.8.2](https://github.com/crytic/slither/releases/tag/0.8.2):
+
+```
+afterExit(address,uint256,bytes) should be declared external:
+        - BaseStrategy.afterExit(address,uint256,bytes) (contracts/BaseStrategy.sol#254-263)
+swapExactTokensForUnderlying(uint256,uint256) should be declared external:
+        - BaseStrategy.swapExactTokensForUnderlying(uint256,uint256) (contracts/BaseStrategy.sol#283-304)
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#public-function-that-could-be-declared-external
+```
+
+The corresponding checklist item is **72. Uncalled public functions** of [Security Pitfalls & Best Practices 101](https://secureum.substack.com/p/security-pitfalls-and-best-practices-101).
+
+#### Description
+
+Visibility of BaseStrategy's [`swapExactTokensForUnderlying()`](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/BaseStrategy.sol#L283-L304) and [`afterExit()`](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/BaseStrategy.sol#L254-L263) can be changed from `public` to `external` since they are not called internally and it's also unlikely that inheriting contracts will attempt calling them due to their modifiers.
+
+#### Recommendation
+
+Consider changing the visibility of mentioned functions or document why a public visibility was chosen.
+
+---
+
+### <a id="min-7" href="#min-7"><span s={1}>`#7 Minor`</span><span s={0}>`FIXED`</span></a>: Redundant check can be removed
+
+Identified during manual review. The corresponding checklist item is **157. Redundant constructs** of [Security Pitfalls & Best Practices 201](https://secureum.substack.com/p/security-pitfalls-and-best-practices-201).
+
+#### Description
+
+The [`BaseStrategy.disallowPath()`](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/BaseStrategy.sol#L274-L278) checks whether the `pathIndex`
+is within the bounds of the `_allowedSwapPaths` array before setting a zero-value. This check is already done by Solidity and therefore unnecessarily increasing gas cost.
+
+[**contracts/BaseStrategy.sol#L274-L278**](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/BaseStrategy.sol#L274-L278)
+```solidity
+function disallowPath(uint256 pathIndex) external onlyOwner {
+    require(pathIndex < _allowedSwapPaths.length, "Out of bounds");
+    _allowedSwapPaths[pathIndex] = new address[](0);
+    emit LogSetAllowedPath(pathIndex, false);
+}
+```
+
+Solidity 0.8.x does also not yield an INVALID opcode when accessing an array out of its bounds, consuming all available gas, as older versions did. It will instead REVERT, the same way that a `require()` would.
+
+#### Recommendation
+
+Remove the redundant require statement.
+
+---
+
+### <a id="min-8" href="#min-8"><span s={1}>`#8 Minor`</span></a>: Making `afterExit()` payable
+
+Identified during manual review. This is a subjective suggestion with no reference to any best practice.
+
+#### Description
+
+The [`BaseStrategy.afterExit()`](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/BaseStrategy.sol#L254-L263) function allows making arbitrary calls for the purpose of rescuing funds, allows sending a value too. There are currently only two ways how any ether funds can be sent to a strategy: As the beneficiary (coinbase) of the block reward or via `selfdestruct()` of another contract.
+
+[**contracts/BaseStrategy.sol#L254-L263**](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/BaseStrategy.sol#L254-L263)
+```solidity
+function afterExit(
+    address to,
+    uint256 value,
+    bytes memory data
+) public onlyOwner returns (bool success) {
+    if (!exited) {
+        revert StrategyNotExited();
+    }
+    (success, ) = to.call{value: value}(data);
+}
+```
+
+Aside from rescuing locked ether funds from a Strategy contract, there might be a case where ether value needs to be sent for a call to be made. Then one of the above-mentioned workarounds would be necessary to inject the required balance.
+
+#### Recommendation
+
+Consider making the [`BaseStrategy.afterExit()`](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/BaseStrategy.sol#L254-L263) function `payable`. Additionally, to increasing flexibility, it also reduces gas usage since Solidity's 0-value-check is skipped.
+
+---
+
+### <a id="min-9" href="#min-9"><span s={1}>`#9 Minor`</span><span s={0}>`FIXED`</span></a>: Incorrect usage of Unlocked Pragma
+
+Identified during manual review. This suggestion is related to checklist items **2. Unlocked pragma** of [Security Pitfalls & Best Practices 101](https://secureum.substack.com/p/security-pitfalls-and-best-practices-101).
+
+#### Description
+
+The file [`BaseStrategy.sol`](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/BaseStrategy.sol#L3) makes use of an unlocked pragma (`pragma solidity >=0.8;`). While the intention might have been to regard this abstract contract like a library, leaving it up to the actual Strategy implementations to choose a specific version, in practice that won't be possible since the dependencies included ([IStrategy](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/interfaces/IStrategy.sol#L3), [IUniswapV2Pair](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/interfaces/IUniswapV2Pair.sol#L3), [IBentoBoxMinimal](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/interfaces/IBentoBoxMinimal.sol#L3), and [UniswapV2Library](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/libraries/UniswapV2Library.sol#L3)) all have a locked pragma, forcing implementations to use that specific version.
+
+#### Recommendation
+
+Either purposely use an unlocked pragma for BaseStrategy and its dependencies, to allow Strategy implementations to choose their specific version (and documenting that intention), or use the same locked pragma throughout all contracts.
+
+It might also be a good idea to explicitly mention the practice of specifying a locked pragma for implementations within `ExampleImplementation.sol` as an inline code comment.
+
+---
+
+### <a id="min-10" href="#min-10"><span s={1}>`#10 Minor`</span></a>: Avoid variable shadowing
+
+Identified by [Slither v0.8.2](https://github.com/crytic/slither/releases/tag/0.8.2):
+
+```
+AaveStrategyMainnet.constructor(IStkAave,ILendingPool,IAaveIncentivesController,BaseStrategy.ConstructorParams).aaveLendingPool (contracts/strategies/AaveStrategyMainnet.sol#24) shadows:
+        - AaveStrategy.aaveLendingPool (contracts/strategies/AaveStrategy.sol#58) (state variable)
+AaveStrategyMainnet.constructor(IStkAave,ILendingPool,IAaveIncentivesController,BaseStrategy.ConstructorParams).incentiveController (contracts/strategies/AaveStrategyMainnet.sol#25) shadows:
+        - AaveStrategy.incentiveController (contracts/strategies/AaveStrategy.sol#59) (state variable)
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#local-variable-shadowing
+```
+
+This issue is related to the checklist items **39. Dangerous shadowing** and **40. Dangerous state variable shadowing** of [Security Pitfalls & Best Practices 101](https://secureum.substack.com/p/security-pitfalls-and-best-practices-101).
+
+#### Description
+
+The state variables `aaveLendingPool` and `incentiveController` of `AaveStrategy` are shadowed within the constructor of `AaveStrategyMainnet`.
+
+[**contracts/strategies/AaveStrategy.sol#L54-L60**](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/strategies/AaveStrategy.sol#L54-L60)
+```solidity
+contract AaveStrategy is BaseStrategy {
+
+    using SafeERC20 for IERC20;
+
+    ILendingPool internal immutable aaveLendingPool;
+    IAaveIncentivesController internal immutable incentiveController;
+    IERC20 public immutable aToken;
+```
+
+[**contracts/strategies/AaveStrategyMainnet.sol#L22-L31**](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/strategies/AaveStrategyMainnet.sol#L22-L31)
+```solidity
+constructor(
+    IStkAave _stkAave,
+    ILendingPool aaveLendingPool,
+    IAaveIncentivesController incentiveController,
+    BaseStrategy.ConstructorParams memory params
+) AaveStrategy(aaveLendingPool, incentiveController, params) {
+    stkAave = _stkAave;
+    COOLDOWN_SECONDS = _stkAave.COOLDOWN_SECONDS();
+    UNSTAKE_WINDOW = _stkAave.UNSTAKE_WINDOW();
+}
+```
+
+#### Recommendation
+
+Avoid shadowing of variables whether local or state. Instead prefix or suffix said variables with `_`.
+
+---
+
+### <a id="min-11" href="#min-11"><span s={1}>`#11 Minor`</span><span s={0}>`FIXED`</span></a>: Use SafeERC20 in ExampleImplementation
+
+Identified with the help of [Slither v0.8.2](https://github.com/crytic/slither/releases/tag/0.8.2):
+
+```
+ExampleImplementation.constructor(address,BaseStrategy.ConstructorParams) (contracts/ExampleImplementation.sol#15-20) ignores return value by baseStrategyParams.strategyToken.approve(investmentContract,type()(uint256).max) (contracts/ExampleImplementation.sol#19)
+```
+
+Related to the checklist items **142. Function return values** of [Security Pitfalls & Best Practices 201](https://secureum.substack.com/p/security-pitfalls-and-best-practices-201).
+
+#### Recommendation
+
+[`ExampleImplementation` constructor](https://github.com/sushiswap/bentobox-strategies/blob/be407e27cd1a9ca8060ef9a389d1cf01b4e5540e/contracts/ExampleImplementation.sol#L19) should use `SafeERC20.safeApprove()` to promote correct usage of approval calls for Strategy developers. It currently uses the normal ERC20 `approve()` function and doesn't check its return value.
+
+---
+
+## Missed Findings
+
+The following is a list of findings that were additionally found by other participants of the Sushi CARE process (based on Report Draft from 08.01.2022):
+
+* Preferring less risky two-step instead of single-step change of contract ownership
+* Typographical errors in code comments, inaccurate comments, missing NatSpec comments
+* Return values of various function calls are ignored
+* Public variable visitbility can be made private to prevent deriving contracts from accidental modification
+* Downcasting (from `uint256` to `int256`) is not checked for potential overflow scenarios
+* Checks-Effects-Interactions (CEI) pattern is not followed
+* Missing sanity/threshold checks for various inputs
+* Implicit check for disabled swap paths could be confusing
+* Code readability could be improved
+* Account existence check for low-level calls
+* Changing critical parameters should be time-delayed
+* Avoid usage of named returns or use them consistently
+* Missing new != old checks in setter functions
+* Prefer custom errors, instead of messages to save gas
+* Use OpenZeppelin's Address library for `afterExit` function
+* Incorrect operator (`>=`) causing breakeven to be reported as profit
+* Put vendor (eg. IAaveIncentivesController) interfaces into separate files
+
+---
+
+## Disclosure
+
+This Report was created as part of the Secureum Smart Contract Auditor Bootcamp Epoch 0 without compensation. Publication was held back until the Sushi Team had reviewed the findings and enough time to make corrections.
+
+The Report is not an endorsement of the Sushi project, its ecosystem or products, and does not guarantee its safety. The purpose of this Report is to help the Sushi Team improve the security and best practices of the BentoBox Strategy contracts before an actual Audit is undertaken, allowing those Auditors to focus on critical issues.
+
+
+## Resources
+
+* [sushi.com](https://sushi.com/)
+* [github.com/sushiswap](https://github.com/sushiswap)
+* [docs.sushi.com](https://docs.sushi.com/)
+* [dev.sushi.com](https://dev.sushi.com/)
+* [app.sushi.com/bentobox](https://app.sushi.com/bentobox)
+* [github.com/sushiswap/bentobox](https://github.com/sushiswap/bentobox)
+* [github.com/sushiswap/bentobox-strategies](https://github.com/sushiswap/bentobox-strategies)
+* [Sushi Third Course — 2021 Q3 Update](https://medium.com/sushiswap-org/sushi-third-course-2021-q3-update-254b8c408de0)
+* [Introducing, The Sushi Next Generation AMM: Trident](https://medium.com/sushiswap-org/introducing-the-sushi-next-generation-amm-trident-7dea6aa3cbc2)

@@ -1,0 +1,245 @@
+# Secureum Bootcamp Security Pitfalls & Best Practices 201 Quiz
+
+This is a writeup of the [Secureum Bootcamp Security Pitfalls & Best Practices 201 Quiz](https://secureum.substack.com/p/secureum-bootcamp-for-smart-contract) containing solutions and references to the provided study material.
+
+import { Callout } from 'nextra/components'
+
+<Callout type="info">
+  For fairness, it was published after submissions to it were closed. **All questions are concerning the same snippet of code. No syntax highlighting or indentation was used in the original quiz, so it was skipped here as well. Make sure to read code comments carefully.** The quiz consisted of 8 questions with a strict timelimit of 16 minutes. The ordering of the questions was randomized, so the numbering here won’t match with the numbering elsewhere.
+</Callout>
+
+<p className="text-xs text-right">November 14, 2021 by [patrickd](/about#patrickd)</p>
+
+<style jsx>{`
+  input[type=checkbox] {
+    width: 15px;
+    height: 15px;
+  }
+  li {
+    padding: 0.5em;
+  }
+`}</style>
+
+export function HiddenSolution({ children }) {
+  return (
+    <details closed className="last-of-type:mb-0 rounded-lg bg-neutral-50 dark:bg-neutral-800 p-2 mt-4">
+      <summary>
+        <strong className="text-lg">Solution</strong>
+      </summary>
+      <div className="nx-p-2">{children}</div>
+    </details>
+  )
+}
+
+---
+
+### Code
+
+<Callout type="info">
+  All 8 questions in this quiz are based on the `InSecureumToken` contract shown below. This is the same contract you see for all the 8 questions in this quiz.
+
+  The `InSecureumToken` contract implements a token contract which allows users to buy tokens by depositing Ether (at a certain conversion ratio), and transfer tokens.
+</Callout>
+
+
+```plaintext showLineNumbers filename="InSecureumToken.sol"
+pragma solidity 0.7.0;
+
+contract InSecureumToken {
+
+  mapping(address => uint) private balances;
+
+  uint public decimals = 10**18; // decimals of the token
+  uint public totalSupply; // total supply
+  uint MAX_SUPPLY = 100 ether; // Maximum total supply
+
+  event Mint(address indexed destination, uint amount);
+
+  function transfer(address to, uint amount) public {
+    // save the balance in local variables
+    // so that we can re-use them multiple times
+    // without paying for SLOAD on every access
+    uint balance_from = balances[msg.sender];
+    uint balance_to = balances[to];
+    require(balance_from >= amount);
+    balances[msg.sender] = balance_from - amount;
+    balances[to] = safeAdd(balance_to, amount);
+  }
+
+  /// @notice Allow users to buy token. 1 ether = 10 tokens
+  /// @dev Users can send more ether than token to be bought, to donate a fee to the protocol team
+  function buy(uint desired_tokens) public payable {
+    // Check if enough ether has been sent
+    uint required_wei_sent = (desired_tokens / 10) * decimals;
+    require(msg.value >= required_wei_sent);
+
+    // Mint the tokens
+    totalSupply = safeAdd(totalSupply, desired_tokens);
+    balances[msg.sender] = safeAdd(balances[msg.sender], desired_tokens);
+    emit Mint(msg.sender, desired_tokens);
+  }
+
+  /// @notice Add two values. Revert if overflow
+  function safeAdd(uint a, uint b) pure internal returns(uint) {
+    if (a + b < a) {
+      revert();
+    }
+    return a + b;
+  }
+}
+```
+
+### Question 1 of 8
+
+To avoid lock of funds, the following feature(s) MUST be implemented before contract deployment
+
+<ul>
+  <li><input type="checkbox" /> **A.** A `transferFrom()` function </li>
+  <li><input type="checkbox" /> **B.** A `burn()` function </li>
+  <li><input type="checkbox" /> **C.** A way to withdraw/exchange/use Ether from the contract </li>
+  <li><input type="checkbox" /> **D.** None of the above </li>
+</ul>
+
+<HiddenSolution>
+**Correct is C**.
+
+Locked Ether: Contracts that accept Ether via payable functions but without withdrawal mechanisms will lock up that Ether. Remove payable attribute or add withdraw function.
+
+from point 29 of [Security Pitfalls & Best Practices 101 - by Secureum](https://secureum.substack.com/p/security-pitfalls-and-best-practices-101)
+</HiddenSolution>
+
+---
+
+### Question 2 of 8
+
+Which of the following assertion(s) is/are true (without affecting the security posture of the contract)?
+
+<ul>
+  <li><input type="checkbox" /> **A.** `buy()` does not need `payable` keyword </li>
+  <li><input type="checkbox" /> **B.** `balances` must be `private` </li>
+  <li><input type="checkbox" /> **C.** `transfer()` can be `external` </li>
+  <li><input type="checkbox" /> **D.** `safeAdd()` can be `public` </li>
+</ul>
+
+<HiddenSolution>
+**Correct is C, D**.
+
+`buy()` cannot function without being payable. There's no reason the visibility of `balances` needs to be `private`. `transfer()` can be external since it's not called internally. `safeAdd()` can be `public` since it is a pure function.
+</HiddenSolution>
+
+---
+
+### Question 3 of 8
+
+The total supply is limited by
+
+<ul>
+  <li><input type="checkbox" /> **A.** $10^{18}$ </li>
+  <li><input type="checkbox" /> **B.** $100 * 10^{18}$ </li>
+  <li><input type="checkbox" /> **C.** $100$ </li>
+  <li><input type="checkbox" /> **D.** None of the above </li>
+</ul>
+
+<HiddenSolution>
+**Correct is D**.
+
+It would be B, but MAX_SUPPLY isn't actually used anywhere in the code.
+</HiddenSolution>
+
+---
+
+### Question 4 of 8
+
+The following issue(s) is/are present in the codebase
+
+<ul>
+  <li><input type="checkbox" /> **A.** An integer underflow allows one to drain Ether </li>
+  <li><input type="checkbox" /> **B.** Unsafe rounding allows one to receive new tokens for free </li>
+  <li><input type="checkbox" /> **C.** A division by zero allows one to trap/freeze the system </li>
+  <li><input type="checkbox" /> **D.** None of the above </li>
+</ul>
+
+<HiddenSolution>
+**Correct is B**.
+
+It's impossible to get any Ether out of this contract, so no draining either. It divides `desired_tokens` first and only then multiplies by the decimals, this causes any amount of tokens below 10 to result in 0 `required_wei_sent`. There are no divisions here that could allow a division by 0.
+</HiddenSolution>
+
+---
+
+### Question 5 of 8
+
+The following issue(s) is/are present in the codebase
+
+<ul>
+  <li><input type="checkbox" /> **A.** A front-running allows one to pay less than expected for tokens </li>
+  <li><input type="checkbox" /> **B.** A lack of access control allows one to receive tokens for free </li>
+  <li><input type="checkbox" /> **C.** Incorrect balance update allows one to receive new tokens for free </li>
+  <li><input type="checkbox" /> **D.** None of the above </li>
+</ul>
+
+<HiddenSolution>
+**Correct is C**.
+
+No requests made before/after a function call would be able to change the token price. All of the functions are intended to be used by users, so no "access control" would be possible without excluding users. A user can send all of their tokens to themselve, which will double their balance due to the pre-loaded variable reuse.
+</HiddenSolution>
+
+---
+
+### Question 6 of 8
+
+The following issue(s) is/are present in the codebase
+
+<ul>
+  <li><input type="checkbox" /> **A.** A reentrancy allows one to drain Ether </li>
+  <li><input type="checkbox" /> **B.** A reentrancy allows one to drain the tokens </li>
+  <li><input type="checkbox" /> **C.** A reentrancy allows one to receive new tokens for free </li>
+  <li><input type="checkbox" /> **D.** None of the above </li>
+</ul>
+
+<HiddenSolution>
+**Correct is D**.
+
+No reentrancies are possible since no external calls are made.
+</HiddenSolution>
+
+---
+
+### Question 7 of 8
+
+The following issue(s) is/are present in the codebase
+
+<ul>
+  <li><input type="checkbox" /> **A.** An integer overflow allows one to drain Ether </li>
+  <li><input type="checkbox" /> **B.** An integer overflow allows one to receive new tokens for free </li>
+  <li><input type="checkbox" /> **C.** An integer overflow allows one to trap/freeze the system </li>
+  <li><input type="checkbox" /> **D.** None of the above </li>
+</ul>
+
+<HiddenSolution>
+**Correct is D**.
+
+While it is indeed possible to exploit an overflow at the multiplication `((desired_tokens / 10) * decimals){:solidity}`, it doesn't allow you to receive FREE tokens (although it makes them a bargain).
+</HiddenSolution>
+
+---
+
+### Question 8 of 8
+
+The InSecureumToken contract strictly follows the specification of
+
+<ul>
+  <li><input type="checkbox" /> **A.** ERC20 </li>
+  <li><input type="checkbox" /> **B.** ERC777 </li>
+  <li><input type="checkbox" /> **C.** ERC721 </li>
+  <li><input type="checkbox" /> **D.** None of the above </li>
+</ul>
+
+<HiddenSolution>
+**Correct is D**.
+
+Since decimals was defined as `uint` (same as `uint256`) and not as `uint8` as ERC20 or ERC777 standardized, it can't strictly be either of them. And since this is clearly a fungible token contract, it can't be ERC721.
+</HiddenSolution>
+
+---
+

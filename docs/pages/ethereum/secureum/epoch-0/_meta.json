@@ -6,7 +6,32 @@
   },
   "secureum-bootcamp-solidity-101-quiz": {
     "title": "Solidity 101 Quiz",
-    "href": "/posts/2021/10/24/secureum-bootcamp-solidity-101-quiz",
+    "href": "/posts/2021/10/24/secureum-bootcamp-solidity-101-quiz/",
+    "newWindow": false
+  },
+  "secureum-bootcamp-solidity-201-quiz": {
+    "title": "Solidity 201 Quiz",
+    "href": "/posts/2021/10/30/secureum-bootcamp-solidity-201-quiz/",
+    "newWindow": false
+  },
+  "secureum-bootcamp-security-pitfalls-amp-best-practices-101-quiz": {
+    "title": "Security Pitfalls & Best Practices 101 Quiz",
+    "href": "/posts/2021/11/7/secureum-bootcamp-security-pitfalls-amp-best-practices-101-quiz/",
+    "newWindow": false
+  },
+  "secureum-bootcamp-security-pitfalls-amp-best-practices-201-quiz": {
+    "title": "Security Pitfalls & Best Practices 201 Quiz",
+    "href": "/posts/2021/11/14/secureum-bootcamp-security-pitfalls-amp-best-practices-201-quiz/",
+    "newWindow": false
+  },
+  "secureum-bootcamp-audit-techniques-tools-101-quiz": {
+    "title": "Audit Techniques & Tools 101 Quiz",
+    "href": "/posts/2021/11/21/secureum-bootcamp-audit-techniques-tools-101-quiz/",
+    "newWindow": false
+  },
+  "secureum-bootcamp-audit-findings-101-quiz": {
+    "title": "Audit Findings 101 Quiz",
+    "href": "/posts/2021/11/28/secureum-bootcamp-audit-findings-101-quiz/",
     "newWindow": false
   }
 }

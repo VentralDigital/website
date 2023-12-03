@@ -1,0 +1,824 @@
+# Secureum Bootcamp Solidity 201 Quiz
+
+This is a writeup of the [Secureum Bootcamp Solidity 201 Quiz](https://secureum.substack.com/p/secureum-bootcamp-for-smart-contract) containing solutions and references to the provided study material.
+
+import { Callout } from 'nextra/components'
+
+<Callout type="info">
+  For fairness, it was published after submissions to it were closed. The quiz consisted of 32 questions with a strict timelimit of 16 minutes. The ordering of the questions was randomized, so the numbering here won’t match with the numbering elsewhere.
+</Callout>
+
+<p className="text-xs text-right">October 31, 2021 by [patrickd](/about#patrickd)</p>
+
+<style jsx>{`
+  input[type=checkbox] {
+    width: 15px;
+    height: 15px;
+  }
+  li {
+    padding: 0.5em;
+  }
+`}</style>
+
+export function HiddenSolution({ children }) {
+  return (
+    <details closed className="last-of-type:mb-0 rounded-lg bg-neutral-50 dark:bg-neutral-800 p-2 mt-4">
+      <summary>
+        <strong className="text-lg">Solution</strong>
+      </summary>
+      <div className="nx-p-2">{children}</div>
+    </details>
+  )
+}
+
+---
+
+### Question 1 of 32
+
+OpenZeppelin SafeERC20 is generally considered safer to use than ERC20 because
+
+<ul>
+  <li><input type="checkbox" /> A. It adds integer overflow/underflow checks</li>
+  <li><input type="checkbox" /> B. It adds return value/data checks</li>
+  <li><input type="checkbox" /> C. It adds pause/unpause capability</li>
+  <li><input type="checkbox" /> D. It adds race-conditon checks</li>
+</ul>
+
+<HiddenSolution>
+**Correct is B**.
+
+> OpenZeppelin SafeERC20: Wrappers around ERC20 operations that throw on failure when the token contract implementation returns false. Tokens that return no value and instead revert or throw on failure are also supported with non-reverting calls assumed to be successful. Adds safeTransfer, safeTransferFrom, safeApprove, safeDecreaseAllowance, and safeIncreaseAllowance.
+
+from point 149 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+</HiddenSolution>
+
+---
+
+### Question 2 of 32
+
+The OpenZeppelin library that provides `onlyOwner` modifier
+
+<ul>
+  <li><input type="checkbox" /> A. Is Ownable</li>
+  <li><input type="checkbox" /> B. Provides role based access control</li>
+  <li><input type="checkbox" /> C. Provides a function to renounce ownership</li>
+  <li><input type="checkbox" /> D. None of the above</li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, C**. See the source code on GitHub
+
+> OpenZeppelin Ownable: provides a basic access control mechanism, where there is an account (an owner) that can be granted exclusive access to specific functions. By default, the owner account will be the one that deploys the contract. This can later be changed with transferOwnership. This module is used through inheritance. It will make available the modifier onlyOwner, which can be applied to your functions to restrict their use to the owner.
+
+from point 154 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+</HiddenSolution>
+
+---
+
+### Question 3 of 32
+
+OpenZeppelin ECDSA
+
+<ul>
+  <li><input type="checkbox" /> A. Implements functions for signature creation & verification</li>
+  <li><input type="checkbox" /> B. Is susceptible to signature malleability</li>
+  <li><input type="checkbox" /> C. Both A & B</li>
+  <li><input type="checkbox" /> D. Neither A nor B</li>
+</ul>
+
+<HiddenSolution>
+**Correct is D**. See the source code on GitHub
+
+> OpenZeppelin ECDSA: provides functions for recovering and managing Ethereum account ECDSA signatures. These are often generated via web3.eth.sign, and are a 65 byte array (of type bytes in Solidity) arranged the following way: `[[v (1)], [r (32)], [s (32)]]`. The data signer can be recovered with ECDSA.recover, and its address compared to verify the signature. Most wallets will hash the data to sign and add the prefix `'\x19Ethereum Signed Message:\n'`, so when attempting to recover the signer of an Ethereum signed message hash, you’ll want to use toEthSignedMessageHash.
+
+from point 166 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+
+> Externally Owned Accounts (EOA) can sign messages with their associated private keys, but currently contracts cannot.
+
+from point 168.1 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+</HiddenSolution>
+
+---
+
+### Question 4 of 32
+
+Which of the following is/are true about Solidity compiler 0.8.0?
+
+<ul>
+  <li><input type="checkbox" /> A. ABI coder v2 is made the default</li>
+  <li><input type="checkbox" /> B. No opt-out primitives for default checked arithmetic</li>
+  <li><input type="checkbox" /> C. Failing to `assert` returns the gas left instead of consuming all gas</li>
+  <li><input type="checkbox" /> D. Exponentiation is made right associative</li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, C, D**.
+
+> ABI coder v2 is activated by default. You can choose to use the old behaviour using `pragma abicoder v1;`. The pragma `pragma experimental ABIEncoderV2;` is still valid, but it is deprecated and has no effect. If you want to be explicit, please use `pragma abicoder v2;` instead.
+
+from Solidity v0.8.0 Breaking Semantic Changes, point 142.2 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+
+> Arithmetic operations revert on underflow and overflow. You can use `unchecked` to use the previous wrapping behaviour.
+
+from Solidity v0.8.0 Breaking Semantic Changes, point 142.1 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+
+> Failing assertions and other internal checks like division by zero or arithmetic overflow do not use the invalid opcode but instead the revert opcode. More specifically, they will use error data equal to a function call to Panic(uint256) with an error code specific to the circumstances. This will save gas on errors while it still allows static analysis tools to distinguish these situations from a revert on invalid input, like a failing require.
+
+from Solidity v0.8.0 Breaking Semantic Changes, point 142.4 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+
+> Exponentiation is right associative, i.e., the expression a**b**c is parsed as a**(b**c). Before 0.8.0, it was parsed as (a**b)**c. This is the common way to parse the exponentiation operator.
+
+from Solidity v0.8.0 Breaking Semantic Changes, point 142.3 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+</HiddenSolution>
+
+---
+
+### Question 5 of 32
+
+EVM memory
+
+<ul>
+  <li><input type="checkbox" /> A. Is linear and byte-addressable</li>
+  <li><input type="checkbox" /> B. Is reserved by Solidity until 0x7f</li>
+  <li><input type="checkbox" /> C. Can be accessed in bytes using `MLOAD8`/`MSTORE8`</li>
+  <li><input type="checkbox" /> D. Is non-volatile or persistent</li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, B**.
+
+> EVM Memory: EVM memory is linear and can be addressed at byte level and accessed with MSTORE/MSTORE8/MLOAD instructions. All locations in memory are initialized as zero.
+
+from point 125 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+
+> Reserved Memory: Solidity reserves four 32-byte slots, with specific byte ranges (inclusive of endpoints) [...]: 0x60 - 0x7f (32 bytes): zero slot (The zero slot is used as initial value for dynamic memory arrays and should never be written to)
+
+from point 127 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+</HiddenSolution>
+
+---
+
+### Question 6 of 32
+
+Dappsys provides
+
+<ul>
+  <li><input type="checkbox" /> A. A proxy implementation</li>
+  <li><input type="checkbox" /> B. A floating-point implementation with wad & ray</li>
+  <li><input type="checkbox" /> C. A flexible authorization implementation</li>
+  <li><input type="checkbox" /> D. All of the above</li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, C**.
+
+> Dappsys DSProxy: implements a proxy deployed as a standalone contract which can then be used by the owner to execute code.
+
+from point 193 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+
+> Dappsys DSMath: provides arithmetic functions for the common numerical primitive types of Solidity. You can safely add, subtract, multiply, and divide uint numbers without fear of integer overflow. You can also find the minimum and maximum of two numbers. Additionally, this package provides arithmetic functions for two new higher level numerical concepts called wad (18 decimals) and ray (27 decimals). These are used to represent **fixed-point decimal numbers**. A wad is a decimal number with 18 digits of precision and a ray is a decimal number with 27 digits of precision.
+
+from point 194 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+
+> Dappsys DSAuth: Provides a flexible and updatable auth pattern which is completely separate from application logic.
+
+from point 195 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+</HiddenSolution>
+
+---
+
+### Question 7 of 32
+
+Libraries are contracts
+
+<ul>
+  <li><input type="checkbox" /> A. That cannot have state variables</li>
+  <li><input type="checkbox" /> B. That cannot be inherited</li>
+  <li><input type="checkbox" /> C. That always require a delegatecall</li>
+  <li><input type="checkbox" /> D. That are not meant to receive Ether</li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, B, D**.
+
+> Libraries: They are deployed only once at a specific address and their code is reused using the DELEGATECALL opcode. This means that if library functions are called, their code is executed in the context of the calling contract. They use the library keyword.
+
+from point 103.3 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+
+> Library Restrictions: In comparison to contracts, libraries are restricted in the following ways: They cannot have state variables, they cannot inherit nor be inherited, they cannot receive Ether.
+
+from point 113 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+
+> Library functions can only be called directly (i.e. without the use of DELEGATECALL) if they do not modify the state (i.e. if they are view or pure functions), because libraries are assumed to be stateless
+
+from point 113.6 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+</HiddenSolution>
+
+---
+
+### Question 8 of 32
+
+ERC20 `transferFrom(address sender, address recipient, uint256 amount){:solidity}` (that follows the ERC20 spec strictly)
+
+<ul>
+  <li><input type="checkbox" /> A. Transfers token amount from `sender` to `recipient`</li>
+  <li><input type="checkbox" /> B. `sender` must have given caller (`msg.sender`) approval for at least `amount` or more</li>
+  <li><input type="checkbox" /> C. Deducts amount from `sender`'s allowance</li>
+  <li><input type="checkbox" /> D. Deducts amount from caller's (`msg.senders`'s) allowance</li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, B, D**.
+
+> Moves amount tokens from sender to recipient using the allowance mechanism. amount is then deducted from the caller’s allowance. Returns a boolean value indicating whether the operation succeeded. Emits a Transfer event.
+
+from point 148.j of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+</HiddenSolution>
+
+---
+
+### Question 9 of 32
+
+ERC777 may be considered as an improved version of ERC20 because
+
+<ul>
+  <li><input type="checkbox" /> A. Hooks allow reacting to token mint/burn/transfer</li>
+  <li><input type="checkbox" /> B. It can help avoid separate `approve` and `transferFrom` transactions</li>
+  <li><input type="checkbox" /> C. It can help prevent tokens getting stuck in contracts</li>
+  <li><input type="checkbox" /> D. It removes reentrancy risk</li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, B, C**.
+
+> OpenZeppelin ERC777: Like ERC20, ERC777 is a standard for fungible tokens with improvements such as getting rid of the confusion around decimals, minting and burning with proper events, among others, but its killer feature is receive hooks. [...] A hook is simply a function in a contract that is called when tokens are sent to it, meaning accounts and contracts can react to receiving tokens. This enables a lot of interesting use cases, including atomic purchases using tokens (no need to do approve and transferFrom in two separate transactions), rejecting reception of tokens (by reverting on the hook call), redirecting the received tokens to other addresses, among many others. Furthermore, since contracts are required to implement these hooks in order to receive tokens, no tokens can get stuck in a contract that is unaware of the ERC777 protocol, as has happened countless times when using ERC20s.
+
+from point 152 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+</HiddenSolution>
+
+---
+
+### Question 10 of 32
+
+WETH is
+
+<ul>
+  <li><input type="checkbox" /> A. An ERC20 pre-compile for Wrapped Ether built into Ethereum protocol</li>
+  <li><input type="checkbox" /> B. Warp Ether for super-fast Ether transfers</li>
+  <li><input type="checkbox" /> C. Wrapped Ether to convert Ether into an ERC721 NFT</li>
+  <li><input type="checkbox" /> D. None of the above</li>
+</ul>
+
+<HiddenSolution>
+**Correct is D**.
+
+> WETH: WETH stands for Wrapped Ether. For protocols that work with ERC-20 tokens but also need to handle Ether, WETH contracts allow converting Ether to its ERC-20 equivalent WETH (called wrapping) and vice-versa (called unwrapping). WETH can be created by sending ether to a WETH smart contract where the Ether is stored and in turn receiving the WETH ERC-20 token at a 1:1 ratio. This WETH can be sent back to the same smart contract to be “unwrapped” i.e. redeemed back for the original Ether at a 1:1 ratio. The most widely used WETH contract is WETH9 which holds more than 7 million Ether for now.
+
+from point 198 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+</HiddenSolution>
+
+---
+
+### Question 11 of 32
+
+OpenZeppelin SafeCast
+
+<ul>
+  <li><input type="checkbox" /> A. Prevents underflows while downcasting</li>
+  <li><input type="checkbox" /> B. Prevents overflows while downcasting</li>
+  <li><input type="checkbox" /> C. Prevents underflows while upcasting</li>
+  <li><input type="checkbox" /> D. Prevents overflows while upcasting</li>
+</ul>
+
+<HiddenSolution>
+**Correct is B**.
+
+> OpenZeppelin SafeCast: Wrappers over Solidity's uintXX/intXX casting operators with added overflow checks. Downcasting from uint256/int256 in Solidity does not revert on overflow. This can easily result in undesired exploitation or bugs, since developers usually assume that overflows raise errors. `SafeCast` restores this intuition by reverting the transaction when such an operation overflows.
+
+from point 177 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+</HiddenSolution>
+
+---
+
+### Question 12 of 32
+
+OpenZeppelin ERC20Pausable
+
+<ul>
+  <li><input type="checkbox" /> A. Adds ability to pause token transfers</li>
+  <li><input type="checkbox" /> B. Adds ability to pause token minting and burning</li>
+  <li><input type="checkbox" /> C. Provides modifiers `whenPaused` and `whenNotPaused`</li>
+  <li><input type="checkbox" /> D. None of the above</li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, B**. Not C, because it inherits these modifiers from Pausable and doesn't implement them
+
+> OpenZeppelin ERC20Pausable: ERC20 token with pausable token transfers, minting and burning. Useful for scenarios such as preventing trades until the end of an evaluation period, or having an emergency switch for freezing all token transfers in the event of a large bug.
+
+from point 148 Extensions of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+
+> OpenZeppelin Pausable: provides an emergency stop mechanism using functions pause and unpause that can be triggered by an authorized account. This module is used through inheritance. It will make available the modifiers whenNotPaused and whenPaused, which can be applied to the functions of your contract. Only the functions using the modifiers will be affected when the contract is paused or unpaused.
+
+from point 156 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+</HiddenSolution>
+
+---
+
+### Question 13 of 32
+
+CREATE2
+
+<ul>
+  <li><input type="checkbox" /> A. Deploys two contracts proxy and implementation concurrently</li>
+  <li><input type="checkbox" /> B. Deploys contract at an address that can be predetermined</li>
+  <li><input type="checkbox" /> C. Uses a salt and contract `creationCode`</li>
+  <li><input type="checkbox" /> D. None of the above</li>
+</ul>
+
+<HiddenSolution>
+**Correct is B, C**.
+
+> OpenZeppelin Create2: makes usage of the CREATE2 EVM opcode easier and safer. CREATE2 can be used to compute in advance the address where a smart contract will be deployed [...].
+
+from point 163 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+
+> `deploy(uint256 amount, bytes32 salt, bytes bytecode) → address:{:solidity}`: Deploys a contract using CREATE2.
+
+from point 163.1 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+</HiddenSolution>
+
+---
+
+### Question 14 of 32
+
+Name collision error with inheritance happens when the following pairs have the same name within a contract
+
+<ul>
+  <li><input type="checkbox" /> A. Function & modifier</li>
+  <li><input type="checkbox" /> B. Function & event</li>
+  <li><input type="checkbox" /> C. Function & function</li>
+  <li><input type="checkbox" /> D. Event & modifier</li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, B, D**.
+
+> Name Collision Error: It is an error when any of the following pairs in a contract have the same name due to inheritance: 1) a function and a modifier 2) a function and an event 3) an event and a modifier.
+
+from point 112 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+</HiddenSolution>
+
+---
+
+### Question 15 of 32
+
+OpenZeppelin's (role-based) AccessControl library
+
+<ul>
+  <li><input type="checkbox" /> A. Provides support only for two specific: Owner and User</li>
+  <li><input type="checkbox" /> B. Provides support for different roles with different authorization levels</li>
+  <li><input type="checkbox" /> C. Provides support for granting and revoking roles</li>
+  <li><input type="checkbox" /> D. None of the above</li>
+</ul>
+
+<HiddenSolution>
+**Correct is B, C**.
+
+> OpenZeppelin AccessControl: provides a general role based access control mechanism. Multiple hierarchical roles can be created and assigned each to multiple accounts. Roles can be used to represent a set of permissions. hasRole is used to restrict access to a function call. Roles can be granted and revoked dynamically via the grantRole and revokeRole functions which can only be called by the role’s associated admin accounts.
+
+from point 155 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+</HiddenSolution>
+
+---
+
+### Question 16 of 32
+
+OpenZeppelin's proxy implementations
+
+<ul>
+  <li><input type="checkbox" /> A. Typically have a proxy contract and an implementation contract</li>
+  <li><input type="checkbox" /> B. Use delegatecalls from proxy to implementation</li>
+  <li><input type="checkbox" /> C. Cannot support upgradable proxies</li>
+  <li><input type="checkbox" /> D. None of the above</li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, B**.
+
+> OpenZeppelin Proxy: This abstract contract provides a fallback function that delegates all calls to another contract using the EVM instruction delegatecall. We refer to the second contract as the implementation behind the proxy, and it has to be specified by overriding the virtual _implementation function.
+
+from point 185 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+
+> OpenZeppelin ERC1967Proxy: implements an upgradeable proxy. It is upgradeable because calls are delegated to an implementation address that can be changed.
+
+from point 186 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+</HiddenSolution>
+
+---
+
+### Question 17 of 32
+
+Which of the following is/are true for a function `f` that has a modifier `m`?
+
+<ul>
+  <li><input type="checkbox" /> A. Function `f` cannot have another modifier because every function function can have at most one modifier</li>
+  <li><input type="checkbox" /> B. Function `f`'s code is inlined at the point of '`_`' within modifier `m`</li>
+  <li><input type="checkbox" /> C. Function `f` reverts if '`_`' is not executed in the modifier `m`</li>
+  <li><input type="checkbox" /> D. None of the above</li>
+</ul>
+
+<HiddenSolution>
+**Correct is B**.
+
+> Function Modifiers: They can be used to change the behaviour of functions in a declarative way. For example, you can use a modifier to automatically check a condition prior to executing the function. The function’s control flow continues after the “_” in the preceding modifier. Multiple modifiers are applied to a function by specifying them in a whitespace-separated list and are evaluated in the order presented. The modifier can choose not to execute the function body at all and in that case the return variables are set to their default values just as if the function had an empty body. The _ symbol can appear in the modifier multiple times. Each occurrence is replaced with the function body.
+
+from point 22 of [Solidity 101 - by Secureum](https://secureum.substack.com/p/solidity-101)
+</HiddenSolution>
+
+---
+
+### Question 18 of 32
+
+Zero address check is typically recommended because
+
+<ul>
+  <li><input type="checkbox" /> A. The use of zero address for transfers will trigger an EVM exception</li>
+  <li><input type="checkbox" /> B. Ether/tokens sent to zero address will be inaccessible</li>
+  <li><input type="checkbox" /> C. Ether/tokens sent to zero address can be accessed by anyone</li>
+  <li><input type="checkbox" /> D. Address 0 is the Ethereum Masternode account and is forbidden for access</li>
+</ul>
+
+<HiddenSolution>
+**Correct is B**.
+
+> Zero Address Check: address(0) which is 20-bytes of 0’s is treated specially in Solidity contracts because the private key corresponding to this address is unknown. Ether and tokens sent to this address cannot be retrieved and setting access control roles to this address also won’t work (no private key to sign transactions). Therefore zero addresses should be used with care and checks should be implemented for user-supplied address parameters.
+
+from point 144 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+</HiddenSolution>
+
+---
+
+### Question 19 of 32
+
+Solidity supports
+
+<ul>
+  <li><input type="checkbox" /> A. Multiple inheritance</li>
+  <li><input type="checkbox" /> B. Polymorphism</li>
+  <li><input type="checkbox" /> C. Contract overloading</li>
+  <li><input type="checkbox" /> D. Function overloading</li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, B, D**. No such things as C.
+
+> Solidity supports multiple inheritance including polymorphism
+
+from point 102 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+
+> Function Overloading: A contract can have multiple functions of the same name but with different parameter types. This process is called “overloading.”
+
+from point 25 of [Solidity 101 - by Secureum](https://secureum.substack.com/p/solidity-101)
+</HiddenSolution>
+
+---
+
+### Question 20 of 32
+
+OpenZeppelin ERC721
+
+<ul>
+  <li><input type="checkbox" /> A. Implements the NFT standard</li>
+  <li><input type="checkbox" /> B. `safeTransferFrom(..)` checks for zero-addresses</li>
+  <li><input type="checkbox" /> C. `approve(..)` is susceptible to race-condition just like ERC20</li>
+  <li><input type="checkbox" /> D. `setApprovalForAll(address operator, bool _approved)` approves/removes `operator` for all of caller's tokens</li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, B, D**. Not C, since approval is not susceptible since approval can only given or taken away for a single token, so changing approval doesn't allow stealing more than was already approved.
+
+> OpenZeppelin ERC721: Implements the popular ERC721 Non-Fungible Token Standard.
+
+from point 151 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+
+> `safeTransferFrom(..)`: Safely transfers tokenId token from from to to, checking first that contract recipients are aware of the ERC721 protocol to prevent tokens from being forever locked. Requirements: 1) from cannot be the zero address [...]
+
+from point 151.4 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+
+> `setApprovalForAll(address operator, bool _approved)`: Approve or remove operator as an operator for the caller. Operators can call transferFrom or safeTransferFrom for any token owned by the caller.
+
+from point 151.7 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+</HiddenSolution>
+
+---
+
+### Question 21 of 32
+
+For `contract A {uint256 i; bool b1; bool b2; address a1;}{:solidity}` the number of storage slots used is:
+
+<ul>
+  <li><input type="checkbox" /> A. 4</li>
+  <li><input type="checkbox" /> B. 3</li>
+  <li><input type="checkbox" /> C. 2</li>
+  <li><input type="checkbox" /> D. 1</li>
+</ul>
+
+<HiddenSolution>
+**Correct is C**. The uint256 takes a full slot, the bools (each 1 byte) and the address (20 bytes) can packed into the same slot
+
+> Storage Layout: State variables of contracts are stored in storage in a compact way such that multiple values sometimes use the same storage slot. Except for dynamically-sized arrays and mappings, data is stored contiguously item after item starting with the first state variable, which is stored in slot 0
+
+from point 115 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+
+> Storage Layout Packing: For each state variable, a size in bytes is determined according to its type. Multiple, contiguous items that need less than 32 bytes are packed into a single storage slot if possible, according to the following rules: [...] If a value type does not fit the remaining part of a storage slot, it is stored in the next storage slot
+
+from point 116 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+</HiddenSolution>
+
+---
+
+### Question 22 of 32
+
+Which of the following is/are generally true about storage layouts?
+
+<ul>
+  <li><input type="checkbox" /> A. The number of slots used for a contract depends on the ordering of state variable declarations</li>
+  <li><input type="checkbox" /> B. The slots for struct elements are consecutive</li>
+  <li><input type="checkbox" /> C. The slot `s` for dynamic array contains the length with individual elements stored consecutively in slots starting at `keccak256(s)`</li>
+  <li><input type="checkbox" /> D. The slot `s` for mapping is empty with individual values stored consecutively in slots starting at `keccak(h(k).s)` where `k` is the first key and `h` is a hash function that depends on type of `k`</li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, B, C**. For mappings the slots are unique for each key, they're not consecutive.
+
+> Storage Layout & Ordering: Ordering of storage variables and struct members affects how they can be packed tightly. For example, declaring your storage variables in the order of uint128, uint128, uint256 instead of uint128, uint256, uint128, as the former will only take up two slots of storage whereas the latter will take up three.
+
+from point 120 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+
+> Storage Layout & Structs/Arrays: [...] The elements of structs and arrays are stored after each other, just as if they were given as individual values.
+
+from point 117 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+
+> Storage Layout for Dynamic Arrays: If the storage location of the array ends up being a slot p after applying the storage layout rules, this slot stores the number of elements in the array (byte arrays and strings are an exception). Array data is located starting at keccak256(p) and it is laid out in the same way as statically-sized array data would: One element after the other, potentially sharing storage slots if the elements are not longer than 16 bytes.
+
+from point 122 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+
+> Storage Layout for Mappings: For mappings, the slot stays empty, but it is still needed to ensure that even if there are two mappings next to each other, their content ends up at different storage locations. The value corresponding to a mapping key k is located at keccak256(h(k) . p) where . is concatenation and h is a function that is applied to the key depending on its type [...]
+
+from point 123 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+</HiddenSolution>
+
+---
+
+### Question 23 of 32
+
+Assuming all contracts C1, C2 and C3 define explicit constructors in `contract C1 is C2, C3{:solidity}`  and both C2 and C3 don't inherit contracts, the number & order of constructor(s) executed is/are
+
+<ul>
+  <li><input type="checkbox" /> A. One, that of C1</li>
+  <li><input type="checkbox" /> B. Three, in the order C2, C3, C1</li>
+  <li><input type="checkbox" /> C. One, that of C3</li>
+  <li><input type="checkbox" /> D. Three, in the order C1, C2, C3</li>
+</ul>
+
+<HiddenSolution>
+**Correct is B**.
+
+> Base Constructors: The constructors of all the base contracts will be called following the linearization rules.
+
+from point 111 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+
+> Storage Layout & Inheritance: For contracts that use inheritance, the ordering of state variables is determined by the C3-linearized order of contracts starting with the most base-ward contract. If allowed by the above rules, state variables from different contracts do share the same storage slot.
+
+from point 118 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+</HiddenSolution>
+
+---
+
+### Question 24 of 32
+
+OpenZeppelin SafeMath
+
+<ul>
+  <li><input type="checkbox" /> A. Prevents integer overflow/underflow at compile-time</li>
+  <li><input type="checkbox" /> B. Is not required if using Solidity compiler version >= 0.8.0</li>
+  <li><input type="checkbox" /> C. Both A & B</li>
+  <li><input type="checkbox" /> D. Neither A nor B</li>
+</ul>
+
+<HiddenSolution>
+**Correct is B**. Not A, because it does not prevent them at compile- but at runtime. It can be argued it's not B since it's a recommendation and not a requirement.
+
+> OpenZeppelin SafeMath: provides mathematical functions that protect your contract from overflows and underflows.
+
+from point 175 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+
+> Overflow/Underflow Check: Until Solidity version 0.8.0 which introduced checked arithmetic by default, arithmetic was unchecked and therefore susceptible to overflows and underflows which could lead to critical vulnerabilities. The recommended best-practice for such contracts is to use OpenZeppelin’s SafeMath > library for arithmetic.
+
+from point 146 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+</HiddenSolution>
+
+---
+
+### Question 25 of 32
+
+Which of the following is/are not allowed?
+
+<ul>
+  <li><input type="checkbox" /> A. Function overriding</li>
+  <li><input type="checkbox" /> B. Function overloading</li>
+  <li><input type="checkbox" /> C. Modifier overloading</li>
+  <li><input type="checkbox" /> D. Modifier overriding</li>
+</ul>
+
+<HiddenSolution>
+**Correct is C**.
+
+> Function Overriding: Base functions can be overridden by inheriting contracts to change their behavior if they are marked as virtual. The overriding function must then use the override keyword in the function header.
+
+from point 102.3 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+
+> Function Overloading: A contract can have multiple functions of the same name but with different parameter types. This process is called “overloading.”
+
+from point 25 of [Solidity 101 - by Secureum](https://secureum.substack.com/p/solidity-101)
+
+> Modifier Overriding: Function modifiers can override each other. This works in the same way as function overriding (except that there is no overloading for modifiers).
+
+from point 110 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+</HiddenSolution>
+
+---
+
+### Question 26 of 32
+
+Which of the following is/are true about abstract contracts and interfaces?
+
+<ul>
+  <li><input type="checkbox" /> A. Abstract contracts have at least one function undefined</li>
+  <li><input type="checkbox" /> B. Interfaces can have some functions defined</li>
+  <li><input type="checkbox" /> C. Unimplemented functions in abstract contracts need to be declared virtual</li>
+  <li><input type="checkbox" /> D. All functions are implicitly virtual in interfaces</li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, C, D**. Note that A isn't necessarily correct since abstract classes can have all functions defined.
+
+> Abstract Contracts: Contracts need to be marked as abstract when at least one of their functions is not implemented. They use the abstract keyword.
+
+from point 103.1 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+
+> Interfaces: They cannot have any functions implemented.
+
+from point 103.2 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+
+> Virtual Functions: Functions without implementation have to be marked virtual outside of interfaces. In interfaces, all functions are automatically considered virtual. Functions with private visibility cannot be virtual.
+
+from point 108 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+</HiddenSolution>
+
+---
+
+### Question 27 of 32
+
+Storage layout
+
+<ul>
+  <li><input type="checkbox" /> A. Refers to the layout of state variables in storage</li>
+  <li><input type="checkbox" /> B. Is organized in 256-byte slots</li>
+  <li><input type="checkbox" /> C. Is packed for value types that use less than 32 bytes</li>
+  <li><input type="checkbox" /> D. Always starts on a new slot for reference types</li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, C, D**. Not B, because it's 256-bit slots, not Byte.
+
+> EVM Storage: Storage is a key-value store that maps 256-bit words to 256-bit words and is accessed with EVM’s SSTORE/SLOAD instructions. All locations in storage are initialized as zero.
+
+from point 114 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+
+> Storage Layout Packing: For each state variable, a size in bytes is determined according to its type. Multiple, contiguous items that need less than 32 bytes are packed into a single storage slot if possible, according to the following rules: [...] Value types use only as many bytes as are necessary to store them
+
+from point 116 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+</HiddenSolution>
+
+---
+
+### Question 28 of 32
+
+Which of the following EVM instruction(s) do(es) not touch EVM storage?
+
+<ul>
+  <li><input type="checkbox" /> A. `SLOAD`</li>
+  <li><input type="checkbox" /> B. `MSTORE8`</li>
+  <li><input type="checkbox" /> C. `SSTORE`</li>
+  <li><input type="checkbox" /> D. `SWAP`</li>
+</ul>
+
+<HiddenSolution>
+**Correct is B, D**.
+
+> EVM Storage: Storage is a key-value store that maps 256-bit words to 256-bit words and is accessed with EVM’s SSTORE/SLOAD instructions. All locations in storage are initialized as zero.
+
+from point 114 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+
+> EVM Memory: EVM memory is linear and can be addressed at byte level and accessed with MSTORE/MSTORE8/MLOAD instructions. All locations in memory are initialized as zero.
+
+from point 125 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+
+> Stack is made up of 1024 256-bit elements. EVM instructions can operate with the top 16 stack elements. Most EVM instructions operate with the stack (stack-based architecture) and there are also stack-specific operations e.g. PUSH, POP, SWAP, DUP etc.
+
+from point 60 of [Ethereum 101 - by Secureum](https://secureum.substack.com/p/ethereum-101)
+</HiddenSolution>
+
+---
+
+### Question 29 of 32
+
+Proxied contracts
+
+<ul>
+  <li><input type="checkbox" /> A. Should use constructors in implementation contract to initialize the proxy's state variables</li>
+  <li><input type="checkbox" /> B. Should use an external/public `initialize()` function</li>
+  <li><input type="checkbox" /> C. Should have their `initialize()` function called only once</li>
+  <li><input type="checkbox" /> D. All of the above</li>
+</ul>
+
+<HiddenSolution>
+**Correct is B, C**.
+
+> OpenZeppelin Initializable: aids in writing upgradeable contracts, or any kind of contract that will be deployed behind a proxy. Since a proxied contract cannot have a constructor, it is common to move constructor logic to an external initializer function, usually called initialize. It then becomes necessary to protect this initializer function so it can only be called once. The initializer modifier provided by this contract will have this effect.
+> 
+> To avoid leaving the proxy in an uninitialized state, the initializer function should be called as early as possible by providing the encoded function call as the _data argument. When used with inheritance, manual care must be taken to not invoke a parent initializer twice, or to ensure that all initializers are idempotent. This is not verified automatically as constructors are by Solidity.
+
+from point 192 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+</HiddenSolution>
+
+---
+
+### Question 30 of 32
+
+OpenZeppelin's ReentrancyGuard library mitigates reentrancy risk in a contract
+
+<ul>
+  <li><input type="checkbox" /> A. For all its functions by simply deriving/inheriting from it</li>
+  <li><input type="checkbox" /> B. Only for functions that apply the `nonReentrant` modifier</li>
+  <li><input type="checkbox" /> C. By enforcing a checks-effects-interactions pattern in its functions</li>
+  <li><input type="checkbox" /> D. None of the above</li>
+</ul>
+
+<HiddenSolution>
+**Correct is B**.
+
+> OpenZeppelin ReentrancyGuard: prevents reentrant calls to a function. Inheriting from ReentrancyGuard will make the nonReentrant modifier available, which can be applied to functions to make sure there are no nested (reentrant) calls to them.
+
+from point 73 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+</HiddenSolution>
+
+---
+
+### Question 31 of 32
+
+EVM inline assembly has
+
+<ul>
+  <li><input type="checkbox" /> A. Its own language Yul</li>
+  <li><input type="checkbox" /> B. Safety checks just like Solidity</li>
+  <li><input type="checkbox" /> C. Access to all variables in the contract and function where present</li>
+  <li><input type="checkbox" /> D. References to variables as their addresses not values</li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, C, D**.
+
+> Inline Assembly: Inline assembly is a way to access the Ethereum Virtual Machine at a low level. This bypasses several important safety features and checks of Solidity. You should only use it for tasks that need it, and only if you are confident with using it. The language used for inline assembly in Solidity is called Yul.
+
+from point 132 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+
+> Inline Assembly Access to External Variables, Functions and Libraries: You can access Solidity variables and other identifiers by using their name. Local variables of value type are directly usable in inline assembly. Local variables that refer to memory/calldata evaluate to the address of the variable in memory/calldata and not the value itself [...]
+
+from point 133 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+</HiddenSolution>
+
+---
+
+### Question 32 of 32
+
+If OpenZeppelin's `isContract(address){:solidity}` returns false for an address then
+
+<ul>
+  <li><input type="checkbox" /> A. Address is guaranteed to not be a contract</li>
+  <li><input type="checkbox" /> B. Codesize at address is 0 at time of invocation</li>
+  <li><input type="checkbox" /> C. Both A & B</li>
+  <li><input type="checkbox" /> D. Neither A nor B</li>
+</ul>
+
+<HiddenSolution>
+**Correct is B**.
+
+> Returns true if account is a contract. It is unsafe to assume that an address for which this function returns false is an externally-owned account (EOA) and not a contract. Among others, isContract will return false for the following types of addresses: 1) an externally-owned account 2) a contract in construction 3) an address where a contract will be created 4) an address where a contract lived, but was destroyed
+
+from point 159.1 of [Solidity 201 - by Secureum](https://secureum.substack.com/p/solidity-201)
+</HiddenSolution>
+
+---

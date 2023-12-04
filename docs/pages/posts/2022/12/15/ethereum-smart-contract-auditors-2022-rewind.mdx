@@ -1,0 +1,316 @@
+# Ethereum Smart Contract Auditor's 2022 Rewind
+
+<p className="text-xs text-right">December 15, 2022 by [patrickd](/about#patrickd)</p>
+
+This article is the result of reviewing the technical details from many of this year's Smart Contract Vulnerabilities and Exploits in and around the Ethereum ecosystem.
+
+
+## The Novelties
+
+### Phantom Functions
+
+In [**January, Dedaub**](https://media.dedaub.com/phantom-functions-and-the-billion-dollar-no-op-c56f062ae49f) discovered a [Bug in the Multichain](https://twitter.com/MultichainOrg/status/1483733455296860160) Project that might be a novel attack vector to look out for.
+
+What might come closest to this issue is the surprise many developers have when `call()`ing an arbitrary function on an address with no code deployed. Intuitively, most would expect it to fail, but it does not. One way to explain this is that for the EVM, all bytecode implicitly ends with the `STOP` opcode, even if it is not present. That is true as well for accounts without any code. And `STOP` tells the EVM to return without any errors.
+
+On the other hand, this behavior usually changes for deployed Solidity contracts. If you call a function the contract did not implement, the EVM will be told to `REVERT`. The exception to this rule is contracts that have a `fallback` function implemented that deals with any calls that do not have any or a matching function signature.
+
+And this is basically where the crux of this attack vector lies: Developers expect that (1) callees will revert if the function they are calling does not exist and that (2) if it does exist, the function will revert when something goes wrong during the call. But what if the function does not exist, but the callee has a fallback function that will accept any input and never revert?
+
+```solidity
+function depositWithPermit(...) {
+    IERC20(token).permit(receiver, address(this), value, deadline, v, r, s);
+    IERC20(token).transferFrom(receiver, address(this), value);
+}
+```
+
+In the specific case of Multichain, the devs expected that the `transferFrom()` call would only be reached when the caller passed a valid signature since in any other case `permit()` would revert. However, some tokens, like WETH, don't implement `permit()` but implement a `fallback` function that never reverts. In that case, one could have passed an invalid signature and made arbitrary transfers with the WETH that a user had already approved for the calling contract.
+
+* Speaking of January Phantoms, [**Qubit Finance**](https://medium.com/@QubitFin/protocol-exploit-report-305c34540fa3)'s bridge was exploited due to incorrectly having whitelisted the zero-address as a valid WETH implementation. Additionally, when depositing funds into the bridge, they did not check for contract-existance (`account.code.length > 0`) which lead to the success-response mentioned above when `transferFrom()` was executed. This allowed the attacker to mint arbitrary amounts of xETH on the other side of the bridge and then drain the funds on mainnet by "transferring them back".
+
+---
+
+### Double-Entry Point Tokens
+
+In [**March, ChainSecurity**](https://medium.com/chainsecurity/trueusd-compound-vulnerability-bc5b696d29e2) discovered an issue with the TrueUSD stablecoin while auditing Compound.
+
+Compound has a `sweepToken()` function, a common strategy to rescue funds that were accidentally sent to a contract managing a specific underlying token. While anyone can call this function, they will only ever be sent to an address belonging to the protocol's admins. Furthermore, to prevent this from being used as a possible rug-pull vector, only non-underlying tokens (tokens that the contract isn't supposed to work with) are allowed to be withdrawn.
+
+Problems with this arise when there are multiple contracts for the same token, as was the case with TUSD: There's a separate Legacy Contract that can be used just like TUSD, but all it does is forward all actions to the actual TUSD contract. So whenever an address has a TrueUSD balance, it also has an equal balance in the Legacy Contract, and either of them could be called to transfer this balance.
+
+Typically, this would only break the "anti-rug" protection, but as long as the admins can be trusted, this wouldn't allow anyone to run away with the funds. But in Compounds' case, this sudden drop in the contract's TUSD balance would have affected the token/cToken exchange rate and could have been exploited like a price oracle manipulation.
+
+* Shortly after, [**OpenZeppelin**](https://blog.openzeppelin.com/compound-tusd-integration-issue-retrospective/) determined that issues like these weren't unique to Compound but had broader implications for DeFi. In the end, they worked together with TrueUSD's Team to fix the issue at its root by blocking the Legacy Contract and basically disabling its usage.
+* In [**May, Balancer**](https://medium.com/immunefi/balancer-dos-bugfix-review-8a8ba5d971bf) was notified of a similar issue with Synthetix tokens, which also offered a double entry point. Balancer's vaults can be DoS-attacked by such tokens through their flashloan feature: The attacker would borrow all of the vault's tokens from one entry point but zero from the other. When the loan is repaid, it would then mistakenly think that all of the tokens from the second entry point were sent back as a fee and would forward them to a governance-controlled `ProtocolFeesCollector` contract, basically removing all of the vault's tokens. Assuming that the governance can be trusted this would not allow anyone to steal them, but it would temporarily cause the vault to stop working.
+
+---
+
+### Fancy Native Tokens
+
+In [**March, Gnosis Chain**](https://twitter.com/Mudit__Gupta/status/1503783633877827586)'s native token XDAI turned out to have a `callAfterTransfer()` hook, which some projects seemingly did not anticipate. Agave (an AAVE clone) and Hundred Finance (a Compound Clone) were exploited via a reentrancy attack introduced by the native token's feature, allowing contracts to react to receiving tokens similarly to [ERC777](https://eips.ethereum.org/EIPS/eip-777).
+
+The original projects, that the exploited protocols are based on, are well established and clones like these happen all the time. What the copy-cats forgot to replicate, though, were the strict guidelines that were in place to prevent listing tokens allowing for reentrancy, precisely for the reason that this would make the protocols vulnerable.
+
+Even so, the fact that Gnosis Chain added such behavior to their official bridged token seems like a bad design decision that'll likely cause more confusion and exploits like these in the future.
+
+* Just a couple weeks later, still in [**March, Fuse Network**](https://rekt.news/voltage-finance-rekt/) surprised compound clone Ola Finance. Fuse, similar to Gnosis, decided to implement the [ERC-677](https://github.com/ethereum/EIPs/issues/677) standard for their bridged token, which calls `onTokenTransfer()` on receiving addresses with contracts.
+
+---
+
+### NFT Flashloan Attacks
+
+In [**March, BAYC**](https://medium.com/amber-group/reproducing-the-ape-airdrop-flash-loan-arbitrage-exploit-93f79728fcf5) intended to AirDrop the ERC20 APE Tokens to owners of their NFTs. Owner could call the `claimTokens()` function and get APEs based on the amount of BAYC/MAYC NFTs they currently hold.
+
+Projects like NFTX have attempted to bring DeFi mechanics into the NFT space, and it appears that the BAYC devs were not paying enough attention to this development. A form of fungibility was introduced with fractionalization: Minting fungible tokens based on a non-fungible one by locking it up.
+
+NFTX also offered the possibility to flashloan these fungible "vTokens", which effectively allows flashloaning the actual NFTs they represent. Being able to flashloan BAYC's NFTs meant that the first person to do so would be able to claim the airdrop for them. And that is what happened, although the community isn't sure whether this was an exploit or fair game.
+
+---
+
+### Read-Only Reentrancy
+
+In [**April, Chainsecurity**](https://chainsecurity.com/curve-lp-oracle-manipulation-post-mortem/) found a new issue that various protocols integrating with Curve were vulnerable to.
+
+These projects could remove liquidity from Curve's ETH/stETH-pool using the `remove_liquidity()` function, which had a reentrancy guard preventing any other calls to maliciously re-enter the pool contract while the state had not finished updating yet. The function would burn all of the liquidity tokens being redeemed first, and only then would it start iterating over each underlying token and send them out one by one. Using a reentrancy guard makes sense since the first underlying asset being sent out is raw ETH which will trigger the `fallback()` function on a receiving contract. A malicious receiver won't be able to re-enter any of Curve's state-changing functions to exploit that the pool is imbalanced from the fact that the underlying stETH has not been sent out yet.
+
+However, Curve's view functions had no such protection, and other protocols that relied on `get_virtual_price()` would have received a manipulated LP token price. A new best practice might establish itself where external protocols will be allowed to easily check the mutex state of another contract that uses reentrancy-lock patterns. Then external protocols will be able to ensure that fetching information from a view function will not be reentrancy and the returned value won't be based on an incomplete state.
+
+* Not long after post-mortems of this attack vector were published, [multiple projects](https://quillaudits.medium.com/decoding-220k-read-only-reentrancy-exploit-quillaudits-30871d728ad5) didn't get the memo and were exploited in a price manipulation attack using the exact read-only reentrancy described above.
+
+---
+
+### Cross-Protocol Reentrancy
+
+In [**July, Sherlock**](https://mirror.xyz/0xE400820f3D60d77a3EC8018d44366ed0d334f93C/LOZF1YBcH1eBdxlC6HP223cAMeTpNgQ-Kc4EjQuxmGA)'s EulerStrategy was vulnerable to a sophisticated cross-protocol attack vector involving Sherlock, Euler, and 1inch.
+
+The calculation of a staked Sherlock position's value relied on the atomicity of the deposit action into Euler: When a user wanted to swap their USDC to Euler's eUSDC token, Sherlock expected this to happen in a single atomic step.
+
+This assumption did not hold when the swap was done using 1inch: While the underlying USDC balance had already increased, the attacker's contract would be called back before the total supply of eUSDC is updated. During this time, the exchange rate would be reported incorrectly, and an attacker could exploit this by redeeming their staked Sherlock position at an inflated rate.
+
+
+## The Usual
+
+### Missing Input Validation
+
+* In [**March, the NFT Marketplace Treasure DAO**](https://rekt.news/treasure-dao-rekt/)'s `buyItem()` allowed attackers to purchase NFTs without payment by specifying a `quantity` of 0. The total was calculated by multiplying the per-item price with the quantity, then a `transferFrom()` with the resulting amount of zero did not revert, and from this, the protocol assumed that payment must have been successful.
+* A couple of weeks later, [**Paraluni**](https://slowmist.medium.com/paraluni-incident-analysis-58be442a4f99)'s `depositByAddLiquidity()` did not check whether the supplied token-pair addresses matched with the specified pair-id. An attacker exploited this by specifying a pair of malicious tokens which the protocol will call `transferFrom()` on to deposit into a real pair based on the ID. During this call, the attacker re-entered the protocol via the `deposit()` function, causing the deposited LP tokens to be accounted for the `depositByAddLiquidity()` as well, doubling the attacker's overall LP token balance.
+* In [**May, an MEV bot**](https://twitter.com/BlockSecTeam/status/1529293056179986432)'s Uniswap callback function `uniswapV2Call()` used vulnerable example code to use flash swaps for arbitrage trades. The issue with the code snippet Uniswap provides is that the initiator of the flash swap is not checked, basically allowing anyone to trigger the callback and have it execute a swap. The attacker exploited this by using flashloans to create a large spread in the pool that the MEV bot used for its arbitrage functionality which it happily traded suffering a large slippage.
+* In [**October, EarningFarm**](https://twitter.com/Supremacy_CA/status/1581012823701786624)'s EFLeverVault contract was similarly exploited when their flashloan callback did not validate the initiator. The Vault `withdraw()` function made use of flashloans because it had to repay some debt on Aave to withdraw stETH which it automatically converted to native ETH before transferring it to the user. The attacker could drain the Vault by first triggering the flashloan callback without calling `withdraw()`, causing a large sum of ETH to lay waiting on the contract. Then the attacker withdrew a small legitimate amount they deposited before, but `withdraw()` always sent the entire current contract balance.
+* End of [**October, Team Finance**](https://slowmist.medium.com/analysis-review-of-team-finance-exploit-f439c2f63e2)'s LiquidityLock contract allowed projects to migrate locked LP positions from Uniswap v2 to v3. Unfortunately, the `migrate()` function did not correctly validate whether the specified liquidity belonged to the caller. It merely checked whether they had any token locked at all, even fake tokens were accepted. Having bypassed these checks, the attacker could specify that only 1% of the liquidity should be migrated, and the rest was refunded to the attacker.
+* In [**November, Oasis**](https://www.trustindistrust.com/post/taking-home-a-20k-bounty-with-oasis-platform-shutdown-vulnerability) platform allowed users to delegate-call whitelisted services within the context of the `OperationExecutor` contract and not only in the context of the user's `DSProxy` smart wallet as intended. One of these whitelisted services was Aave's `InitializableUpgradeabilityProxy` which has an `initialize()` function that will delegate-call to arbitrary addresses as long as the `initialized` flag has not been set. Checking this flag did not evaluate to true within the context of the `OperationExecutor` contract, which would have allowed for its self-destruction.
+
+---
+
+### Missing Access Control
+
+* In [**January, BURG token**](https://twitter.com/CertiKCommunity/status/1482930661547782148)'s public `burn()` method together with flashloans was exploited on BSC. The ability to arbitrarily decrease the number of tokens from pools allowed attackers to manipulate the prices of AMMs and drain tokens paired with BURG.
+* In [**April, Hospo token**](https://twitter.com/danielvf/status/1511013322015051797) had a public `burn()` method that was similarly exploited, draining the UniswapV2 Hospo/ETH pool.
+* Sometime later in [**April, Rikkei Finance**](https://twitter.com/CertiKAlert/status/1514831117169405953) was exploited via its public `setOracleData()` function allowing the attacker to set their own malicious price oracle. Being able to manipulate prices freely, they drained the protocol through borrowing.
+* Lastly, for [**April, Aave**](https://medium.com/@hacxyk/aave-v3s-price-oracle-manipulation-vulnerability-168e44e9e374) had a "fallback oracle" in place, which would have taken over price determination when chainlink failed. This fallback had a public `setAssetPrice()` function where any price could have been set. The fact that Aave used chainlink's legacy `latestAnswer()` function instead of `latestRoundData()` increased the likelihood of this being exploitable, but it was still unlikely overall.
+* Then in [**June, Gym Network**](https://rekt.news/gymnet-rekt/) upgraded their protocol by adding a `depositFromOtherContract()` function, which was intended to allow their "bank" contract to update the protocol's balances when a deposit happened there. An attacker exploited the fact that the caller was not checked, used this  to change their balance arbitrarily, and finally withdrew tokens that they never deposited in the first place.
+* In [**August, Reaper Farm**](https://twitter.com/0xpaladinsec/status/1554445299665485825)'s `withdraw()` function allowed to withdraw anyone's funds from the protocol. There was no check whether the `msg.sender` matches the specified owner or whether they have the owner's permission to handle their funds.
+* Shortly after, in [**August, Energyfi**](https://twitter.com/0xblvck_/status/1559745120500699136) had a similar issue in their bridge: The `teleport()` function allowed to bridge anyone's funds to the other side without checking whether the `msg.sender` owns those funds or has any permission to make use of them. Fortunately, the impact was small since they, unlike most other protocols, did not make use of unlimited approvals.
+* End of [**August, DDC token**](https://twitter.com/BeosinAlert/status/1564240190851383302) had a public `handleDeductFee()` function that, similarly to a public `burn()` function, could be used to remove arbitrary amounts of tokens from a specified address. By deducting most of the AMM pool's tokens, the attacker manipulated the price and sold his few DDC for exorbitant returns.
+
+---
+
+### Incorrect Signature Scheme
+
+* In [**February, OpenSea**](https://nft.mirror.xyz/VdF3BYwuzXgLrJglw5xF6CHcQfAVbqeJVtueCr4BUzs)'s signatures were vulnerable to something similar to "Hash Collision" attacks, where variable length values lead to different concatenated values resulting in the same signed hash. Additionally, OpenSea used "replacement patterns", which can be understood as bit-masks that specify which parts of the signed order a user is allowed to change for fulfillment. An attacker could have added and removed bytes from the replacement pattern without invalidating the signature, allowing them to modify fields of the signed order that were supposed to be unchangeable.
+* Then, in [**May, Fortress**](https://twitter.com/CertiKAlert/status/1523532664384405504)'s `submit()` function was supposed to accept price updates only from certain verified accounts with enough "power"-tokens to do so. But according to a code comment, this feature wasn't turned on yet as they were waiting to have proper "DPoS". What the function did instead was simply count the amount of provided signatures and ensure that those signers were unique. At no point it actually checked who the signer in question was, so the attacker could easily satisfy these checks and submit their own price data. Additionally, the attacker created and voted for a malicious governance proposal that was unnoticed for three days until he could execute it.
+* In [**June, ApolloX**](https://twitter.com/ErrNil/status/1534961106128580608) had two contracts with similar `claim()` functions that allowed callers to claim APX tokens if they could provide a valid message signed by an ApolloX administrator key. Individually these functions were not vulnerable, but the problem was that they were so similar that a signed message for one function could be replayed on the other. So the attacker simply had to extract all of the signatures one function had already been called with and call the other function with them.
+
+---
+
+### Composability/Complexity issues
+
+* [**June, Equalizer Finance**](https://equalizer-finance.medium.com/exploit-report-78bfd6b36689)'s staking vaults were drained due to an error when minting liquidity tokens. The number of liquidity tokens, created depended on the current deposited amount of underlying tokens which by itself was not an issue. Still, the `FlashLoanProvider` contract made use of the vault's funds by lending them out during flashloans. The attacker exploited this by first borrowing most of the vault's funds and then gaining disproportionate amounts of LP tokens by depositing into the vault. After paying back the flashloan, the ill-gained LP tokens could now be used to drain the vault of its funds.
+
+---
+
+### Reentrancy
+
+* In [**February, HypeBears NFT**](https://blocksecteam.medium.com/when-safemint-becomes-unsafe-lessons-from-the-hypebears-security-incident-2965209bda2a)'s `mint()` function had a check that was supposed to ensure a whitelisted address could only mint NFTs once by marking it as used when the function completed. Before this marking was done, though, it used `_safeMint()`, which calls `onERC721Received()` callback functions when the receiver is a contract. This allowed for reentering the `mint()` function again before the caller was marked as used, bypassing the check entirely.
+* Later in [**March, Bacon Protocol**](https://mirror.xyz/homecoinfinance.eth/LHaPiX38mnx8eJ2RVKNXHttHfweQMKNGmEnX4KUksk0) was exploited via its bHOME tokens, which implemented ERC-777 allowing reentrancy via the `tokensReceived()` hook. Their `lending()` function first issued the tokens and only later updated the amount being tracked for price determination. Fash loans were used to obtain a disproportionate number of bHOME tokens.
+* End of [**March, Revest**](https://revestfinance.medium.com/revest-protocol-exploit-recovery-plan-b06ca33fbdf5)'s ERC-1155 token FNFT was exploited when an attacker was able to re-enter the token contract through the `onERC1155Received()` hook during minting. The issue was that the variable tracking the amount of minted FNFTs, which was also responsible for determining the next FNFT-ID, was only updated once the mint was finished (after hook execution). This led to the same ID being reused when the attacker re-entered through another function which updated the existing entry making it much more valuable than it should be.
+* In [**May, Bistroo**](https://bistroo.medium.com/post-incident-review-bist-single-asset-staking-binancesmartchain-security-breach-5194590605f)'s bridged token implemented ERC-777. This was exploited on their staking contract's `emergencyWithdraw()`, function which had a textbook style issue: Users could emergency-withdraw all of their staked tokens at once, but it would only update the user's balance after the transfer finished. This left the attacker the opportunity to call it repeatedly via the `tokensReceived()` hook, draining the contract by re-using the same user balance.
+* In [**July, Omni**](https://degis.medium.com/security-event-case-study-omni-nft-money-market-hit-by-re-entrancy-attack-ef65fce5003c) used ERC-721 NFTs as collateral for borrowing but was vulnerable to reentrancy through `onERC721Received()` during liquidation: The collateral NFT is exchanged for the payment of the debt, and once this transfer has finished, the account is marked as debt-free and healthy. The attacker exploited this by re-entering while receiving the liquidated NFT by depositing many more NFTs and taking a large debt with them, which was immediately "forgiven" with the liquidation function's logic finishing. The attacker could withdraw those NFTs again since the system thought they were currently not being used as collateral.
+* In [**November, DFX Finance**](https://www.certik.com/resources/blog/27ZZE58zgmjoOnIbygqfJL-dfx-finance) suffered another textbook reentrancy exploited when the attacker could `deposit()` the flashloan back into the pool. The balance checks passed, and the protocol assumed the floashloan was paid back, but now the entire sum was double-accounted for, and the attacker could simply `withdraw()` the previously lent funds.
+
+---
+
+### Arbitrary/Unchecked External Calls
+
+* In [**March, LI.FI**](https://blog.li.fi/20th-march-the-exploit-e9e1c5c03eb9?gi=51f2c2b57f2)'s `swapAndStartBridgeTokensViaCBridge()` function, which, as the name implies, was a convenience function to swap tokens before bridging them, allowed making arbitrary external calls. This could be quite easily exploited by passing an array of `SwapData` structs (containing target address and calldata to call the address with) which were then iterated over and executed one by one. As a result, an attacker could call `transferFrom()` on any token for any LIFI user who had given the protocol an allowance.
+* End of [**March, Auctus**](https://twitter.com/SlowMist_Team/status/1508787862791069700) had an external `write()` function that allowed storing arbitrary addresses via its `setExchange()` modifier. Then it made an internal call to a `_sellACOTokens()` function which could be used to make arbitrary calls to this address. Once again, this was exploited by stealing approved user balances.
+* In [**April, StarStream**](https://medium.com/@Beosin_com/beosin-analysis-of-the-attack-on-starstream-a7a97396d6aa)'s Treasury was drained via a public `execute()` function that allowed making arbitrary external calls. The function belonged to the `DistributorTreasury` contract, which was registered as the treasury's owner. Via this, the attacker called the treasury's onlyOwner-protected `withdrawTokens()` function to steal its STAR tokens.
+* In [**September, NFTX**](https://blog.nftx.io/postmortem-nftxmarketplace0xzap-vulnerability/) deployed a new contract to source liquidity from 0xProtocol for their users. An internal function `_fillQuote()`, which was callable via various other public functions, allowed making arbitrary calls to any user-specified address with any user-specified calldata. These inputs were intended for 0x's API response, and it apparently wasn't considered that a malicious user could simply manually call these functions with arbitrary inputs draining both the contract's funds and funds of any user who gave approval to it.
+* Also in [**September, an MEV bot**](https://rekt.news/ripmevbot/) was exploited yet again through a flashloan callback function, likely trusting that callers being restricted to the trusted protocol dYdX would be sufficient protection. The attacker exploited the fact that anyone could initiate a flashloan to this contract and exploited an arbitrary call made within the callback giving themselves approval for the bot's funds.
+
+---
+
+### Oracle Manipulations
+
+* In [**March, Deus DAO**](https://lafayettetabor.medium.com/deus-post-mortem-3c65df12927f) was exploited when an attacker flashloaned DEI, decreasing the Solidly pool's holdings and, therefore, the current LP token price reported by its oracle. Thanks to this manipulation, the attacker could liquidate users who were borrowing on Deus DAO's protocol with these LP tokens as collateral.
+* Just one month later in [**April, Deus DAO**](https://rekt.news/deus-dao-rekt-2/) was again exploited similarly. This time though, Deus had added Muon as an additional oracle which monitors transactions of the same Solidly pool to calculate a Volume Weighted Average Price (VWAP). It was implemented as an off-chain oracle getting its pricing data from on-chain events, but it misread a large flash-swap as an actual trade, significantly affecting its price feed.
+
+---
+
+### TWAP Oracle Manipulations
+
+* In [**January, Float Protocol**](https://twitter.com/FloatProtocol/status/1482184045048090626)'s Pool at RariCapital relied on Uniswap V3's FLOAT/USDC pair as a price oracle. Due to the low liquidity in this pair, the FLOAT price increased significantly when an attacker bought FLOAT with around 47 ether of own funds. After waiting a few minutes for the TWAP to be affected, the attacker deposited overvalued FLOAT to borrow other assets.
+* Sometime later in [**January, Rari**](https://twitter.com/NoahCitron/status/1487605582584418305?t=POnxReasZhq1iBx7wTYOsw&s=19)'s Pool 19 was attacked similarly. The attempt failed with a loss of 68 ETH due to an arbitrage bot's rebalancing.
+* Once again, but in [**April, Rari**](https://medium.com/@hacxyk/we-rescued-4m-from-rari-capital-but-was-it-worth-it-39366d4d1812)'s Pool 45 was at risk of a price manipulation attack since the UniV3 pool that it relied on as a price oracle had extremely low liquidity. Additionally, the TWAP-window of 10 minutes was very short and would have caused an exponentially increasing price a few minutes after a single low-volume buy. This extremely overblown collateral value would have allowed running away with all of the vault's borrowable funds with very little start capital.
+* Shortly before that, in [**April, Inverse Finance**](https://rekt.news/inverse-finance-rekt/) was exploited under similar circumstances of relying on a low liquidity AMM & a short TWAP-window. This attack stood out by the large deployment of capital and how meticulously they intended to prevent MEV bots from correcting the price and generalized frontrunners from reacting: Splitting initial tornado cash funds to many clean addresses, deployment of fake exploit contracts, manipulation of prices in multiple markets, spamming transactions.
+* In [**June, Sense Finance**](https://medium.com/sensefinance/disclosure-fixing-a-critical-bug-in-the-sense-space-oracle-42a0bed65bc2)'s `onSwap()` function could be called by anyone while feeding it with dummy swaps that would have influenced the TWAP's price calculation. An attacker could have exploited this to cheaply manipulate asset prices by calling it every few minutes and driving the TWAP of the pool in whichever direction they’d like. The function was intended to be used as view-only for non-authorized users to provide previews of swaps without executing them.
+
+---
+
+### Incorrect Integration
+
+* [**May, Feminist Metaverse**](https://medium.com/coinmonks/feminist-metaverse-attack-analysis-e97b20ddbea8)'s token had its reserves drained when an attacker exploited the fact that it wasn't adding liquidity to an AMM's swap pair correctly. The `_transfer()` function was intended to provide a chunk of tokens as liquidity whenever a transfer happens. But instead of actually staking these tokens as liquidity, it simply transferred them to the market pair's contract. The attacker exploited this by making hundreds of small transfers, moving all of the reserves to the AMM, and then finally calling the public `skim()` function to steal the excess of unstaked tokens.
+* In [**June, Inverse Finance**](https://twitter.com/danielvf/status/1537643778403606528) was exploited once more. This time, it used Curve's USD-BTC-ETH-pool balances as a price oracle, which could be manipulated to significantly increase the collateral value within Inverse and borrow unproportionate sums of money. The more interesting aspect of this incident, though, is that even if this had not been vulnerable to price manipulation through flashloans, it would still have been vulnerable because Inverse did not determine prices the same way Curve did. While Curve keeps account of token balances within its storage, Inverse relied on the actual token balances for the calculation. An attacker could have exploited this difference by sending Curve tokens without actually depositing them, effectively causing a discrepancy between the resulting prices of LP tokens at Inverse and Curve.
+
+---
+
+### Vulnerable Rebalancing/Buyback Mechanics
+
+* End of [**April, bDollar**](https://medium.com/@Knownsec_Blockchain_Lab/knownsec-blockchain-lab-the-bdollar-project-is-under-attack-how-can-price-become-a-weapon-504a88bde08c)'s algorithmic stablecoin price was raised in multiple pools of pancake swap through flashloans. This price manipulation was exploited by calling the public `claimAndReinvestFromPancakePool()` function of its `CommunityFund` contract, which attempted to re-balance these markets at disadvantageous prices.
+* In [**June, TraderJoe**](https://twitter.com/shunduquar/status/1534989160381136909)'s protocol fees in the form of liquidity tokens were stolen from a vulnerable buyback mechanism that was supposed to reward xJOE holders with JOE tokens. Normally this works by using the collected liquidity tokens to withdraw the underlying tokens from the pair contract and then converting these to JOE. Things get problematic when one of the fee liquidity tokens collected is from a pair where one of the tokens is itself a liquidity token, a liquidity token that has been accumulating for its own pair contract. When the conversion was attempted here, the vulnerable contract withdrew liquidity tokens and swapped them as usual instead of using them for a withdrawal. This causes valuable LP tokens to be swapped in illiquid markets allowing the attacker to exploit slippage to obtain them cheaply.
+
+---
+
+### Faulty Native Token handling
+
+* In [**February, MeterIO**](https://blog.chainsafe.io/breaking-down-the-meter-io-hack-a46a389e7ae4)'s Bridge had a bug in its automatic wrap/unwrap logic for native tokens. There were two functions allowing for deposits, one for native ETH and one for ERC20. In the native case the function would automatically wrap the value that was sent as part of the transaction and immediately transfer it to the handler. For the ERC20 case, the handler would `transferFrom()` the tokens from the depositor. Attackers could use the ERC20 deposit function to make it look as if they deposited native tokens, the handler would then assume that it already received those native tokens in a wrapped form and therefore skip attempting to transfer anything from the user.
+
+---
+
+### Frontrunning
+
+* In [**January, Zora**](https://zora.mirror.xyz/JeFZXnWb6jfJPon1rruXW-XJcoUVfgeNhu4XTYO3yFM)'s NFT sale contract had a vulnerability that shows how infinite approvals can bite one back. To buy an NFT, users had to give the contract an allowance before calling the function to trigger the sale in a separate transaction. A malicious seller could frontrun the second transaction to change the NFT's price and take all of the buyer's ERC20 tokens that were approved beforehand. Since unlimited approvals tend to be the default, that would quite possibly be all of the tokens the buyer owns.
+
+---
+
+### Serialization/Parsing Issues
+
+* In [**February, Superfluid**](https://medium.com/superfluid-blog/08-02-22-exploit-post-mortem-15ff9c97cdd)'s use of "context objects" was exploited. These represent a serialized state shared between multiple contracts. An attacker crafted calldata such that the process of serialization in one contract and succeeding de-serialization in another contract caused the system to operate on a context object forged specifically to impersonate other accounts. De-serializing contracts trusted calls from the serializing contract without further validating the provided context.
+* Later in [**March, Gearbox**](https://medium.com/@nnez/different-parsers-different-results-acecf84dfb0c)'s UniswapV3-Adapter parsed swap-paths (tokenA, tokenB) by selecting the first and last elements in the path array. UniswapV3, on the other hand, parsed the path using absolute offsets within a byte-array, meaning that one could simply add another element to the array and both protocols would end up parsing a different end of the path (tokenA, tokenB-uni, tokenB-gb). This would have allowed a borrower to bypass Gearbox's collateral health checks since it would end up checking a different token's value.
+
+---
+
+### Naive Trust Assumptions
+
+* In [**February, EarnHub**](https://web.archive.org/web/20220208112938/https://earnhub.medium.com/b9d39169655f) trusted a user-supplied address to be an honest pool that users could move their funds to. To move said funds to this "pool", it was given an unlimited allowance to all of the protocol's funds, not just the user's. The protocol's funds were drained by an attacker moving funds to their own malicious pool contract.
+* In [**May, the Feed Every Gorilla Project**](https://www.certik.com/resources/blog/w6AxRmf6l2ow4zL884gr8-feg-token-flashloan-exploit-analysis) gave user-supplied addresses approval for the user's deposited funds. The attacker exploited this by making a deposit and then having the contract approve multiple addresses to use the same deposited amount. These addresses were under control of the attacker and could each spend the allowance given to them, effectively spending multiples of the user's actual balance, draining the contract.
+* In [**August, Talent Protocol**](https://mirror.xyz/0xCf39521413F8De389771e35bB4C77b4bb827b7B3/HdSq7TVvk-s7DzQgN3u0pV8UFiVkaDft18HgmePTag4) planned to switch their contracts between maturity phases depending on whether their native token TAL had been finished yet. The public `setToken()` function allowed setting this token as long as it claimed to implement the ERC-20 standard and returned the symbol 'TAL' when asked. Since anyone could call this function, an attacker would have been able to set a malicious token causing the protocol to switch phases, effectively locking all funds unless one had access to the said tokens. This could have been used to hold the protocol's funds at ransom.
+* In [**October, BabySwap**](https://twitter.com/BlockSecTeam/status/1576441612812836865) trusted a user-supplied address to be a valid swap-pair factory. An attacker exploited this by deploying a malicious factory that returns fake swap pairs for a real token pair. This allowed them to claim real BABY token rewards for fake swaps.
+* Yet again in [**October, TempleDAO’s STAX**](https://rekt.news/templedao-rekt/) protocol was exploited via its `migrateStake()` function. Users would specify the address of the old staking contract to migrate funds from and the amount to migrate. However, the contract trusted this user-supplied address without any further checks on whether it belongs to a valid staking contract. A user could specify any as long as the function call to it would not revert. An attacker noticed this and started "migrating" ~2.3M worth of tokens from nowhere.
+* [**October, Bond Protocol**](https://twitter.com/peckshield/status/1583416829237526528)'s `BondFixedExpiryTeller.redeem()` function trusted a user-supplied address to be a legitimate OHM bond token of the protocol. The contract would call the supplied token's burn function and then send an arbitrary amount of the underlying token from the contract to the caller.
+* [**October, BitBTC**](https://twitter.com/PlasmaPower0/status/1582176532985880576)'s Bridge between mainnet and Optimism trusted a user-supplied layer-2-token to return the appropriate layer-1-token it represented. An attacker simply had to deploy a fake token that returned an actual layer-1 token address when its `l1Token()` function was called. The bridge did not validate this return value. It would have processed the withdrawal by paying out the specified amount of valuable layer-1 tokens in exchange for the fake token on layer 2.
+
+---
+
+### Uninitialized Proxies
+
+* In [**January, Ondo Finance**](https://iosiro.com/blog/high-risk-vulnerability-disclosed-to-ondo-finance) had several minimal proxies that used the TrancheToken implementation contract, which was not initialized. An attacker could have created a fake vault contract which would be passed to TrancheToken as an initialization parameter. This vault contract would then have been able to call `destroy()` on the implementation, permanently bricking all proxies delegating calls to it.
+* A big one in [**May, where Wormhole**](https://medium.com/immunefi/wormhole-uninitialized-proxy-bugfix-review-90250c41a43a)'s UUPS style proxy had an uninitialized implementation after a recent upgrade. An attacker could have exploited this to delegate-call to another contract causing the implementation to self-destruct, effectively bricking the proxy and likely locking up all funds forever.
+* Yet again in [**May, Agave**](https://medium.com/@hacxyk/forked-protocols-are-not-battle-tested-agave-uninitialized-proxy-vulnerability-6b5d587b3a07) ignored the news and missed that Aave, the project it was based on, was notified by Trails of Bits that its implementation's `initialize()` function was still callable. Here an attacker could have set a malicious `_addressesProvider` contract which the `liquidationCall()` function fetches an `collateralManager` address from that it'll delegate-call to.
+
+---
+
+### Storage Collisions
+
+* In [**July, Audius**](https://blog.audius.co/article/audius-governance-takeover-post-mortem-7-23-22)' contracts used OpenZeppelin's proxy upgradability pattern, where functions that are only supposed to be called once during deployment are protected by the `initializer()` modifier. Unfortunately, Audius had overridden the standard implementation adding logic that used storage slot 0 for the `proxyAdmin` address while this same slot was also used for the initializer's state booleans. The address that was currently set caused these booleans to flip in a way that allowed the initialization functions to be called again, which an attacker exploited to take over control of the project's governance.
+
+---
+
+### Reinitialization Vulnerability
+
+* [**August, Genome DAO**](https://twitter.com/SlowMist_Team/status/1555913382859005952)'s liquidity token staking contract was drained when an attacker discovered a public initialization function that was always callable. The function allowed setting the address of the underlying liquidity token that could be staked in the contract. The attacker exploited this by temporarily setting a worthless token, staking them, re-setting to the original LP token, and finally withdrawing valuable LP tokens using the ill-gained staking tokens.
+
+---
+
+### Integer Overflows
+
+* In [**March, Umbrella Network**](https://medium.com/@Knownsec_Blockchain_Lab/knownsec-blockchain-lab-umbnetwork-attack-event-analysis-9bae1141e58)'s Reward Pool was drained via its `withdraw()` function, subtracting the user-supplied `amount` from the user's current `balance`. It appears they wanted to rely on the subtraction reverting on overflows to prevent users from withdrawing more than they own, but the Solidity version used was 0.7.5, and they did not use any SafeMath library either. So instead of reverting, attackers were able to make arbitrary withdrawals from the pool.
+
+---
+
+### Incorrect Special Character Handling
+
+* In [**April, ENS**](https://web.archive.org/web/20220419032119/https://twitter.com/lcfr_eth/status/1516255490589827072) domain names could be duplicated by re-registering an existing name with a 0x00 byte appended at the end. Most off-chain services would listen to the emitted registration event and terminate the string at the null-byte, effectively treating it like the original name.
+
+---
+
+### Botched Upgrades
+
+* In [**March, ENS**](https://discuss.ens.domains/t/postmortem-ep9-deployment/11662)'s governance voted for a proposal to change the pricing oracle for ENS names. Due to bad release management, this updated pricing oracle returned two integer values while the calling code only expected one. The second return value would have been ignored, effectively making the domains cheaper than intended.
+* In [**August, Nomad**](https://www.coinbase.com/blog/nomad-bridge-incident-analysis)'s Bridge was upgraded, introducing a fatal issue in cross-chain message verification: The `process()` function would look up the merkle-root of the user-supplied message from the `messages` map. As usual with maps, if no value has been set (therefore, the message has no known merkle-root), it would return the zero value. Unfortunately, the zero-value had been set as a valid merkle-root during the initialization of the contract, basically allowing any user-supplied message to be mistakenly verified. This allowed the draining of the bridge's funds by sending fake withdrawal-transfer messages.
+
+---
+
+### Governance Takeovers
+
+* In [**April, Beanstalk Farms**](https://twitter.com/BlockSecTeam/status/1515732238612430849)' governance was taken over by the execution of a malicious proposal. The attacker temporarily obtained significant amounts of the overall voting power by using a flashloan and used it to vote on their proposal to execute a malicious contract. The voting power was sufficient to bypass the 2/3rds threshold required to call `emergencyCommit()`, allowing them to execute it after waiting for only a single day.
+* In [**September, GnosisGuild**](https://twitter.com/ali_run/status/1575277566906310657)'s Reality module caused several DAOs a loss of funds when it turned out that nobody was monitoring optimistic proposals for their validity. In the end, the attacker's malicious proposals were executed since nobody challenged them.
+
+---
+
+### Flawed Math
+
+* In [**April, Saddle Finance**](https://blocksecteam.medium.com/how-to-exploit-the-same-vulnerability-of-metapool-in-two-different-ways-nerve-bridge-saddle-774c271c8243)'s swapping function was attacked when it didn't scale the amount of LP tokens correctly. The issue is complex to understand but was likely known since it was already fixed in the verified code. Unfortunately, the swap code did not make use of the fixed version of the library doing these calculations. Boiled down, the attack simply consisted of taking a flashloan and swapping between saddleUSD and synthetix' sUSD back and forth.
+* In [**October, Timeless' Bunni**](https://twitter.com/rileyholterhus/status/1581028470699982848) Vault allowed the first depositor to be sandwiched by a malicious MEV bot. In practice, the attacker would frontrun a user depositing eg. \$10 and first deposit 1 wei so that the vault is bootstrapped with 1 share being equal to 1 wei. Then the attacker would provide \$11 of liquidity on behalf of Bunni at Uniswap without making a deposit minting shares. Because $(1*10)/11$ rounded down as per `_mintShares()`, would result in 0 shares for the victim, the attacker would now be able to use their 1 share to withdraw theirs and the victim's liquidity.
+
+---
+
+### Transaction Replay Attack
+
+* In [**June, Optimism**](https://banteg.mirror.xyz/iZAsBNL3j_5NIAY2Erav1r7Q4ecc7SC76AfMjyScs34) intended to send millions worth of tokens to the liquidity provider Wintermute on their L2 chain. There must have been a miscommunication though, since Wintermute had a Gnosis Safe on this address on mainnet but on Optimism the destination that the tokens were sent to was completely uninhabited. The attacker funded the Gnosis deployer address and then replayed the transactions that deployed the Gnosis Safe factory. The factory created Safes using the CREATE opcode, which uses the contracts nonce of contract creations to determine the following address. The attacker exploited this by repeatedly increasing the nonce until the same nonce that the Wintermute team had used to create their safe was reached. With this, the attacker could deploy their own Gnosis Safe on the said address and freely use the "lost" funds.
+
+---
+
+### Logic Errors
+
+* In [**January, Notional Finance**](https://medium.com/immunefi/notional-double-counting-free-collateral-bugfix-review-28b634903934) got a Bug Report about a function that wasn't exposed via any User Interface but was still externally callable. The function was part of a feature that had not been used in production yet and, even then, would likely have remained a niche functionality few would have used. Deposited assets in a User's Account within Notional were supposed to belong to either one of two possible types. The function in question would have allowed switching from one type to another but due to a logic error, this switch did not always function properly and caused assets to be counted twice as either type.
+* Also in [**January, REDACTED**](https://medium.com/immunefi/redacted-cartel-custom-approval-logic-bugfix-review-9b2d039ca2c5)’s wxBTRFLY token had a `transferFrom()` function that incorrectly updated the allowance in a way that effectively would have allowed attackers to steal allowances. The error was when it attempted to load the current allowance. Instead of doing so for the `msg.sender` it loaded the allowance of the specified recipient. It then subtracted the amount being transferred from it and updated the allowance by setting `msg.sender` as the spender. An attacker could first make a transfer with `amount` 0 to a recipient who was given an allowance by the sender. By doing so, the attacker would have obtained this allowance and would have been able to arbitrarily spend the senders tokens.
+* End of [**January, Yearn**](https://github.com/yearn/yearn-security/blob/master/disclosures/2022-01-30.md)'s SSB Strategy for their yvUSDT Vault was reported to be vulnerable. The issue was that upon withdrawal, it tried to return the user's requested amount without regard to how much pool token it burned through. Effectively allowing to burn more tokens than the attacker actually owned, distributing losses among the other shareholders. This vulnerability was only exploitable under particular circumstances and the usage of flashloans to manipulate the USDT price, though, likely stemming from the assumption that a stablecoin would always be stable.
+* In [**February, Tecra**](https://twitter.com/mauricio_0218/status/1490082073096462340)'s `burnFrom()` function, intended to allow burning tokens that one was approved to make use of, instead allowed burning tokens of others by giving them an allowance. This was exploited for price manipulation on Uniswap by burning tokens from the pool.
+* In [**April, Bunker Finance**](https://medium.com/@bunker_finance/bunker-finance-vulnerability-postmorterm-bnft-amount-manipulation-540ecce6e6e2)'s NFT-wrapping contract would allow minting multiple wrapper-tokens of the same NFT. An attacker could have used that to redeem NFTs that were sold by the attacker to the victim and then added back into the protocol by the victim.
+* In [**June, XCarnival**](https://xcarnival-lab.medium.com/xcarnival-has-got-1-467-eth-back-the-security-agencies-have-tentatively-determined-the-hackers-3ea05ad134ae)'s lending platform was exploited when an attacker noticed that NFTs deposited as collateral could still be borrowed upon, even after they had been withdrawn. This effectively allowed depositing the same NFT over and over again, with each deposit one gained an "orderId" which could be used to borrow with the NFT as collateral even if it was already withdrawn.
+* In [**August, KaoyaSwap**](https://twitter.com/BlockSecTeam/status/1562286943957708800) had an error in its swap-to-WETH function when the swap path contained the same pair twice. An attacker set up pairs and liquidity for their own tokens A and B against WETH. Then exploited the protocol with the swap path A → WETH → B → A → WETH where the same money is swapped from A to WETH twice, effectively reducing the amount of WETH in that pair twice. The issue was that KaoyaSwap used the difference of WETH in the last pair before and after the swap as the amount it should send to the user - which the attacker could double this way.
+* In [**November, BribeV2**](https://github.com/yearn/yearn-security/blob/master/disclosures/2022-11-01.md) provided a mechanism for holders of Curve's governance token to lend their voting power to entities needing them to vote for their preferred Curve Reward Gauges. However, the contract's reward calculations incorrectly relied on the amount of locked CRV instead of the effective voting power from veCRV (which decays over time).
+* In [**December, 88MPH**](https://medium.com/immunefi/88mph-theft-of-unclaimed-mph-rewards-bugfix-review-1dec98b9956b)'s `vesting03` contract allowed withdrawing MPH token rewards before the deposit had matured. The reason was that a variable used for the calculation of rewards was not set as intended during the deposit of funds.
+
+---
+
+### Exploiting Approvals
+
+* In [**July, Quixotic**](https://twitter.com/SlowMist_Team/status/1542795627603857409)'s NFT marketplace allowed attacks to create sell orders with worthless NFTs and fill them using the funds of users who approved the marketplace's contract. The code would only verify the attacker's sell order signature and then pay the worthless NFT with any `buyer` address that the attacker chooses, as long as the victim approved a sufficient balance of the specified ERC20 token.
+* In [**August, SZNS**](https://ventral.digital/posts/2022/8/18/sznsdaos-bountyboard-unauthorized-transferfrom-vulnerability)'s BountyBoard contract allowed filling bounties with NFTs for which collection a user once gave approval for. Suppose a user once had given full approval to participate in a bounty offer to obtain ERC20 tokens for an NFT. In that case, an attacker could have created their own bounty and filled it with the user's NFT for worthless ERC20 tokens. Alternatively, an attacker could have participated in a legit bounty and obtained the valuable ERC20 reward while using another user's NFTs who had previously given the contract approval to use them.
+
+---
+
+### Gas Siphoning
+
+* In [**February, dYdX**](https://medium.com/@hacxyk/stealing-gas-from-dydx-0-5-eth-a-day-712c5fdc43a3)'s Gassless Deposit service could be misused to make arbitrary (and potentially expensive) calls to other contracts. To prevent misuse like this from happening, the service was already restricted to a single whitelisted address but the user specifiable parameters `exchangeProxy` and `exchangeProxyData` are still allowed to make arbitrary calls during the deposit.
+* In [**October, FTX**](https://twitter.com/BeosinAlert/status/1580426718711463937) didn't check whether the receiver during an ETH withdrawal was a contract, nor did it place reasonable limits on the transaction's gas usage. An attacker could exploit this by having FTX send ETH to a malicious contract triggering its fallback function. Gas-intensive operations to mint XEN tokens were used, which FTX paid the bill for.
+* In [**October, Ethereum Alarm Clock**](https://twitter.com/Supremacy_CA/status/1582789430368092160)'s four-year-old TransactionRequestCore contract was exploited when transaction agents were refunded with more gas than they had actually spent for the transaction's execution.
+
+---
+
+### UI Issues
+
+* In [**June, DXDao**](https://dave.xn--tckwe/posts/exploit/)'s Treasury allowed their ContributionReward contract access to funds to pay contributors through governance proposals. The contract allowed requesting rewards with a "period", which lets contributors redeem the specified reward amount multiple times. However, this parameter wasn't shown in the UI so that a malicious user could have created a proposal asking for a seemingly small reward amount with a big hidden period acting as a multiplier.
+
+---
+
+### Other
+
+* In [**February, Wormhole**](https://twitter.com/samczsun/status/1489044939732406275)'s Solana Bridge was hacked in ways that I still don't fully grasp. Apparently, the attacker apparently replaced Rust pre-compiled code that the Bridge on Solana used with their own code that allowed him to verify forged relayer/guardian signatures. This vulnerability was exploited to mint weETH on Solana, which was then "bridged back" to Ethereum draining the Bridge on mainnet.
+* A Bug in Optimism's Geth fork was also found in [**February. "Unbridled"**](https://www.saurik.com/optimism.html) is not a smart contract issue per se, but still interesting enough to mention: Native OETH token on Optimism's layer2 chain could be duplicated because a contract's account balance was not set to 0 after triggering its self-destruction, but this amount was still also accredited to the specified target address.
+* In [**October, BNB Bridge**](https://drdr-zz.medium.com/bnb-bridge-hack-eli5-explained-and-visualised-1fb2837c7a7e) was manipulated to mint 2 billion BNB on Binance Smart Chain. The issue was a precompiled contract that the bridge used for Merkle proof verification and that the library behind it was not meant to handle untrusted user input. Without any further verification of the user-provided proof, the attacker could craft one that made use of the fact that the library would validate proofs of multiple values in an efficient but naive manner.
+
+---
+
+Note that being mentioned in this list is by no means attacking any of the projects. Many of the incidents here only made it to this list because of their well-written post-mortem articles. Incidents not mentioned here are more likely to be worthy of criticism: Some projects didn't bother to write a post-mortem analysis at all, while others did it with botched technical explanations and stock full of lazy excuses. Not to mention the many closed-source projects on BSC that lost millions of funds and make one wonder about investors' lack of due diligence.

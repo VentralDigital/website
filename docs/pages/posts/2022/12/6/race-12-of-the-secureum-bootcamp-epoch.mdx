@@ -1,0 +1,312 @@
+# RACE #12 Of The Secureum Bootcamp Epoch∞
+
+import { Callout } from 'nextra/components'
+
+This is a Write-Up of RACE-12, Quiz of the [Secureum Bootcamp](https://twitter.com/0xRajeev/status/1470910752085065731) for Ethereum Smart Contract Auditors.
+
+<Callout type="info">
+  I once again had the honor of designing it and gave my best to find something that is both challenging and interesting. I imagine it was very hard to **solve all 8 questions within the strict timelimit of 16 minutes**, but I recommend you’ll try to see how far you come with using more time before looking at the solutions.
+
+  As usual, I waited for submissions to close before publishing it and, to stay true to the original, I omitted syntax highlighting. Feel free to copy it into your favorite editor, but do so after starting the timer!
+</Callout>
+
+<p className="text-xs text-right">December 6, 2022 by [patrickd](/about#patrickd)</p>
+
+<style jsx>{`
+  input[type=checkbox] {
+    width: 15px;
+    height: 15px;
+  }
+  li {
+    padding: 0.5em;
+  }
+`}</style>
+
+export function HiddenSolution({ children }) {
+  return (
+    <details closed className="last-of-type:mb-0 rounded-lg bg-neutral-50 dark:bg-neutral-800 p-2 mt-4">
+      <summary>
+        <strong className="text-lg">Solution</strong>
+      </summary>
+      <div className="nx-p-2">{children}</div>
+    </details>
+  )
+}
+
+---
+
+### Code
+
+<Callout type="info">
+All 8 questions in this RACE are based on the following contracts. You will see them for all the 8 questions in this RACE. The questions are below the shown contracts.
+</Callout>
+
+
+```plaintext showLineNumbers
+// SPDX-License-Identifier: GPL-3.0
+
+pragma solidity 0.8.17;
+
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/extensions/draft-ERC20Permit.sol";
+import "@openzeppelin/contracts/access/AccessControl.sol";
+
+contract TokenV1 is ERC20, AccessControl {
+    bytes32 MIGRATOR_ROLE = keccak256("MIGRATOR_ROLE");
+
+    constructor() ERC20("Token", "TKN") {
+        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
+    }
+
+    // Spec wasn't clear about what 'admin functions' need to be capable of.
+    // Well, this should do the trick.
+    fallback() external {
+        if (hasRole(MIGRATOR_ROLE, msg.sender)) {
+            (bool success, bytes memory data) = msg.sender.delegatecall(msg.data);
+            require(success, "MIGRATION CALL FAILED");
+            assembly {
+                return(add(data, 32), mload(data))
+            }
+        }
+    }
+}
+
+interface IEERC20 is IERC20, IERC20Permit {}
+contract Vault {
+    address public UNDERLYING;
+    mapping(address => uint256) public balances;
+
+    constructor(address token)  {
+        UNDERLYING = token;
+    }
+
+    function deposit(uint256 amount) external {
+        IEERC20(UNDERLYING).transferFrom(msg.sender, address(this), amount);
+        balances[msg.sender] += amount;
+    }
+
+    function depositWithPermit(address target, uint256 amount, uint256 deadline, uint8 v, bytes32 r, bytes32 s, address to) external {
+        IEERC20(UNDERLYING).permit(target, address(this), amount, deadline, v, r, s);
+        IEERC20(UNDERLYING).transferFrom(target, address(this), amount);
+        balances[to] += amount;
+    }
+
+    function withdraw(uint256 amount) external {
+        IEERC20(UNDERLYING).transfer(msg.sender, amount);
+        balances[msg.sender] -= amount;
+    }
+
+    function sweep(address token) external {
+        require(UNDERLYING != token, "can't sweep underlying");
+        IEERC20(token).transfer(msg.sender, IEERC20(token).balanceOf(address(this)));
+    }
+}
+
+/* ... some time later ... */
+
+// Adding permit() while maintaining old token balances.
+contract TokenV2 {
+    address private immutable TOKEN_V1;
+    address private immutable PERMIT_MODULE;
+
+    constructor(address _tokenV1)  {
+        TOKEN_V1 = _tokenV1;
+        PERMIT_MODULE = address(new PermitModule());
+    }
+
+    // Abusing migrations as proxy.
+    fallback() external {
+        (
+            bool success,
+            bytes memory data
+        ) = (address(this) != TOKEN_V1)
+          ? TOKEN_V1.call(abi.encodePacked(hex"00000000", msg.data, msg.sender))
+          : PERMIT_MODULE.delegatecall(msg.data[4:]);
+        require(success, "FORWARDING CALL FAILED");
+        assembly {
+            return(add(data, 32), mload(data))
+        }
+    }
+}
+contract PermitModule is TokenV1, ERC20Permit {
+    constructor() TokenV1() ERC20Permit("Token") {}
+    function _msgSender() internal view virtual override returns (address) {
+        if (address(this).code.length == 0) return super._msgSender(); // normal context during construction
+        return address(uint160(bytes20(msg.data[msg.data.length-20:msg.data.length])));
+    }
+}
+```
+
+### Question 1 of 8
+
+Sensible gas optimization(s) would be
+
+<ul>
+  <li><input type="checkbox" /> A. Making `MIGRATOR_ROLE` state variable `constant` </li>
+  <li><input type="checkbox" /> B. Making `UNDERLYING` state variable `constant` </li>
+  <li><input type="checkbox" /> C. Making `MIGRATOR_ROLE` state variable `immutable` </li>
+  <li><input type="checkbox" /> D. Making `UNDERLYING` state variable `immutable` </li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, D.**
+
+While `MIGRATOR_ROLE` can be made both `constant` or `immutable`, using `constant` makes the most sense since the value is known during compile time.
+
+`UNDERLYING` on the other hand can only be `immutable` since the value is passed in during the contract's construction.
+</HiddenSolution>
+
+---
+
+### Question 2 of 8
+
+What would a caller with `MIGRATOR_ROLE` permission be capable of?
+
+<ul>
+  <li><input type="checkbox" /> A. Manipulating `TokenV1`'s storage </li>
+  <li><input type="checkbox" /> B. Deleting `TokenV1`'s stored bytecode </li>
+  <li><input type="checkbox" /> C. Changing `TokenV1`'s stored bytecode to something different </li>
+  <li><input type="checkbox" /> D. With the current code it's not possible for anyone to have `MIGRATOR_ROLE` permission </li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, B.**
+
+A contract that was given the `MIGRATOR_ROLE` will be capable of triggering `TokenV1`'s `fallback` function which will delegate-call them back. During this delegate-call, the contract will be capable of manipulating storage as well as self-destructing `TokenV1`.
+
+Replacing the bytecode would only be possible if `TokenV1` was deployed via `CREATE2`, allowing for a redeployment at the same address with a different bytecode.
+
+The public `grantRole()` function is inherited from `AccessControl` and allows callers with `DEFAULT_ADMIN_ROLE` to grant the `MIGRATOR_ROLE` to any address.
+</HiddenSolution>
+
+---
+
+### Question 3 of 8
+
+`Vault` initialized with `TokenV1` as underlying
+
+<ul>
+  <li><input type="checkbox" /> A. Can be drained by re-entering during withdrawal </li>
+  <li><input type="checkbox" /> B. Can be drained during withdrawal due to an integer underflow </li>
+  <li><input type="checkbox" /> C. Allows stealing approved tokens due to a phantom (i.e. missing) function </li>
+  <li><input type="checkbox" /> D. None of the above </li>
+</ul>
+
+<HiddenSolution>
+**Correct is C.**
+
+A Vault initialized with `TokenV1` offers no opportunity to re-enter although the Checks-Effects-Interactions pattern is not being followed. For this to be exploitable the underlying token itself must either be malicious or implement something akin to receive-hooks like ERC-777.
+
+The fact that a Solidity version >0.8.0 is used without any `unchecked` blocks should prevent any integer over- or underflows from happening.
+
+The `depositWithPermit()` function is relying on the call to `TokenV1`'s `permit()` method to revert if it's not implemented or the provided signature is invalid. However, `TokenV1`'s `fallback()` function will make any calls to `permit()` succeed, making `permit()` a "phantom function". With any calls succeeding an attacker would be able to make deposits using the allowances of other users without the need for a valid signature.
+</HiddenSolution>
+
+---
+
+### Question 4 of 8
+
+If `Vault` were to use `safeTransferFrom` instead of `transferFrom` then
+
+<ul>
+  <li><input type="checkbox" /> A. It would be able to safely support tokens that don't revert on error </li>
+  <li><input type="checkbox" /> B. It would ensure that tokens are only sent to contracts that support handling them </li>
+  <li><input type="checkbox" /> C. It would introduce a re-entrancy vulnerability due to receive hooks </li>
+  <li><input type="checkbox" /> D. None of the above </li>
+</ul>
+
+<HiddenSolution>
+**Correct is A.**
+
+The way `Vault` is currently implemented, its deployer needs to be careful to not use a token as `underlying` that returns success booleans instead of reverting on error. Using the `SafeERC20` library would add the `saveTranserFrom()` function and allow both kinds of token implementations to be used.
+
+Answers B and C talk about the "save" methods of NFT standards such as ERC721. These would check whether a receiving contract declares supporting them and would also offer an opportunity for re-entrancy via the `onERC721Received()` hook.
+</HiddenSolution>
+
+---
+
+### Question 5 of 8
+
+Who would need the `MIGRATOR_ROLE` for `TokenV2` to function as intended?
+
+<ul>
+  <li><input type="checkbox" /> A. The deployer of the `TokenV2` contract </li>
+  <li><input type="checkbox" /> B. The `TokenV1` contract </li>
+  <li><input type="checkbox" /> C. The `TokenV2` contract </li>
+  <li><input type="checkbox" /> D. The `PermitModule` contract </li>
+</ul>
+
+<HiddenSolution>
+**Correct is C.**
+
+The deployer of `TokenV2` would need `DEFAULT_ADMIN_ROLE` for granting it the `MIGRATOR_ROLE`.
+
+`TokenV2` is the only contract that requires the role since it needs to (ab)use `TokenV1`'s fallback function trigger a delegate-call to the `PermitModule`'s contract.
+</HiddenSolution>
+
+---
+
+### Question 6 of 8
+
+With `TokenV2` deployed, a `Vault` initialized with `TokenV1` as `underlying`
+
+<ul>
+  <li><input type="checkbox" /> A. Is no longer vulnerable in the `depositWithPermit()` function </li>
+  <li><input type="checkbox" /> B. Becomes more vulnerable due to a Double-Entry-Point </li>
+  <li><input type="checkbox" /> C. Stops functioning because `TokenV1` has been replaced </li>
+  <li><input type="checkbox" /> D. None of the above </li>
+</ul>
+
+<HiddenSolution>
+**Correct is B.**
+
+A `Vault` initialized with `TokenV1` will always be vulnerable in the `depositWithPermit()` function. A new `Vault` would need to start using `TokenV2` for the `depositWithPermit()` function to no longer be vulnerable to the `permit()`-phantom.
+
+`TokenV2` now acts as a Double-Entry-Point for `TokenV1` (and vice versa). This can be exploited via the `sweep()` function which allows rescuing any stuck tokens as long as they are not the underlying token. Sweeping `TokenV2` on a `Vault` using `TokenV1` would effectively drain the `Vault`.
+</HiddenSolution>
+
+---
+
+### Question 7 of 8
+
+`Vault` initialized with `TokenV2` as underlying
+
+<ul>
+  <li><input type="checkbox" /> A. Can be drained by re-entering during withdrawal </li>
+  <li><input type="checkbox" /> B. Can be drained during withdrawal due to a integer underflow </li>
+  <li><input type="checkbox" /> C. Is not vulnerable in the `depositWithPermit()` function </li>
+  <li><input type="checkbox" /> D. Is vulnerable due to a Double-Entry-Point </li>
+</ul>
+
+<HiddenSolution>
+**Correct is C, D.**
+
+Answers A and B haven't changed from Question 3 with the introduction of `TokenV2`.
+
+In `TokenV2` calling the `permit()` function will no longer call the `fallback` but its actual implementation from ERC20Permit. Therefore a `Vault` with `TokenV2` will no longer be vulnerable to the `permit()`-phantom.
+
+`TokenV1` acts as a Double-Entry-Point for `TokenV2` (and vice versa). This can be exploited via the `sweep()` function which allows rescuing any stuck tokens as long as they are not the underlying token. Sweeping `TokenV1` on a `Vault` using `TokenV2` would effectively drain the `Vault`.
+</HiddenSolution>
+
+---
+
+### Question 8 of 8
+
+The `PermitModule` contract
+
+<ul>
+  <li><input type="checkbox" /> A. Acts as a proxy </li>
+  <li><input type="checkbox" /> B. Acts as an implementation </li>
+  <li><input type="checkbox" /> C. Allows anyone to manipulate `TokenV2`'s `balances` </li>
+  <li><input type="checkbox" /> D. Can be self-destructed by anyone </li>
+</ul>
+
+<HiddenSolution>
+**Correct is B, D.**
+
+`TokenV2` will forward delegate-calls made from `TokenV2` to the `PermitModule` contract. Effectively `TokenV2` abuses the migration logic in `TokenV1` turning it into a proxy while `PermitModule` acts like the implementation.
+
+The way that `Context`'s `_msgSender()` function has been overridden, it allows any caller to arbitrarily set what is expected to be the `msg.sender`. By crafting a call with `TokenV1`'s address appended they will gain the `DEFAULT_ADMIN_ROLE`. With that, they can grant themselves the `MIGRATOR_ROLE` and make `PermitModule` delegate-call back. Since all token balances are stored at `TokenV1`'s address this will not allow for a manipulation of any real balances. But it would allow delegate-calling to a contract that'll execute a self-destruct.
+</HiddenSolution>
+
+---

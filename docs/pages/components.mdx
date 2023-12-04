@@ -395,12 +395,20 @@ Using LaTeX within MDX is as simple as wrapping your expression in `$` or `$$`.
 
 ```md filename="page.mdx"
 The **Pythagorean equation**: $a=\sqrt{b^2 + c^2}$.
+
+$$
+a=\sqrt{b^2 + c^2}
+$$
 ```
 
 will be rendered as:
 
 <div className="mt-6 rounded-xl border border-gray-200 p-4 dark:border-gray-900">
   The **Pythagorean equation**: $a=\sqrt{b^2 + c^2}$.
+
+  $$
+  a=\sqrt{b^2 + c^2}
+  $$
 </div>
 
 You can still use [Markdown and MDX syntax](../markdown) in the same line as your LaTeX expression.
@@ -412,6 +420,24 @@ You can still use [Markdown and MDX syntax](../markdown) in the same line as you
 </Callout>
 
 To learn more about KaTeX and its supported functions and conventions, visit [KaTeX’s documentation](https://katex.org/docs/supported.html).
+
+## AsciiMath
+
+```md filename="page.mdx"
+With asciimath: $`2^(256)`$.
+
+$$
+`2^(256)`
+$$
+```
+
+<div className="mt-6 rounded-xl border border-gray-200 p-4 dark:border-gray-900">
+  With asciimath: $`2^(256)`$.
+
+  $$
+  `2^(256)`
+  $$
+</div>
 
 ## Layout Bleeding
 

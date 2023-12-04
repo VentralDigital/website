@@ -1,0 +1,348 @@
+# RACE #15 Of The Secureum Bootcamp Epoch∞
+
+import { Callout } from 'nextra/components'
+
+This is a Write-Up of RACE-15, Quiz of the [Secureum Bootcamp](https://twitter.com/0xRajeev/status/1470910752085065731) for Ethereum Smart Contract Auditors.  It was designed by Secureum Mentor [Nurit Dor](https://twitter.com/NuritDor) from [Certora](https://twitter.com/CertoraInc).
+
+<Callout type="info">
+  Participants of this quiz had to **answer 8 questions within the strict time limit of 16 minutes**. If you’re reading this in preparation for participating yourself, it’s best to give it a try under the same time limit!
+
+  As usual, I waited for submissions to close before publishing it and, to stay true to the original, I omitted syntax highlighting. Feel free to copy it into your favorite editor, but do so after starting the timer!
+</Callout>
+
+<p className="text-xs text-right">February 22, 2023 by [patrickd](/about#patrickd)</p>
+
+<style jsx>{`
+  input[type=checkbox] {
+    width: 15px;
+    height: 15px;
+  }
+  li {
+    padding: 0.5em;
+  }
+`}</style>
+
+export function HiddenSolution({ children }) {
+  return (
+    <details closed className="last-of-type:mb-0 rounded-lg bg-neutral-50 dark:bg-neutral-800 p-2 mt-4">
+      <summary>
+        <strong className="text-lg">Solution</strong>
+      </summary>
+      <div className="nx-p-2">{children}</div>
+    </details>
+  )
+}
+
+---
+
+### Code
+
+<Callout type="info">
+All 8 questions in this RACE are based on the below contracts. This is the same contracts you will see for all the 8 questions in this RACE. The question is below the shown contracts.
+</Callout>
+
+
+```plaintext showLineNumbers
+// SPDX-License-Identifier: agpl-3.0
+pragma solidity ^0.8.0;
+
+import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/v4.0.0/contracts/token/ERC20/IERC20.sol";
+
+contract SimpleDEX {
+    uint64 public token_balance;
+    uint256 public current_eth;
+    IERC20 public token;
+    uint8 public reentrancy_lock;
+    address owner;
+    uint256 public fees;
+    uint256 public immutable fees_percentage = 10;
+
+    modifier nonReentrant(){
+        // Logic needs to be implemented    
+        _; 
+    }
+
+    modifier onlyOwner(){
+        require(tx.origin == owner, "Only owner permitted");
+        _;
+    }
+
+    constructor(uint first_balance, address _token, address _owner) payable {
+        require(_owner != address(0) , "No zero Address allowed");
+        require(msg.value >= 100);
+        token = IERC20(_token);
+        bool token_success = token.transferFrom(msg.sender, address(this), first_balance);
+        require (token_success, "couldn't transfer tokens");
+        owner = _owner;
+        token_balance = uint64(first_balance);
+        current_eth = msg.value;
+    }
+
+    function setOwner(address _owner) public onlyOwner {
+        owner = _owner;
+    }
+
+    function getTokenBalance() public view returns(uint64 _token_balance) {
+        _token_balance = token_balance;
+    }
+
+    function getCurrentEth() public view returns(uint256 _current_eth) {
+        _current_eth = current_eth;
+    }
+
+    function getEthPrice() public view returns(uint) {
+        return uint256(token_balance) / current_eth;
+    }
+
+    function claimFees() public onlyOwner {
+        bool token_success =  token.transfer(msg.sender,fees);
+        require(token_success, "couldn't transfer tokens");
+        token_balance -= fees; 
+        fees = 0;
+    }
+
+    function buyEth(uint amount) external nonReentrant {
+        require(amount >= 10);
+        uint ratio = getEthPrice();
+        uint fee = (amount / 100) * fees_percentage;
+        uint token_amount = ratio * (amount + fee);
+        bool token_success = token.transferFrom(msg.sender, address(this), token_amount);
+        current_eth -= amount;
+        require(token_success, "couldn't transfer tokens");
+        (bool success, ) = msg.sender.call{value: amount}("");
+        require(success, "Failed to transfer Eth");
+        token_balance += uint64(token_amount);
+        fees += ratio * fee; 
+    }
+
+    fallback() payable external {
+        revert();
+    }
+}
+
+
+contract SimpleDexProxy {
+    function buyEth(address simpleDexAddr, uint amount) external {
+        require(amount > 0, "Zero amount not allowed");
+        (bool success, ) = (simpleDexAddr).call(abi.encodeWithSignature("buyEth(uint)", amount));
+        require (success, "Failed");
+    }
+}
+
+
+contract Seller {
+    // Sells tokens to the msg.sender in exchange for eth, according to SimpleDex's getEthPrice() 
+    function buyToken(SimpleDEX simpleDexAddr, uint token_amount) external payable {
+        uint ratio = simpleDexAddr.getEthPrice();
+        IERC20 token = simpleDexAddr.token(); 
+        uint eth = token_amount / ratio;
+        require(token_amount == ratio *eth); //only exact exchange 
+        require(eth >= msg.value);
+        token.transfer(msg.sender, token_amount);
+    }
+}
+```
+
+### Question 1 of 8
+
+What is/are the correct implementation(s) of the `nonReentrant()` modifier?
+
+<input type="checkbox" /> A.
+```plaintext
+require (reentrancy_lock == 1); 
+reentrancy_lock = 0;
+_;
+reentrancy_lock = 1;
+```
+
+<input type="checkbox" /> B.
+```plaintext
+require (reentrancy_lock == 0); 
+reentrancy_lock = 1;
+_;
+reentrancy_lock = 0;
+```
+
+<input type="checkbox" /> C.
+```plaintext
+require (reentrancy_lock == 1 ); 
+reentrancy_lock = 1;
+_;
+reentrancy_lock = 0;
+```
+
+<input type="checkbox" /> D.
+```plaintext
+require (reentrancy_lock == 0); 
+reentrancy_lock = 2;
+_;
+reentrancy_lock = 0;
+```
+
+<HiddenSolution>
+**Correct is B, D.**
+
+The correct implementation of a mutex-modifier must change the value of a storage variable and only reset it once the execution of the function's body (triggered by `_;`) has been completed. This storage variable must also be checked by the modifier: If the value is in its initial state (which in this case is zero since `reentrancy_lock` is not initialized with any specific value) then the execution of the function may proceed. But if it's in the non-default state (meaning the modifier is being executed again while the function body has yet to complete) then the check should error.
+
+* Answer A) cannot be correct since it assumes a starting value of 1 instead of 0.
+* Answer B) does indeed assume the default of 0 as the starting point and uses 1 to signify the "function body is executing" state.
+* Answer C) requires the starting value to be 1, which is not the default.
+* Answer D) works just like B) with the only difference that it uses the number 2 instead of 1.
+</HiddenSolution>
+
+---
+
+### Question 2 of 8
+
+Who can claim fees using `claimFees()`?
+
+<ul>
+  <li><input type="checkbox" /> A. Only the owner, due to `onlyOwner` modifier </li>
+  <li><input type="checkbox" /> B. The owner  </li>
+  <li><input type="checkbox" /> C. Anyone who can trick owner into signing an arbitrary transaction </li>
+  <li><input type="checkbox" /> D. No one </li>
+</ul>
+
+<HiddenSolution>
+**Correct is B, C.**
+
+The `claimFees()` function uses the `onlyOwner` modifier which checks the origin address (the signer of the transaction being executed, not the sender of the message) and requires it to match the address stored within the `owner` state variable. This state variable is only set once during the creation of the contract and can only be changed, once again, by passing through the `onlyOwner` modifier.
+
+The problem with using the transaction origin for authentication purposes is, that anyone can be the caller of the `claimFees()` and `setOwner()` function of this contract. Meaning that one could trick the owner into signing a seemingly unrelated transaction to another contract and that other contract may then call these functions as if it were acting with the approval of the owner. Due to this potential "phishing vector" it is generally considered a bad practice to use `tx.origin` for authentication and one should normally use `msg.sender` instead.
+</HiddenSolution>
+
+---
+
+### Question 3 of 8
+
+In `buyEth()`, we put an unchecked block on `current_eth -= amount`
+
+<ul>
+  <li><input type="checkbox" /> A. Because `current_eth` is uint </li>
+  <li><input type="checkbox" /> B. Because the compiler is protecting us from overflows </li>
+  <li><input type="checkbox" /> C. Only if we add a prior check: `require(current_eth > amount);` </li>
+  <li><input type="checkbox" /> D. Only if we add a prior check: `require(current_eth >= amount);` </li>
+</ul>
+
+<HiddenSolution>
+**Correct is D.**
+
+A so-called "`unchecked`-block" will disable overflow protections provided by the Solidity compiler of versions 0.8.0 and higher. If a `unchecked`-block were used, a buyer may obtain more ether than the `SimpleDEX` contract is holding if such value was injected into the contract through means other than a normal transfer (eg. via `selfdestruct()`).
+
+While the type of `current_eth` is indeed `uint`, standing for unsigned integer, meaning an integer that can not represent negative values, that doesn't mean that it can't underflow. For example, if the value in a `uint8` is currently 0 and 1 would be subtracted from it in an `unchecked`-block, then it would roll over to the biggest value it can represent: 255.
+
+Option D) will prevent `current_eth` from underflowing below 0.
+</HiddenSolution>
+
+---
+
+### Question 4 of 8
+
+In `buyEth()`, are there any reentrancy concerns assuming the `nonReentrant` modifier is implemented correctly?
+
+<ul>
+  <li><input type="checkbox" /> A. No, because it has the `nonReentrant` modifier</li>
+  <li><input type="checkbox" /> B. No, and even without the modifier you can't exploit any issue </li>
+  <li><input type="checkbox" /> C. Yes, there is a cross-contract reentrancy concern via Seller </li>
+  <li><input type="checkbox" /> D. None of the above </li>
+</ul>
+
+<HiddenSolution>
+**Correct is C.**
+
+While the `nonReentrant` modifier prevents re-entering the same contract to exploit an "incomplete state", the same cannot be said for other contracts that might make use of the `SimpleDEX`'s state before the state is completely updated.
+
+Specifically state variables involved in determining the price `(token_balance & current_eth)` are relevant here: `current_eth` is updated before the `call()` to the message sender is made. But `token_balance` is only updated after.
+
+If the `msg.sender` is actually a contract, it will have a chance to call another protocol that is relying on the `SimpleDEX`'s reported price to be correct (such as the `Seller` contract). If the malicious contract calls this victim contract while the state of `SimpleDEX` is incomplete (ie. cross-contract read-only reentrancy) the victim would make use of this incorrect price data which might give the attacker an advantage. (Not in this case though. There's no advantage to exploiting this in `Seller` since the attacker would actually have to pay a higher price than without exploiting this issue).
+</HiddenSolution>
+
+---
+
+### Question 5 of 8
+
+What will happen when calling `buyEth()` via `SimpleDexProxy`?
+
+<ul>
+  <li><input type="checkbox" /> A. `buyEth()` will be called and successfully executed </li>
+  <li><input type="checkbox" /> B. You can’t call a function that way; it must be called directly</li>
+  <li><input type="checkbox" /> C. `buyEth()` will be called but ETH won't be transferred</li>
+  <li><input type="checkbox" /> D. Transaction will be reverted</li>
+</ul>
+
+<HiddenSolution>
+**Correct is D.**
+
+The transaction would be reverted since the `SimpleDEX`'s `buyEth()` function would attempt transferring the tokens from the `msg.sender`, which in this case would be a proxy that has no way to give it the appropriate allowance even if the user were to transfer their tokens to the proxy first.
+</HiddenSolution>
+
+---
+
+### Question 6 of 8
+
+In `buyEth()`:
+
+<ul>
+  <li><input type="checkbox" /> A. If `amount` is less than `100`, it will lead to an incorrect calculation of fee</li>
+  <li><input type="checkbox" /> B. If `token_balance` is already at its `MAX_UINT256`, it will result in overflow and won't revert</li>
+  <li><input type="checkbox" /> C. If `token_amount` is `> MAX_UINT64`, it will result in a casting issue</li>
+  <li><input type="checkbox" /> D. None of the above</li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, C.**
+
+In `buyEth()` the amount is divided by 100 before being multiplied with `fees_percentage`. Since we're dealing with integer division there are no rational numbers. Dividing anything lower than 100 will result in 0 causing the `fee` to be 0 as well. The general best practice is "multiplication before division" to prevent such issues involving loss of precision.
+
+Starting Solidity 0.8.0, an overflow happening outside of an "`unchecked`-block" will always result in the transaction reverting. Therefore B) is incorrect.
+
+When the `token_amount` is added to the `token_balance` there's indeed a casting issue when the amount's value does not fit into a `uint64` type.
+</HiddenSolution>
+
+---
+
+### Question 7 of 8
+
+Can `getEthPrice()` return zero?
+
+<ul>
+  <li><input type="checkbox" /> A. Yes, if the owner initializes the contract with more ETH than token_balance</li>
+  <li><input type="checkbox" /> B. Yes, a carefully crafted `buyEth()` transaction can result in `getEthPrice()` returning zero</li>
+  <li><input type="checkbox" /> C. Yes, once all the ETH are sold</li>
+  <li><input type="checkbox" /> D. No, there is no issue</li>
+</ul>
+
+<HiddenSolution>
+**Correct is A.**
+
+The `getEthPrice()` function calculates the price with `token_balance / current_eth`. Since this is integer division, if the token balance would be smaller than the current ether balance the result would not be a integer but a rational. So the result would end up being a zero.
+
+There isn't anything special you can "craft" for a call to `buyEth()` to result in the price function returning zero.
+
+Once all the ETH are sold, `getEthPrice()` won't return zero but revert instead due to a division-by-zero.
+</HiddenSolution>
+
+---
+
+### Question 8 of 8
+
+Which of the following invariants (written in propositional logic) hold on a correct implementation of the code?
+
+<ul>
+  <li><input type="checkbox" /> A. `this.balance == current_eth <=> token.balanceOf(this) == token_balance` </li>
+  <li><input type="checkbox" /> B. `this.balance >= current_eth && token.balanceOf(this) >= token_balance` </li>
+  <li><input type="checkbox" /> C. `this.balance <= token.balanceOf(this) && token.balanceOf(this) <= token_balance` </li>
+  <li><input type="checkbox" /> D. `this.balance >= current_eth || token.balanceOf(this) >= token_balance` </li>
+</ul>
+
+<HiddenSolution>
+**Correct is B, D.**
+
+The symbol `<=>` is called the biconditional operator, meaning that the expressions on either side are logically equivalent. But the actual balance of ether being equal to the balance tracked within the state variable `current_eth` does not imply that the actual and tracked token balances are equal too. So the biconditional is invalid. But even if it were an AND operator it would not be an invariant that could hold: The invariant would be simple to break by sending unsolicited tokens to the contract (eg. via `selfdestruct()`).
+
+* Option B) includes the fact that the actual token and ether balances may be higher than the tracked balances. In a correct implementation this invariant should always hold.
+* Option C)'s second part allows the tracked `token_balance` to be larger than the actual token balance. This should not be the case in a correct implementation.
+* Option D) seems similar to B) but would allow for there to be either too little ether to match the tracked balance or too little tokens to match the tracked token balance. So it doesn't sound like a good invariant to test for since you'd want both things to hold true and not just one of them. But that wasn't the question - would it hold true in a correct implementation? Yes.
+</HiddenSolution>
+
+---

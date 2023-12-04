@@ -1,5 +1,16 @@
 {
+  "paradigm": "Paradigm CTF",
   "damnvulndefiv2": "Damn Vulnerable DeFi V2",
   "evmpuzzles": "EVM Puzzles",
-  "ethernaut": "Ethernaut"
+  "ethernaut": "Ethernaut",
+  "secureum-a-maze-x-stanford-ctf": {
+    "title": "A-MAZE-X 2022 Stanford CTF",
+    "href": "/posts/2022/8/27/secureum-a-maze-x-stanford-ctf/",
+    "newWindow": false
+  },
+  "write-up-eko2022-blockchain-ctf": {
+    "title": "EKO2022 Blockchain CTF",
+    "href": "/posts/2022/11/5/write-up-eko2022-blockchain-ctf/",
+    "newWindow": false
+  }
 }

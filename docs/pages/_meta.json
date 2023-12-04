@@ -33,7 +33,8 @@
   "web2": "Web2",
   "misc": "Miscellaneous",
   "---": {
-    "type": "separator"
+    "type": "separator",
+    "title": ""
   },
   "posts": {
     "type": "page",

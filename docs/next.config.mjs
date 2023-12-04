@@ -1,15 +1,21 @@
 import nextra from 'nextra'
+import rehypeAsciiMath from 'rehype-asciimath'
 
 const withNextra = nextra({
   theme: 'nextra-theme-docs',
   themeConfig: './theme.config.tsx',
-  latex: true,
   flexsearch: {
     codeblocks: false
   },
   defaultShowCopyCode: false,
   codeHighlight: true,
   latex: true,
+  // Enables AsciiMath notation.
+  mdxOptions: {
+    rehypePlugins: [
+      rehypeAsciiMath,
+    ],
+  },
 })
 
 export default {

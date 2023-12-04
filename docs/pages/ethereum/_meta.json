@@ -2,5 +2,6 @@
   "secureum": "Secureum Bootcamp",
   "fuzzing": "Fuzzing",
   "ctf": "CTF",
-  "bughunting": "Bughunting"
+  "bughunting": "Bughunting",
+  "auditorrewind": "Smart Contract Auditor's Rewind"
 }

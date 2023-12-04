@@ -1,0 +1,417 @@
+# RACE #14 Of The Secureum Bootcamp Epoch∞
+
+import { Callout } from 'nextra/components'
+
+This is a Write-Up of RACE-14, Quiz of the [Secureum Bootcamp](https://twitter.com/0xRajeev/status/1470910752085065731) for Ethereum Smart Contract Auditors.
+
+<Callout type="info">
+  This one was designed by Secureum Mentors [Joran Honig](https://twitter.com/joranhonig) and [Gonçalo](https://twitter.com/GNSPS) from [ConsenSys Diligence](https://twitter.com/ConsenSysAudits). I imagine it was very hard to **solve all 8 questions within the strict timelimit of 16 minutes**, but I recommend you’ll try to see how far you come with using more time before looking at the solutions.
+
+  As usual, I waited for submissions to close before publishing it and, to stay true to the original, I omitted syntax highlighting. Feel free to copy it into your favorite editor, but do so after starting the timer!
+</Callout>
+
+<p className="text-xs text-right">January 30, 2023 by [patrickd](/about#patrickd)</p>
+
+<style jsx>{`
+  input[type=checkbox] {
+    width: 15px;
+    height: 15px;
+  }
+  li {
+    padding: 0.5em;
+  }
+`}</style>
+
+export function HiddenSolution({ children }) {
+  return (
+    <details closed className="last-of-type:mb-0 rounded-lg bg-neutral-50 dark:bg-neutral-800 p-2 mt-4">
+      <summary>
+        <strong className="text-lg">Solution</strong>
+      </summary>
+      <div className="nx-p-2">{children}</div>
+    </details>
+  )
+}
+
+---
+
+### Code
+
+<Callout type="info">
+Questions 1 & 2 are based on the below code snippet. You will see the same code snippet for these two questions. The questions are below the code snippet.
+</Callout>
+
+
+```plaintext showLineNumbers
+contract USDCCollateral {
+    // This is a contract that's part of a larger system implementing a lending protocol
+    // This particular contract concerns itself with allowing people to deposit USDC as collateral for their loans
+
+    // A list of all the addresses lending
+    address[] lenders;
+    // A mapping to allow efficient is lender checks
+    mapping(address => bool) isLender;
+
+    address immutable lendingPlatform;
+    address token = ERC20(USDC_ADDRESS);
+
+    // We use a mapping to store the deposits of all lenders
+    mapping (address => bool) balance;
+
+    // USDC is very stable, so for every 1 USDC you can borrow 1 DAI or 1 USD worth of the other currency
+    // Similar to other lending platforms, this lending system uses an oracle to determine how much one can borrow. 
+    // The following describes how the system determines the max borrow value (ignoring precision for simplicity).
+    // maxBorrow = (collateralRatio * underlying * underlyingValueUSD) / otherValueUSD 
+    // This encodes the margin requirement of the system.
+    uint collateralRatio = 100_000_000; 
+
+    constructor() {
+        periodicFee = 1;
+
+        // approved collateral contracts are deployed by the lending platform
+        // assume it is implemented correctly, and doesn't allow false collateral contracts.
+        lendingPlatform = msg.sender;
+    }
+
+    function deposit(uint amount) external {
+        require(!isLender[msg.sender]);
+        isLender[msg.sender] = true;
+        lenders.push(msg.sender);
+
+        ...
+    }
+
+    function computeFee(uint periodicFee, uint balance) internal returns (uint) {
+        // Assume this is a correctly implemented function that computes the share of fees that someone should receive based on their balance.
+    }
+
+    // this function is called monthly by the lending platform
+    // We compute how much fees the lender should receive and send it to them
+    function payFees() external onlyLendingPlatform {
+        for (uint i=0; i<lenders.length; i++) {
+            // Compute fee uses the balance of each lender
+            uint fee = computeFee(periodicFee, balance[lenders[i]])
+            token.transferFrom(lendingPlatform, lenders[i], fee);
+        }
+    }
+    ...
+}
+```
+
+### Question 1 of 8
+
+Lending platforms have a few options to configure when it comes to adding new tokens as collateral. For example, you’ll have to set up an oracle for the price of the collateral, and you have to configure a margin requirement. The security concern with using the given collateral configuration is:
+
+<ul>
+  <li><input type="checkbox" /> A. The periodic fee parameter is static </li>
+  <li><input type="checkbox" /> B. The collateral ratio of loans is too low </li>
+  <li><input type="checkbox" /> C. USDC should not be used as collateral for loans </li>
+  <li><input type="checkbox" /> D. None of the above </li>
+</ul>
+
+<HiddenSolution>
+**Correct is B.**
+
+It's unknown whether the `periodicFee` paramter is static or not from the given code, but either way it wouldn't be a security issue.
+
+While it might seem okay to keep collateralisation of a stable coin at 100% it has a problem: The user can borrow at a price determined by an oracle without slippage. A smart arbitrageur would, after every trade on every other AMM, go in and trade until the price of the AMM is the same as the price reported by the oracle used by this lending platform. It would even be possible to sandwich oracle updates for profit. It's also risky to maintain collateralisation of positions.
+
+There's no general reason to not use USDC as collateral.
+</HiddenSolution>
+
+---
+
+### Question 2 of 8
+
+Assuming `payFees()` is periodically called by a function, which iteratively calls `payFees()` of all collateral contracts, the security concern(s) is/are:
+
+<ul>
+  <li><input type="checkbox" /> A. Collateral tokens can define their own fee rewards and have the protocol pay too much fees </li>
+  <li><input type="checkbox" /> B. There could be many lenders </li>
+  <li><input type="checkbox" /> C. `payFees()` might re-enter the contract, paying all fees again </li>
+  <li><input type="checkbox" /> D. You can deposit at any point during the period </li>
+</ul>
+
+<HiddenSolution>
+**Correct is B, D.**
+
+The collateral contracts are deployed via the lending platform which is assumed to be correctly implemented. Under this assumption it wouldn't be possible for one of them to be malicious in terms of reward distribution.
+
+There could be so many lenders to iterate that the gas necessary for the function to complete is too large preventing the function to be called, effectively causing a Denial of Service.
+
+The token in question is USDC, an ERC20 token that does not have hooks allowing a receiver to reenter the function. A good recommendation would be the use of safeTransferFrom(), but it's not necessarily required.
+
+Nothing prevents someone to game the reward system by sandwiching the payFees() call with a large deposit() and withdrawal(). The current reward system does not incentivice that depositors keep their money in the system for a long time.
+</HiddenSolution>
+
+---
+
+### Question 3 of 8
+
+```plaintext showLineNumbers
+modifier noETH {
+    require(balanceOf(this) == 0);
+    _;
+}
+```
+
+The developers want to prevent people from accidentally sending ETH instead of WETH and have implemented a `noETH` modifier, as defined above, and annotated the deposit function with it. They have also not implemented a `receive` function. Which of the following statements is true?
+
+<ul>
+  <li><input type="checkbox" /> A. Developers can either use the modifier or achieve the same effect by omitting the payable keyword on deposit function </li>
+  <li><input type="checkbox" /> B. Developers should use the modifier because it achieves a different effect from omitting the payable keyword on deposit function </li>
+  <li><input type="checkbox" /> C. Developers should remove the modifier but achieve the required effect by omitting the payable keyword on deposit function </li>
+  <li><input type="checkbox" /> D. None of the above </li>
+</ul>
+
+<HiddenSolution>
+**Correct is C.**
+
+Omitting the payable keyword does not have the same effect. The modifier checks the contract's current balance while the payable keyword checks the actual ether that was sent with the message (`msg.value`).
+
+The developers should NOT use the modifier because of this difference since it will lead to Denial of Service once the contract's balance becomes non-zero (it's possible forcefully injecting ether into a contract, eg. via `SELFDESTRUCT`).
+</HiddenSolution>
+
+---
+
+### Question 4 of 8
+
+```plaintext
+modifier checkedPool{
+    address pool;
+    assembly { 
+        let size := calldatasize()
+        pool := calldataload(sub(size, 32))
+    }
+    require(isValid(pool));
+    _;
+}
+
+function isValid(pool) internal {...}
+function somePoolOperation(...., address pool) public checkedPool { ... }
+function anotherPoolOperation(...., address pool) public checkedPool { ... }
+```
+
+Developers have used assembly to make their code a bit less repetitive. They use it to annotate a bunch of functions that have as their last argument a pool address. Unfortunately they made a mistake. Which of the following options fixes the bug?
+
+<ul>
+  <li><input type="checkbox" /> A. Replace the modifier with `require(isValid(pool));` in every function with the modifier </li>
+  <li><input type="checkbox" /> B. Make all functions using `checkedPool` external </li>
+  <li><input type="checkbox" /> C. Everything is fine; this code has no problems </li>
+  <li><input type="checkbox" /> D. None of the above </li>
+</ul>
+
+<HiddenSolution>
+**Correct is A.**
+
+Dropping the modifier in favor of a single `require()` fixes the issue and even improves code readability to what was attempted here with assembly. If the developers insist on the use of modifiers they should pass the pool value directly as an argument to it instead: `checkedPool(pool)`.
+
+Making all of the function external (therefore preventing them to be called internally) would certainly increase the likelihood that the assembly snippet will pick up the correct value. But there's still no guarantee that the last 32 bytes of the calldata are always the pool argument. A caller can send more data than defined in the function's signature and the ABI decoding would work just fine while ignoring the extra data. But the modifier would load the extra data instead of the pool value. This would potentially allow to bypass the pool validation and allow for exploitation.
+
+As mentioned, the code snippet is certainly not fine. It attempts loading the pool parameter from the calldata and assumes that it would always be located in the last 32 bytes - there's no guarantee for that being the case.
+</HiddenSolution>
+
+---
+
+<Callout type="info">
+Questions 5 & 6 are based on the below code snippet. You will see the same code snippet for these two questions. The questions are below the code snippet.
+</Callout>
+
+```plaintext
+interface Lender {
+    function onLiquidation() external;
+}
+
+interface IERC20 {
+    event Transfer(address indexed from, address indexed to, uint256 value);
+    event Approval(address indexed owner, address indexed spender, uint256 value);
+
+    function totalSupply() external view returns (uint256);
+    function balanceOf(address account) external view returns (uint256);
+    function transfer(address to, uint256 amount) external returns (bool);
+    function allowance(address owner, address spender) external view returns (uint256);
+    function approve(address spender, uint256 amount) external returns (bool);
+    function transferFrom(address from, address to, uint256 amount) external returns (bool);
+}
+
+contract ERC20Collateral {
+    // This contract is different from the one in Questions 1 & 2, please read it carefully!!!
+    // This is a contract that's part of a larger system implementing a lending protocol
+
+    // A list of all the addresses lending
+    address[] lenders;
+    // A mapping to allow efficient is lender checks
+    mapping(address => bool) isLender;
+
+    address immutable lendingPlatform = msg.sender;
+    IERC20 token;
+
+    // We use a mapping to store the deposits of all lenders
+    mapping (address => uint256) balance;
+
+    event Liquidation(address indexed lender, uint256 liquidatedAmount);
+
+    constructor(IERC20 _token) {
+        // Consider this contract is now part of a new permissionless factory
+        // built by the protocol. The factory behaves very much like a UniswapV2 factory
+        // that allows anyone to deploy their own collateral contract
+        token = _token;
+    }
+
+    function deposit(uint amount) external {
+        isLender[msg.sender] = true;
+        lenders.push(msg.sender);
+
+        token.transferFrom(msg.sender, lendingPlatform, amount);
+        balance[msg.sender] += amount;
+    }
+
+    function liquidate(address lender) external {
+        // We call the protocol factory to check for under-collateralization conditions
+        require(lendingPlatform.undercollateralized(lender, balance[lender]));
+
+        uint256 oldDeposit = balance[lender];
+        balance[lender] = 0;
+        uint256 fee = oldDeposit / 1000; // fee ratio == 1/1000
+
+        // Give the caller his liquidation execution fee
+        token.transferFrom(address(this), msg.sender, fee);
+        // Transfer the rest of the collateral to the platform
+        token.transferFrom(address(this), lendingPlatform, oldDeposit - fee);
+
+        // Now ping the liquidated lender for him to be able to react to the liquidation
+        // We need to use a low-level call because the lender might not be a contract
+        // and the compiler checks code size on high-level calls, reverting if it's 0
+        address(lender).call(abi.encodePacked(Lender.onLiquidation.selector));
+
+        emit Liquidation(lender, oldDeposit - balance[lender]);
+    }
+}
+```
+
+---
+
+### Question 5 of 8
+
+The lending protocol has also built in a liquidation function to be called in the case of under-collateralization. Anyone can call the function and be rewarded for calling it by taking a small percentage of the liquidation. The liquidation function has a vulnerability which can be exploited because:
+
+<ul>
+  <li><input type="checkbox" /> A. The lender can open a position with a low amount of collateral and the fee payout reverts </li>
+  <li><input type="checkbox" /> B. The lender can make the position “unliquidatable” with reentrancy </li>
+  <li><input type="checkbox" /> C. The lender can liquidate other positions with his callback and make more money </li>
+  <li><input type="checkbox" /> D. The liquidator can take the full collateral amount with reentrancy </li>
+</ul>
+
+<HiddenSolution>
+**Correct is B.**
+
+At first the code might look like the checks-effects-interactions pattern is followed (ie. no harmful reentrancy is possible) but there's actually another check happening when the Liquidation event is emitted: If the current `balance` is suddenly larger than the `oldDeposit`. Since the lender is called before this check happens, they could reenter via the `deposit()` function and increase the balance causing the liquidation to fail (ie. potentially making the position “unliquidatable”).
+
+Aside from answer B, the other options are mostly nonsensical decoys.
+</HiddenSolution>
+
+---
+
+### Question 6 of 8
+
+Assume that the vulnerability referenced in the previous question has been fixed by changing the line with the `Liquidation` event emission to emit `Liquidation(lender, oldDeposit)`. The protocol team has built a bot that monitors and liquidates under-collateralized positions automatically. Even though the bot does not monitor the mempool, it simulates the full transaction and, if successful, sends transactions with the exact amount to be able to execute the function + 100000 gas for minimal execution in the `onLiquidation()` callback. Which of these attacks can be executed in a harmful way towards the protocol?
+
+<ul>
+  <li><input type="checkbox" /> A. An attacker can liquidate positions, reenter the contract and steal tokens </li>
+  <li><input type="checkbox" /> B. The liquidated lender can monitor the mempool and frontrun the protocol bot with a deposit, griefing it </li>
+  <li><input type="checkbox" /> C. The lender can make their position “unliquidatable” by consuming all the gas provided in the callback </li>
+  <li><input type="checkbox" /> D. The liquidated lender can tokenize the extra gas in the callback and make a profit </li>
+</ul>
+
+<HiddenSolution>
+**Correct is B.**
+
+First option is nonsensical.
+
+Although the revert via reentrancy in the `deposit()` function has been fixed, it's still possible that the bot is simply frontrun by a lender who increases their collateral via `deposit()` just in time to make the bot's liquidation attempt fail.
+
+A liquidated lender could, when called, only use up all of the gas it was given via the `CALL`, which is $63/64$ of the total gas. With a sufficiently high gas limit it is still possible to liquidate the lender.
+
+Gas tokenization is no longer viable since EIP-3529 has reduced refunds.
+</HiddenSolution>
+
+---
+
+### Question 7 of 8
+
+In the context of Questions 5 and 6, someone built a MEV frontrunner bot that is exploiting liquidations in different protocols. It monitors the mempool for collateral contracts deployed from the lending factory and simulates transactions in a mainnet fork within Foundry to check whether it should attack them. The logic behind the bot is that it checks only the token’s `“Transfer”` events for its success conditions. More precisely, it checks if there is liquidity in an AMM to exchange to ETH and make sure it turns a profit at the end. If so, it sends a Flashbot bundle to make a profit by frontrunning the liquidator. Knowing the factory for this new contract is permissionless, how could you extract assets out of this bot?
+
+<ul>
+  <li><input type="checkbox" /> A. Open a position with a low collateral amount to grief the bot </li>
+  <li><input type="checkbox" /> B. Build a similar bot that frontruns this one </li>
+  <li><input type="checkbox" /> C. Deploy a collateral contract with your own custom token and seed an AMM pool with some ETH and this token, tricking the bot </li>
+  <li><input type="checkbox" /> D. There is no way to do it </li>
+</ul>
+
+<HiddenSolution>
+Correct is C.
+
+Griefing the bot would not extract assets from it.
+
+Option C actually happened on mainnet and was labelled "[Salmonella Attack](https://github.com/Defi-Cartel/salmonella)"
+
+Since it's using Flashbot Bundles, frontrunning it should not be possible since the transaction would be private.
+</HiddenSolution>
+
+---
+
+### Question 8 of 8
+
+```plaintext
+// Assume as adding to the code shown for Questions 5 & 6
+contract ERC20Collateral {
+    // This is a contract that's part of a larger system implementing a lending protocol
+
+    ...
+
+    function transferCollateral(
+        address signer,
+        address receiver,
+        uint256 amount,
+        bytes32 sigR,
+        bytes32 sigS,
+        uint8 sigV
+    ) external {
+        require(signer != address(0), "INVALID_SIGNER");
+
+        // Check that the signer is the one who actually signed the message
+        require(signer == ecrecover(
+            keccak256(abi.encodePacked(receiver, amount)),
+            sigV,
+            sigR,
+            sigS
+        ));
+
+        deposits[receiver] += amount;
+        deposits[signer] -= amount;
+    }
+
+    ...
+}
+```
+
+The protocol implemented a function to transfer collateral from lender A to lender B with a signature from A, as shown above. Is there a way you can break it?
+
+<ul>
+  <li><input type="checkbox" /> A. Lender B can get more than the intended amount from lender A (assuming there is more than double the amount in A’s account) </li>
+  <li><input type="checkbox" /> B. Lender A can pretend to transfer to lender B but then steal amount from him </li>
+  <li><input type="checkbox" /> C. Lender A can grief lender B by sending a malformed signature (assuming the S parameter is correct) </li>
+  <li><input type="checkbox" /> D. Lender B can steal from another lender C, by submitting a malformed signature. </li>
+</ul>
+
+<HiddenSolution>
+**Correct is A.**
+
+There's nothing preventing the same signature to be re-used over and over again. So as long as the `signer` has a balance higher than the signed `amount`, the `receiver` can transfer their collateral.
+
+Even if the code would keep track of the signatures that were already used once, the code would still be exploitable via signature malleability. A correct way to fix it would be to track a nonce for each `signer`.
+
+A malformed signature would cause `ecrecover` to return a zero-address, but is prevented since the return value must be equal to the `signer` who may not be the zero-address.
+</HiddenSolution>
+
+---

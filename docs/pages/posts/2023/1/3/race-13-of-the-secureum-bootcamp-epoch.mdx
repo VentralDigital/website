@@ -1,0 +1,414 @@
+# RACE #13 Of The Secureum Bootcamp Epoch∞
+
+import { Callout } from 'nextra/components'
+
+This is a Write-Up of RACE-13, Quiz of the [Secureum Bootcamp](https://twitter.com/0xRajeev/status/1470910752085065731) for Ethereum Smart Contract Auditors.
+
+<Callout type="info">
+  This one was designed by Secureum Mentor [Leo Alt](https://twitter.com/leonardoalt) who spiced things up with some assembly and function types. I imagine it was very hard to **solve all 8 questions within the strict timelimit of 16 minutes**, but I recommend you’ll try to see how far you come with using more time before looking at the solutions.
+
+  As usual, I waited for submissions to close before publishing it and, to stay true to the original, I omitted syntax highlighting. Feel free to copy it into your favorite editor, but do so after starting the timer!
+</Callout>
+
+<p className="text-xs text-right">January 3, 2023 by [patrickd](/about#patrickd)</p>
+
+<style jsx>{`
+  input[type=checkbox] {
+    width: 15px;
+    height: 15px;
+  }
+  li {
+    padding: 0.5em;
+  }
+`}</style>
+
+export function HiddenSolution({ children }) {
+  return (
+    <details closed className="last-of-type:mb-0 rounded-lg bg-neutral-50 dark:bg-neutral-800 p-2 mt-4">
+      <summary>
+        <strong className="text-lg">Solution</strong>
+      </summary>
+      <div className="nx-p-2">{children}</div>
+    </details>
+  )
+}
+
+---
+
+### Code
+
+<Callout type="info">
+All 8 questions in this RACE are based on the following contract. You will see them for all the 8 questions in this RACE. The questions are below the shown contract.
+</Callout>
+
+
+```plaintext showLineNumbers
+// SPDX-License-Identifier: UNLICENSED
+pragma solidity ^0.8.17;
+
+/// CallbackERC20 is based on Solmate's ERC20.
+/// It adds the extra feature that address can register callbacks,
+/// which are called when that address is a recipient or sender
+/// of a transfer.
+/// Addresses can also revoke callbacks.
+contract CallbackERC20 {
+   event Transfer(address indexed from, address indexed to, uint256 amount);
+
+   event Approval(address indexed owner, address indexed spender, uint256 amount);
+
+   /*//////////////////////////////////////////////////////////////
+                           METADATA STORAGE
+   //////////////////////////////////////////////////////////////*/
+
+   // Optimized version vs string
+   function name() external pure returns (string memory) {
+       // Returns "Callback"
+       assembly {
+           mstore(0, 0x20)
+           mstore(0x28, 0x0843616c6c6261636b)
+           return(0, 0x60)
+       }
+   }
+
+   // Optimized version vs string
+   function symbol() external pure returns (string memory) {
+       // Returns "CERC"
+       assembly {
+           mstore(0, 0x20)
+           mstore(0x24, 0x0443455243)
+           return(0, 0x60)
+       }
+   }
+
+   uint8 public constant decimals = 18;
+
+   /*//////////////////////////////////////////////////////////////
+                             ERC20 STORAGE
+   //////////////////////////////////////////////////////////////*/
+
+   uint256 public totalSupply;
+
+   mapping(address => uint256) public balanceOf;
+
+   mapping(address => mapping(address => uint256)) public allowance;
+
+   /*//////////////////////////////////////////////////////////////
+                              CALLBACK
+   //////////////////////////////////////////////////////////////*/
+
+   mapping(address => function (address, address, uint) external) public callbacks;
+
+   /*//////////////////////////////////////////////////////////////
+                              CONSTRUCTOR
+   //////////////////////////////////////////////////////////////*/
+
+   constructor() {
+       // Owner starts with a little fortune they can distribute.
+       _mint(msg.sender, 1_000_000);
+   }
+
+   /*//////////////////////////////////////////////////////////////
+                             CALLBACK LOGIC
+   //////////////////////////////////////////////////////////////*/
+
+  function registerCallback(function (address, address, uint) external callback) external {
+      callbacks[msg.sender] = callback;
+  }
+
+  function unregisterCallback() external {
+      delete callbacks[msg.sender];
+  }
+
+   /*//////////////////////////////////////////////////////////////
+                              ERC20 LOGIC
+   //////////////////////////////////////////////////////////////*/
+
+   function approve(address spender, uint256 amount) public virtual returns (bool) {
+       allowance[msg.sender][spender] = amount;
+
+       emit Approval(msg.sender, spender, amount);
+
+       return true;
+   }
+
+   function transfer(address to, uint256 amount) public virtual returns (bool) {
+       balanceOf[msg.sender] -= amount;
+
+       // Cannot overflow because the sum of all user
+       // balances can't exceed the max uint256 value.
+       unchecked {
+           balanceOf[to] += amount;
+       }
+
+       notify(msg.sender, msg.sender, to, amount);
+       notify(to, msg.sender, to, amount);
+
+       emit Transfer(msg.sender, to, amount);
+
+       return true;
+   }
+
+   function transferFrom(
+       address from,
+       address to,
+       uint256 amount
+   ) public virtual returns (bool) {
+       uint256 allowed = allowance[from][msg.sender]; // Saves gas for limited approvals.
+
+       if (allowed != type(uint256).max) allowance[from][msg.sender] = allowed - amount;
+
+       balanceOf[from] -= amount;
+
+       // Cannot overflow because the sum of all user
+       // balances can't exceed the max uint256 value.
+       unchecked {
+           balanceOf[to] += amount;
+       }
+
+       notify(from, from, to, amount);
+       notify(to, from, to, amount);
+
+       emit Transfer(from, to, amount);
+
+       return true;
+   }
+
+   function notify(address who, address from, address to, uint amt) internal {
+       if (callbacks[who].address != address(0)) {
+           callbacks[who](from, to, amt);
+       }
+   }
+
+   /*//////////////////////////////////////////////////////////////
+                       INTERNAL MINT/BURN LOGIC
+   //////////////////////////////////////////////////////////////*/
+
+   function _mint(address to, uint256 amount) internal virtual {
+       totalSupply += amount;
+
+       // Cannot overflow because the sum of all user
+       // balances can't exceed the max uint256 value.
+       unchecked {
+           balanceOf[to] += amount;
+       }
+
+       emit Transfer(address(0), to, amount);
+   }
+
+   function _burn(address from, uint256 amount) internal virtual {
+       balanceOf[from] -= amount;
+
+       // Cannot underflow because a user's balance
+       // will never be larger than the total supply.
+       unchecked {
+           totalSupply -= amount;
+       }
+
+       emit Transfer(from, address(0), amount);
+   }
+}
+```
+
+### Question 1 of 8
+
+In `transferFrom()`, `unchecked` is **not** used in the allowance subtraction:
+
+<ul>
+  <li><input type="checkbox" /> A. To save gas </li>
+  <li><input type="checkbox" /> B. To avoid unauthorized transfers </li>
+  <li><input type="checkbox" /> C. To avoid reentrancy </li>
+  <li><input type="checkbox" /> D. None of the above </li>
+</ul>
+
+
+<HiddenSolution>
+**Correct is B.**
+
+The way this question is asked is quite tricky. First of all, you have to correctly identify the line of code where the allowance subtraction happens (`allowed - amount`) and notice that unchecked is not being used there to be able to correctly interpret the question.
+
+Next, you should ask: What would happen if the `unchecked` block was actually used? Then Solidity's overflow-checks would be omitted, which would mean less bytecode and therefore gas-savings. Therefore, not using `unchecked` needs more gas, and answer A cannot be true.
+
+Solidity's overflow-checks will make the code revert if the `amount` is larger than the allowed value. This will ensure that callers are only able to send the amount that they were authorized to handle. Therefore if the `unchecked` block would have been used and there is no other place that checks this, it would have enabled unauthorized transfers making answer B true.
+
+Whether an `unchecked` block is used or not has nothing to do with reentrancy, therefore answer C is false.
+</HiddenSolution>
+
+---
+
+### Question 2 of 8
+
+In `transfer()` and `transferFrom()`, the use of `unchecked` would not be desired:
+
+<ul>
+  <li><input type="checkbox" /> A. When the token uses large number of decimals </li>
+  <li><input type="checkbox" /> B. When the token uses small number of decimals </li>
+  <li><input type="checkbox" /> C. At all times </li>
+  <li><input type="checkbox" /> D. At no times </li>
+</ul>
+
+<HiddenSolution>
+**Correct is D.**
+
+Originally, the correct answer was intended to be A with the following explanation from Leo: "Unchecked would be always desired if this operation can never overflow, and never desired if it can easily overflow. Neither case is true. The number of `decimals` can influence that. The more decimals the token uses, the bigger one's balance is, in terms of tokens. Depending on how large `decimals` is, it can lead to the case where overflow is possible in a legit use case. In this case, `unchecked` could lead to bugs."
+
+This assumed though, that the operation can overflow, which it actually can't in the context of this contract since, as mentioned, by the code-comment `"Cannot overflow because the sum of all user balances can't exceed the max uint256 value."` thanks to the `_mint()` function's `totalSupply` increase not being in an `unchecked` block.
+
+Although the use of large decimals doesn't negatively impact the token's own logic, it should still be mentioned that it might cause issues for other contracts that would like to integrate the tokens. An example for this would be the multiplication of two user's balances where, as per best practice, multiplication would happen before division (to avoid loss of precision) and might cause an overflow.
+</HiddenSolution>
+
+---
+
+### Question 3 of 8
+
+In `name()` and `symbol()`, the returned values are incorrect because:
+
+<ul>
+  <li><input type="checkbox" /> A. The string encoding is too short </li>
+  <li><input type="checkbox" /> B. Inline assembly `return` does not leave the function </li>
+  <li><input type="checkbox" /> C. `MSTORE` does not fill all bytes until 0x5f and function may return junk at the end </li>
+  <li><input type="checkbox" /> D. The code always reverts </li>
+</ul>
+
+<HiddenSolution>
+**Correct is C.**
+
+The first `MSTORE` writes a static `0x20` (32 in decimal) to the first memory slot. This is done since the `RETURN`ed value is expected to be ABI-encoded and the encoding of dynamic types such as string is an offset that points to where the actual string in the return data starts. Since there's no other data being returned, it simply points to the next 32-byte slot starting at address `0x20`.
+
+The second `MSTORE` actually writes two things at the same time: The string length and the actual string contents. Strings always consist of these two parts and it's important to remember that the length is right-aligned (like all numbers in memory) in the first slot, while the string's content is left-aligned (like all strings and dynamic byte-arrays in memory) in the following slots.
+
+Also, remember that `MSTORE` always writes 32 bytes of data starting at the specified address even when the data you specified is shorter than 32 bytes. In such cases, the data will be left-padded to automatically right-align it like a number. Both functions make use of this fact by not starting at `0x20` but instead increasing the address by the length of the string. That way the first byte of the string in the code will end up at the last byte of the slot while the following bytes are moved to the beginning of the next slot.
+
+While this seems like an elegant approach, the problem now is that only the first few bytes (the string contents) of the third slot have been written to. All of the following bytes are simply assumed to be zero-values although they might contain junk which could cause issues for the receiver of the returned data. In this specific case, the code accesses the memory area where Solidity stores the "free memory pointer". This value is returned as part of the string, which is basically junk.
+
+Finally, the `RETURN` operation in inline assembly not only leaves the function, but stops the execution of the transaction. It's is told to return `0x60` (3x32) bytes starting at offset `0x0`, effectively returning all of the memory slots that had been written to:
+
+```solidity
+0000000000000000000000000000000000000000000000000000000000000020 // From first MSTORE, ABI encoding representing address where the string starts
+0000000000000000000000000000000000000000000000000000000000000008 // First byte from second MSTORE, the string's length
+43616c6c6261636b000000000000000000000000000000000000000000000080 // Rest of bytes from second MSTORE that moved into next slot, the string's content
+//                                                            ^^ Junk from the free memory pointer
+```
+</HiddenSolution>
+
+---
+
+### Question 4 of 8
+
+To correct `name()`, one could make the following change(s):
+
+<input type="checkbox" /> A.
+```plaintext
+assembly {
+    mstore(0x20, 0x20)
+    mstore(0x48, 0x0843616c6c6261636b)
+    return(0x20, 0x60)
+}
+```
+
+<input type="checkbox" /> B.
+```plaintext
+function name() external pure returns (string memory n) { n = "Callback"; }
+```
+
+<input type="checkbox" /> C.
+```plaintext
+return "Callback";
+```
+
+<input type="checkbox" /> D. None of the above
+
+<HiddenSolution>
+**Correct is A, B, C.**
+
+Answer A moves the memory used for the return value by one 32-byte slot "to the right". This way the string won't end up sharing its space with where Solidity stores the "free memory pointer" and no junk will be returned anymore, at least in this specific case. It still clashes with other reserved memory areas of Solidity, but since they are zero in this case it doesn't matter. The fact that reserved memory areas are used also is no problem as long as control is never returned back to Solidity, as is the case here thanks to the use of `RETURN`.
+
+Answers B and C are basically equivalent and represent the usual ways one would do it in Solidity.
+</HiddenSolution>
+
+---
+
+### Question 5 of 8
+
+The concern(s) with the check in `notify()` is/are:
+
+<ul>
+  <li><input type="checkbox" /> A. Selector `0x00000000` is the `fallback` function </li>
+  <li><input type="checkbox" /> B. Selector `0x00000000` is the `receive` function </li>
+  <li><input type="checkbox" /> C. Selector `0x00000000` is possible in which case a valid callback would not be called </li>
+  <li><input type="checkbox" /> D. Selector can never be `0x00000000`, so the check is useless </li>
+</ul>
+
+<HiddenSolution>
+**Correct is C.**
+
+A and B are simply not true, as `fallback` and receive don't have selectors. Rather, they are called when no function with the requested selector was implemented in the called contract.
+
+Answer C is regarding the possibility that, although unlikely, a normal external function could end up having `0x00000000` as function selector. In such a case, Solidity will revert (thinking that the variable was not properly initialized) when attempting to call said callback. Therefore a valid callback would not be called.
+</HiddenSolution>
+
+---
+
+### Question 6 of 8
+
+The concern(s) with the call in `notify()` is/are:
+
+<ul>
+  <li><input type="checkbox" /> A. The call always reverts </li>
+  <li><input type="checkbox" /> B. The passed function pointer is internal and therefore not accessible via an external call </li>
+  <li><input type="checkbox" /> C. One should always use `try/catch` in external calls </li>
+  <li><input type="checkbox" /> D. The called contract may not have the called function selector thus falling through to `fallback` or reverting the transfer </li>
+</ul>
+
+<HiddenSolution>
+**Correct is D.**
+
+The call should not revert in the success case.
+
+The function pointer is `external`, therefore it has an `address` and a `selector`, which are used to make an external call.
+
+One doesn't need to always use `try/catch`, which is true especially when they want a failure to bubble up.
+
+There are no checks that the selector exists in the given address when a callback is registered. Therefore both the address and selector may be wrong when this external call is made.
+</HiddenSolution>
+
+---
+
+### Question 7 of 8
+
+Potential change(s) to `notify()` to mitigate further security concern(s) is/are:
+
+<ul>
+  <li><input type="checkbox" /> A. Enforce the callback call to use `delegatecall` </li>
+  <li><input type="checkbox" /> B. Enforce the callback call to use `staticcall` </li>
+  <li><input type="checkbox" /> C. Send Ether to the called contract </li>
+  <li><input type="checkbox" /> D. Make the call in inline assembly </li>
+</ul>
+
+<HiddenSolution>
+**Correct is B.**
+
+The use of `delegatecall` would cause immediate exploits here.
+
+Enforcing `staticcall` instead could prevent unseen potential issues, since it wouldn't allow any state changes from that call. Note that this could of course be different from the intended behavior.
+</HiddenSolution>
+
+---
+
+### Question 8 of 8
+
+How can the contract be exploited for loss-of-funds via `notify` callback reentrancy?
+
+<ul>
+  <li><input type="checkbox" /> A. During the callback, while being the sender of a transfer, repeat the transfer </li>
+  <li><input type="checkbox" /> B. During the callback, while being the recipient of a transfer, call `transfer` again in the token contract sending the tokens back to the original sender </li>
+  <li><input type="checkbox" /> C. During the callback, while being the recipient of a transfer, burn the received tokens </li>
+  <li><input type="checkbox" /> D. This cannot happen in this contract </li>
+</ul>
+
+<HiddenSolution>
+**Correct is D.**
+
+In order to exploit the contract via callback reentrancy, it would need to have an incompletely updated state when the callbacks are called. But the contract follows the checks-effects-interactions pattern and both the subtraction from the sender as well as the addition to the receiver's balance have already happened when the calls are made.
+</HiddenSolution>
+
+---

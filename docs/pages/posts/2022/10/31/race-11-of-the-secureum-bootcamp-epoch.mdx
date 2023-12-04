@@ -1,0 +1,307 @@
+# RACE #11 Of The Secureum Bootcamp Epoch∞
+
+import { Callout } from 'nextra/components'
+
+This is a Write-Up of RACE-11, Quiz of the [Secureum Bootcamp](https://twitter.com/0xRajeev/status/1470910752085065731) for Ethereum Smart Contract Auditors.
+
+<Callout type="info">
+  This month’s Quiz was designed by the Secureum Mentor [Emiliano Bonassi](https://twitter.com/emilianobonassi) and I’d say it was pretty fair and doable to **solve all 8 questions within the strict timelimit of 16 minutes.**
+
+  As usual, I waited for submissions to close before publishing it and, to stay true to the original, I omitted syntax highlighting. Feel free to copy it into your favorite editor, but do so after starting the timer!
+</Callout>
+
+<p className="text-xs text-right">November 1, 2022 by [patrickd](/about#patrickd)</p>
+
+<style jsx>{`
+  input[type=checkbox] {
+    width: 15px;
+    height: 15px;
+  }
+  li {
+    padding: 0.5em;
+  }
+`}</style>
+
+export function HiddenSolution({ children }) {
+  return (
+    <details closed className="last-of-type:mb-0 rounded-lg bg-neutral-50 dark:bg-neutral-800 p-2 mt-4">
+      <summary>
+        <strong className="text-lg">Solution</strong>
+      </summary>
+      <div className="nx-p-2">{children}</div>
+    </details>
+  )
+}
+
+---
+
+### Code
+
+<Callout type="info">
+All 8 questions in this RACE are based on the following contract. You will see them for all the 8 questions in this RACE. The questions are below the shown contract.
+</Callout>
+
+
+```plaintext showLineNumbers
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.17;
+
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+
+
+contract Staking {
+
+   using SafeERC20 for IERC20;
+
+   bool internal _paused;
+   address internal _operator;
+   address internal _governance;
+   address internal _token;
+   uint256 internal _minDepositLockTime;
+
+   mapping(address => uint256) _userBalances;
+   mapping(address => uint256) _userLastDeposit;
+
+   event Deposit(
+       address indexed user,
+       uint256 amount
+   );
+
+   event Withdraw(
+       address indexed user,
+       uint256 amount
+   );
+
+   constructor(address operator, address governance, address token, uint256 minDepositLockTime) {
+       _operator = operator;
+       _governance = governance;
+       _token = token;
+       _minDepositLockTime = minDepositLockTime;
+   }
+
+   function depositFor(address user, uint256 amount) external {
+       _userBalances[user] += amount;
+       _userLastDeposit[user] = block.timestamp;
+
+       IERC20(_token).safeTransferFrom(user, address(this), amount);
+
+       emit Deposit(msg.sender, amount);
+   }
+
+   function withdraw(uint256 amount) external {
+       require(!_paused, 'paused');
+       require(block.timestamp >= _userLastDeposit[msg.sender] + _minDepositLockTime, 'too early');
+
+       IERC20(_token).safeTransferFrom(address(this), msg.sender, amount);
+
+       if (_userBalances[msg.sender] >= amount) {
+           _userBalances[msg.sender] -= amount;
+       } else {
+           _userBalances[msg.sender] = 0;
+       }
+
+       emit Withdraw(msg.sender, amount);
+   }
+
+   function pause() external {
+       // operator or gov
+       require(msg.sender == _operator && msg.sender == _governance, 'unauthorized');
+
+       _paused = true;
+   }
+
+   function unpause() external {
+       // only gov
+       require(msg.sender == _governance, 'unauthorized');
+
+       _paused = false;
+   }
+
+   function changeGovernance(address governance) external {
+       _governance = governance;
+   }
+}
+```
+
+### Question 1 of 8
+
+Which statements are true in `withdraw()`?
+
+<ul>
+  <li><input type="checkbox" /> A. Can be successfully executed when contract is paused </li>
+  <li><input type="checkbox" /> B. User can withdraw only after `_minDepositLockTime` elapsed since last withdrawal </li>
+  <li><input type="checkbox" /> C. Follows checks-effects-interaction pattern best practice </li>
+  <li><input type="checkbox" /> D. User can withdraw more than deposited </li>
+</ul>
+
+<HiddenSolution>
+**Correct is D.**
+
+The `require` statement right at the start of the function ensures that any attempt to call it will revert when the contract is paused.
+
+The time is not measured since the last withdrawal but since the last deposit.
+
+Does not follow the CEI pattern since calling `safeTransferFrom()` on the `_token` is an interaction with an external contract, and effects like the balance update happen after it.
+
+When a user attempts to withdraw an `amount` larger than their current balance, it'll simply be set to 0 and the requested `amount` would be send without any issue as long as the user does not attempt to send more tokens than the contract owns.
+</HiddenSolution>
+
+---
+
+### Question 2 of 8
+
+Which mitigations are applicable to `withdraw()`?
+
+<ul>
+  <li><input type="checkbox" /> A. Transferred amount should be minimum of `amount` and `_userBalances[msg.sender]` </li>
+  <li><input type="checkbox" /> B. Move `if/else` block before `safeTransferFrom` </li>
+  <li><input type="checkbox" /> C. Require `amount` to be `<=` user’s balance deposited earlier </li>
+  <li><input type="checkbox" /> D. Remove `if/else` block and add `_userBalances[msg.sender] -= amount` before `safeTransferFrom` </li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, C, D.**
+
+Checking which one of `amount` or the actual current balance is smaller, then using that as the amount of tokens to transfer to the user, does indeed seem like an easy way to mitigate the bug allowing to withdraw arbitrary amounts.
+
+Moving the `if`/`else` block before `safeTransferFrom` would bring the function closer to following the CEI pattern. Although, it likely wouldn't mitigate any exploitable issue, since the `_token` is set by the deployer and, assuming it follows typical ERC20 implementations, it wouldn't allow for reentrancy by the token receiver. It still wouldn't follow the CEI pattern completely though, since Events too are considered effects.
+
+Using a require to ensure the `amount` isn't larger than the users actual balance is a more typical way to handle these situations. At least more typical than sending the minimum of `amount` and the users actual balance instead. With this change, the `else` block can also be removed since it'll become unreachable.
+
+The last mitigation suggestion makes use of the fact that Solidity ^0.8.0 will automatically check whether there'd be an integer underflow when subtracting the `amount` from the user's balance. This is likely the most gas efficient solution, although it won't offer a good error message for the user when it happens.
+</HiddenSolution>
+
+---
+
+### Question 3 of 8
+
+The security concern(s) in `pause()` is/are:
+
+<ul>
+  <li><input type="checkbox" /> A. Does not emit an event </li>
+  <li><input type="checkbox" /> B. Access control is not strict enough </li>
+  <li><input type="checkbox" /> C. Will always revert </li>
+  <li><input type="checkbox" /> D. None of the above </li>
+</ul>
+
+<HiddenSolution>
+**Correct is A.**
+
+The general best practice is, that all state changing functions should emit an event. This is especially true for functions that one wants to monitor off-chain, the `pause`/`unpause` functions being a perfect example for that.
+
+The access control is actually very strict. So strict in fact that the `pause()` function will always revert unless both `_operator` and `_governance` are the same address. The inline comment makes it clear that this behavior is unintentional and a bug.
+
+But the constructor isn't preventing both from being the same address and even then, anyone can call `changeGovernance()` and make it the same. So claiming it would always revert isn't correct either.
+</HiddenSolution>
+
+---
+
+### Question 4 of 8
+
+Which statement(s) is/are true for `unpause()`?
+
+<ul>
+  <li><input type="checkbox" /> A. Will unpause deposits and withdrawals </li>
+  <li><input type="checkbox" /> B. Will unpause withdrawals only </li>
+  <li><input type="checkbox" /> C. Anyone can successfully call the function </li>
+  <li><input type="checkbox" /> D. None of the above </li>
+</ul>
+
+<HiddenSolution>
+**Correct is B, C.**
+
+Although the `withdraw()` function does, the `deposit()` function does not ensure that nobody can use it while the contract is paused. The best practice would be, if possible, to have it the other way around. When a contract needs to be paused due to an emergency, such as a discovered bug, it should become impossible for users to deposit new funds into the vulnerable contract while still allowing users to withdraw their funds.
+
+Even though `unpause()` function appears to correctly `require` the caller to be the `_governance` address, anyone can call `changeGovernance()` to set it to themselves.
+</HiddenSolution>
+
+---
+
+### Question 5 of 8
+
+Which statement(s) is/are true in `depositFor()`?
+
+<ul>
+  <li><input type="checkbox" /> A. Can be executed when contract is paused </li>
+  <li><input type="checkbox" /> B. Allows a user to deposit for another user </li>
+  <li><input type="checkbox" /> C. Allows a user to fund the deposit for another user </li>
+  <li><input type="checkbox" /> D. None of the above </li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, B.**
+
+Although the `withdraw()` function does, the `deposit()` function does not ensure that nobody can use it while the contract is paused. The best practice would be, if possible, to have it the other way around. When a contract needs to be paused due to an emergency, such as a discovered bug, it should become impossible for users to deposit new funds into the vulnerable contract while still allowing users to withdraw their funds.
+
+In order to make a deposit for another `user`, that user needs to have approved the contract to make use of their tokens. It's not possible for one user to use their funds for a deposit for another user.
+</HiddenSolution>
+
+---
+
+### Question 6 of 8
+
+The issue(s) in `depositFor()` is/are:
+
+<ul>
+  <li><input type="checkbox" /> A. Cannot be paused for emergency </li>
+  <li><input type="checkbox" /> B. Exploitable re-entrancy attack </li>
+  <li><input type="checkbox" /> C. User withdrawals can be delayed indefinitely via DoS attack </li>
+  <li><input type="checkbox" /> D. None of the above </li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, C.**
+
+Although the `withdraw()` function does, the `deposit()` function does not ensure that nobody can use it while the contract is paused. The best practice would be, if possible, to have it the other way around. When a contract needs to be paused due to an emergency, such as a discovered bug, it should become impossible for users to deposit new funds into the vulnerable contract while still allowing users to withdraw their funds.
+
+The only external call made is one to the `_token`. The token is chosen by the operator and, assuming that it can be trusted and doesn't behave in an unexpected way, there should be no other external call that give the caller an opportunity to re-enter.
+
+There's indeed an opportunity to Deny another user the Service to withdraw their funds. That is because anyone can call the function with an `amount` of 0 and the victim's address as depositor. In that case, no matter whether the victim has an open allowance with the contract, an attacker can keep increasing `_userLastDeposit` indefinitely to delay when the withdrawal is possible. The attacker would have to regularly keep calling the function and pay for the gas that uses though.
+</HiddenSolution>
+
+---
+
+### Question 7 of 8
+
+Which of the following statement(s) is/are true?
+
+<ul>
+  <li><input type="checkbox" /> A. Withdraw event is emitted with incorrect amount </li>
+  <li><input type="checkbox" /> B. Withdraw event is emitted with correct user </li>
+  <li><input type="checkbox" /> C. Deposit event is always emitted incorrectly </li>
+  <li><input type="checkbox" /> D. Deposit event is emitted with incorrect user </li>
+</ul>
+
+<HiddenSolution>
+**Correct is B, D.**
+
+The event emitted during withdrawal appears to be used correctly.
+
+It seems more correct to log the user that the deposit is being made for instead of the calling address.
+</HiddenSolution>
+
+---
+
+### Question 8 of 8
+
+Potential gas optimization(s) is/are:
+
+<ul>
+  <li><input type="checkbox" /> A. Use `immutable` for all variables assigned in constructor </li>
+  <li><input type="checkbox" /> B. Use `immutable` for `_token`, `_operator` and `_minDepositLockTime` </li>
+  <li><input type="checkbox" /> C. Use `unchecked` </li>
+  <li><input type="checkbox" /> D. None of the above </li>
+</ul>
+
+<HiddenSolution>
+**Correct is B, C.**
+
+Most `internal` variables assigned in the constructor are currently using expensive storage space. It would cost much less gas to use `immutable` variables which are placed into the bytecode during the deployment of the contract.
+
+There is however the `_governance()` variable which is intended to be changeable through the `changeGovernance()` function. This one should stay a storage variable, although one could argue it should become `public` to make its current state more easily readable.
+
+There are a few places where `unchecked` blocks can be used without much risk to skip integer overflow checks and save gas. These are places that are unlikely to overflow due to their nature such as adding an amount of tokens to a balance or adding seconds to a timestamp.
+</HiddenSolution>
+
+---

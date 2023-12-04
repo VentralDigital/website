@@ -1,0 +1,348 @@
+# Paradigm CTF 2021 - Smart Contract Challenges Write-Up #2
+
+<p className="text-xs text-right">August 18, 2022 by [patrickd](/about#patrickd)</p>
+
+All tables have been un-flipped, and if you don't get the reference you're probably missing the [first part of this write-up](/posts/2022/8/12/paradigm-ctf-2021-smart-contract-challenges-write-up-1/).
+
+Due to time constraints, I won't be able to solve the remaining Challenges in time before [Paradigm CTF 2022](https://ctf.paradigm.xyz/) starts. The following are the notes I took of the Challenges I've been working on up to the point where I'm certain about the solution.
+
+## Upgrade
+
+> Circle released a new update to USDC but something seems off. Can you take a look?
+
+As usual, we begin by checking the challenge setup to make sure no weird stuff's being done there, and this time there's actually something interesting going on in the [chal.py](https://github.com/paradigmxyz/paradigm-ctf-2021/blob/master/upgrade/public/deploy/chal.py) deployment python script:
+
+```python
+def generate_txs(contract_addr: str):
+    return [
+        {
+            "from": "0x807a96288A1A408dBC13DE2b1d087d10356395d2",
+            "to": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+            "data": "0x8f283970000000000000000000000000" + contract_addr[2:],
+        },
+        {
+            "gas": 10000000,
+            "gasPrice": 0,
+            "from": "deployer",
+            "to": contract_addr,
+            "data": Web3.sha3(text="upgrade()")[:10],
+        },
+    ]
+```
+
+It appears two transactions are being crafted here that'll be [executed after the Setup contract](https://github.com/paradigmxyz/paradigm-ctf-2021/blob/master/eth_challenge_base/eth_sandbox/launcher.py#L175) was deployed.
+
+The first transaction is sent from an EOA account to the USDC stablecoin contract (or rather, its upgradable proxy), which said EOA is an admin of. The data can be split in two parts: The first four bytes are the function signature being called and the rest is the deployed Setup's contract address padded to 32 bytes. A quick lookup of `0x8f283970` in the [4byte.directory](https://www.4byte.directory/signatures/?bytes4_signature=0x8f283970) reveals that the transaction calls the `changeAdmin(address)` function. So the admin is being changed to the Setup contract.
+
+The next transaction simply calls the `upgrade()` function on the [`Setup` contract](https://github.com/paradigmxyz/paradigm-ctf-2021/blob/master/upgrade/public/contracts/Setup.sol):
+
+```solidity
+contract Setup {
+    FiatTokenProxyLike private constant USDC = FiatTokenProxyLike(0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48);
+
+    function upgrade() external {
+        FiatTokenV3 v3 = new FiatTokenV3();
+        v3.initialize("", "", "", 0, address(0x01), address(0x01), address(0x01), address(0x01));
+        v3.initializeV2("");
+        v3.initializeV3();
+
+        USDC.upgradeTo(address(v3));
+        USDC.changeAdmin(0x807a96288A1A408dBC13DE2b1d087d10356395d2);
+        FiatTokenV3(address(USDC)).initializeV3();
+    }
+
+    function isSolved() external view returns (bool) {
+        return USDC.balanceOf(address(this)) > 200_000_000e6;
+    }
+}
+```
+
+A new Version 3 implementation is deployed and initialized with multiple calls, most likely to prevent the implementation from being initialized and potentially taken over by someone else. USDC's FiatTokenProxy is then told to make use of this v3 implementation and initialized. The initialization call for Version 2 is skipped though.. does that mean that on mainnet it already was upgraded once or was it "forgotten"?
+
+Finally, the admin is changed back to the original. And the `isSolved()` function tells us that 200 million USDC need to be transferred to the Setup contract in order to pass the challenge.
+
+Let's look at the actual mainnet state of the proxy in question. Checking [etherscan](https://etherscan.io/proxyContractChecker?a=0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48) we can see that the current implementation is in fact [`FiatTokenV2_1`](https://etherscan.io/address/0xa2327a938febf5fec13bacfb16ae10ecbc4cbdcf#code) which was [deployed on](https://etherscan.io/tx/0x8f0612a3a643a4af720ea2aa74247a5eefcce34ca82eff30ae17307502d85ff2) the 17th of April 2021... But was that the one used during the CTF?
+
+From the information available I reconstructed the following timeline:
+
+* 3rd of August 2018: [`FiatTokenProxy`](https://etherscan.io/tx/0xe7e0fe390354509cd08c9a0168536938600ddc552b3f7cb96030ebef62e75895#statechange) was deployed with [`FiatTokenV1`](https://etherscan.io/address/0x0882477e7895bdc5cea7cb1552ed914ab157fe56#code) as the implementation.
+* 20th of August 2020: [`FiatTokenV2`](https://etherscan.io/address/0xb7277a6e95992041568d9391d09d0122023778a2#code) was deployed
+* 27th of August 2020: `FiatTokenV2` was [set as implementation](https://etherscan.io/tx/0xe6f0f754398d89583da8e4229c5d7aaa00739a3ae334ecfc2839ac396b4836e3)
+* 5th of February 2021: The [Paradigm CTF](https://twitter.com/paradigm_ctf/status/1353786644361523203) was being held
+* 17th of April 2021: [`FiatTokenV2_1`](https://etherscan.io/address/0xa2327a938febf5fec13bacfb16ae10ecbc4cbdcf#code) was deployed
+* 26th of April 2021: `FiatTokenV2_1` was [set as implementation](https://etherscan.io/tx/0xe2e40640ffd5f76538cd23660cf56f00bfebd5fe925ebad6b8067c4cee18a2c3)
+
+It appears safe to assume that the Version 2 (who's code also exactly matches that of [*FiatTokenV2.sol*](https://github.com/paradigmxyz/paradigm-ctf-2021/blob/master/upgrade/public/contracts/FiatTokenV2.sol) provided by the challenge) was the one active during the CTF. And the challenge's [*FiatTokenV3.sol*](https://github.com/paradigmxyz/paradigm-ctf-2021/blob/master/upgrade/public/contracts/FiatTokenV3.sol) is the actual challenge target since it doesn't exist outside the CTF.
+
+So my initial suspicion that the error might be that the initialization of Version 2 was "accidentally" skipped causing a re-initialization attack vector is incorrect. Next, we should look into possible storage clashes between versions...
+
+```solidity
+pragma solidity 0.6.12;
+
+import "./FiatTokenV2.sol";
+
+/**
+ * @title FiatToken V3
+ * @notice ERC20 Token backed by fiat reserves, version 3
+ */
+contract FiatTokenV3 is FiatTokenV2 {
+    // ensure we start on a new storage slot just in case
+    uint private _gap;
+
+    bool internal _initializedV3;
+
+    mapping(address => mapping(address => uint256)) private _loans;
+```
+
+Turns out `FiatTokenV3` simply extends `FiatTokenV2`. In terms of storage that means all state variables declared within `FiatTokenV3` should be assigned fresh slots that come after those that were used by `FiatTokenV2`.
+
+That single `_gap` variable is weird though.. Usually, you see storage gaps within inheritable base contracts as arrays of 32 byte types. For example, [OpenZeppelin's upgradable contracts](https://github.com/OpenZeppelin/openzeppelin-contracts-upgradeable/blob/9b786055f3b423c8fc4b7fdf790954280ef6bb5b/contracts/token/ERC721/ERC721Upgradeable.sol#L458) always assume that each base contract uses 50 slots (state variables + gap array). If a new version of such a base contract needs more state variables, one just has to reduce the amount reserved by the gap array. This way introducing new state variables to inheritable contracts doesn't impact the storage locations of later state variables in the inheritance chain. But `FiatTokenV2` makes no mention of gaps, so why start now with a single one?
+
+Could it be that Version 1 used more slots that became unused in Version 2 and are now clashing with v3?
+
+At first glance it appears that `FiatTokenV2` is also simply extending v1:
+
+```solidity
+pragma solidity ^0.6.0;
+
+...
+
+contract Ownable {
+    ...
+    address private _owner;
+    ...
+
+contract Pausable is Ownable {
+    ...
+    address public pauser;
+    bool public paused = false;
+    ...
+
+contract Blacklistable is Ownable {
+    ...
+    address public blacklister;
+    mapping(address => bool) internal blacklisted;
+    ...
+
+contract FiatTokenV1 is AbstractFiatTokenV1, Ownable, Pausable, Blacklistable {
+    ...
+    string public name;
+    string public symbol;
+    uint8 public decimals;
+    string public currency;
+    address public masterMinter;
+    bool internal initialized;
+    mapping(address => uint256) internal balances;
+    mapping(address => mapping(address => uint256)) internal allowed;
+    uint256 internal totalSupply_ = 0;
+    mapping(address => bool) internal minters;
+    mapping(address => uint256) internal minterAllowed;
+    ...
+
+//////////// BELOW NEW CONTRACTS AND STATE VARIABLES ADDED WITH VERSION 2 /////////////
+
+contract Rescuable is Ownable {
+    ...
+    address private _rescuer;
+    ...
+
+contract FiatTokenV1_1 is FiatTokenV1, Rescuable {
+    ...
+
+contract EIP712Domain {
+    ...
+    bytes32 public DOMAIN_SEPARATOR;
+    ...
+
+abstract contract GasAbstraction is AbstractFiatTokenV2, EIP712Domain {
+    ...
+    mapping(address => mapping(bytes32 => AuthorizationState)) private _authorizationStates;
+    ...
+
+abstract contract Permit is AbstractFiatTokenV2, EIP712Domain {
+    ...
+    mapping(address => uint256) private _permitNonces;
+    ...
+
+contract FiatTokenV2 is FiatTokenV1_1, GasAbstraction, Permit {
+    ...
+    bool internal _initializedV2;
+    ...
+
+```
+
+However, that assumption might not be correct since they had to upgrade the [original Version 1](https://etherscan.io/address/0x0882477e7895bdc5cea7cb1552ed914ab157fe56#code)'s code, which used an older Solidity version. During this process, they might have changed a few things regarding the usage of storage slots?
+
+```solidity
+pragma solidity ^0.4.24;
+
+...
+
+contract Ownable {
+    ...
+    address private _owner;
+    ...
+
+contract Pausable is Ownable {
+    ...
+    address public pauser;
+    bool public paused = false;
+    ...
+
+contract Blacklistable is Ownable {
+    ...
+    address public blacklister;
+    mapping(address => bool) internal blacklisted;
+    ...
+
+contract FiatTokenV1 is Ownable, ERC20, Pausable, Blacklistable {
+    ...
+    string public name;
+    string public symbol;
+    uint8 public decimals;
+    string public currency;
+    address public masterMinter;
+    bool internal initialized;
+    mapping(address => uint256) internal balances;
+    mapping(address => mapping(address => uint256)) internal allowed;
+    uint256 internal totalSupply_ = 0;
+    mapping(address => bool) internal minters;
+    mapping(address => uint256) internal minterAllowed;
+    ...
+```
+
+No, seems like all slots match up nicely between v1 and v2...
+
+I feel like I've fallen for another distraction here. Let's take a look at the new functionality introduced by Version 3:
+
+```solidity
+function lend(address to, uint amount) external ... returns (bool) {
+    _loans[msg.sender][to] = _loans[msg.sender][to].add(amount);
+
+    _transfer(msg.sender, to, amount);
+    return true;
+}
+
+function reclaim(address from, uint amount) external ... returns (bool) {
+    _loans[msg.sender][from] = _loans[msg.sender][from].sub(amount, "FiatTokenV3: decreased loans below zero");
+
+    _transfer(from, msg.sender, amount);
+    return true;
+}
+```
+
+That seems like a rather naive Token lending implementation. You can lend USDC to another address and, in theory, you can take it back from there - but that'll only work if the account you've lent it to didn't transfer it somewhere else already... You better trust the person you do this with since they can just run off with your money.
+
+How can we get 200 million USDC out of this? An amount of that sum sounds like a job for Flash Loans... And looking at this, we should be able to "repay" a Flash Loan using the `lend()` function. And then, after the Flash Loan finished, we would be able to `reclaim()` the amount we have "lend" directly from the Pool...
+
+So, where can we that money from? Normally we'd be able to look at the [USDC Token Holder list](https://etherscan.io/token/0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48#balances) and search for one that offers  Flash Loans, but here we'll have to do it for a chain fork at a blockheight from a year ago. Many of those that hold 200+ million USDC now probably didn't have that amount yet at that time, and those who did probably don't do today.
+
+Well, it seems [Block #11800000](https://etherscan.io/block/11800000) was mined around the time of the CTF. How can we figure out the top USDC holders at that point? Often questions like this are asked for airdrops, so after some searching I found the [erc20-snapshot project](https://github.com/binodnp/erc20-snapshot) which should be able to provide us with a Token Holder list CSV file for back then.
+
+Next Steps:
+
+* Generate a list of USDC Token Holders, sorted descending by how much value they hold
+* Find a contract in this list that provides Flash Loans
+* Create an Exploit contract that
+  * Takes a 200 mil USDC Flash Loan
+  * Calls the USDC `lend()` function to immediately pay it back within the callback function
+  * Once the Flash Loan has been completed (outside of the callback function) call `reclaim()` to obtain the Tokens that were previously loaned
+
+
+## BabyRev
+
+> If I don't verify my source code, then hackers can't exploit my contract, right?
+
+```solidity
+import "private/Challenge.sol";
+
+contract Setup {
+    ChallengeInterface public challenge;
+
+    constructor() public payable {
+        require(msg.value == 50 ether);
+
+        challenge = ChallengeInterface(address(new Challenge()));
+    }
+
+    function isSolved() public view returns (bool) {
+        return challenge.solved();
+    }
+}
+```
+
+This time the Challenge contract is within the private directory, that calls for reverse engineering!
+
+It's strange though that the Setup constructor requires 50 ether which it doesn't do anything with... Maybe a copy & paste mistake?
+
+Anyway, let's start by trying to decompile the contract with [ethervm.io/decompile](https://ethervm.io/decompile) which is able to tell us that there are in fact 4 public functions:
+
+```plaintext
+0x0adf939b encrypted()
+0x39ac0e49 decrypted()
+0x799320bb solved()
+0xb8b8d35a solve(uint256)
+```
+
+The disassembly itself appears to have failed, I suspect that the contract used assembly blocks that make it struggle to reconstruct high-level code from, or maybe it's because of the old Solidity version.. not sure.
+
+Also tried the other decompilers I know of: [Panoramix](https://github.com/palkeo/panoramix), [Heimdall](https://github.com/Jon-Becker/heimdall) and [Dedaub](https://library.dedaub.com/decompile) - but all of them either errored or produced nothing useful.
+
+Well, with what we know so far, and some guessing about the return values, we can extend the `ChallengeInterface` and see what the discovered functions do using a debugger...
+
+```solidity
+interface ChallengeInterface {
+    function decrypted() external view returns (string memory);
+    function encrypted() external view returns (bytes memory);
+    function solve(uint256 key) external;
+    function solved() external view returns (bool);
+}
+```
+
+The `decrypted()` function always returns `PCTF{v32y_53cu23_3nc2yp710n_4190217hm}` (reads "very secure encryption algorithm"), which isn't the flag that we're looking for but most likely part of an example together with `encrypted()` which always returns `0x311dfa5451963f33b16e63f0c62278c9b907e43d1961cdf9f590a0c3b351c04019cccb831403`. This suspicion is further confirmed by the fact that both of these bytestrings are directly `PUSH`ed onto the stack from the bytecode, therefore they must be constants.
+
+The `solved()` function doesn't appear to be doing much more than loading and returning a boolean value from SLOT 0.
+
+Finally, the `solve()` function is where a lot of magic is happening. What I'd expect it to be doing: Try to decrypt the same bytestring that `encrypted()` returns with a `key` that we can pass as a parameter. Then compare the result of this decryption with the constant string of `decrypted()`, and only if it's the same, set the state variable of storage SLOT 0 to `true`.
+
+And here's what it actually does when following along with a debugger:
+
+- adds 0x2000 (8192 bytes) to free memory pointer, which are exactly 256 chunks of 32 bytes
+- codecopys 0x2000 bytes from its own code starting at codesize - effectively filling memory with zeros
+- copies decrypted constant to memory after that
+- copies encrypted constant to memory after that
+- checks that both are same length
+- again adds 0x2000 (8192 bytes) to free memory pointer
+- starts filling newly reserved memory slots one by one with seemingly random single bytes
+- copies encrypted constant to memory again
+- most likely a loop starts, one round for each character of the constants (0x26 (38))
+  - input parameter is shifted left by 0xf8 (248) - rightmost byte becomes isolated leftmost byte
+  - rightmost byte of encrypted constant becomes isolated leftmost byte
+  - both bytes are XORed
+  - result byte overwrites leftmost byte of decrypted constant (replacing character that was XORed)
+  - most likely another loop starts
+    - rightmost input byte is isolated and multiplied by 0x20 (static)
+    - result is ADDed to the pointer of the first seemingly random byte's slot
+    - byte from that location is loaded and replaces the input byte
+    - loop starts from the beginning, with the next byte of the input
+    - it does so for all 32 bytes of the input (byte table acts as mapping eg. 0x00 becomes 0x63)
+  - the rightmost byte is circular shifted to the leftmost side
+  - the loop restarts with the new rightmost byte as input
+- the decrypted constant is stored in memory, right after the decryption attempt (overwritten encrypted constant)
+- after some weird memory management, a copy of the decrypted constant is SHA3 hashed
+- after some more weird memory management, a copy of the decryption attempt is SHA3 hashed
+- both hashes are compared against each other
+- stores a static 0x08c379a0 to memory
+- then a static 0x736f6c76652f6e6f742d736f6c766564 (ascii: "solve/not-solved")
+- reverts
+
+It appears my guess was correct.
+
+Now, how to actually solve this? Since each byte of the input is individually XORed with each byte of the encrypted constant, we should be able to basically brute-force this character-by-character:
+
+- Iterate through all numbers from 0 to 255 and use it as new input byte
+    - Check whether the resulting byte matches the byte from the decrypted constant
+        - If it matches, we have probably found the right input byte and we can continue guessing the next one
+        - If it does not match, continue iterating
+
+One by one we should be able to determine the full `key` and then we'd simply have to call the `solve()` function with it.

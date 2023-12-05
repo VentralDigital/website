@@ -1,0 +1,342 @@
+# RACE #18 Of The Secureum Bootcamp Epoch∞
+
+import { Callout } from 'nextra/components'
+
+This is a Write-Up of RACE-18, Quiz of the [Secureum Bootcamp](https://twitter.com/0xRajeev/status/1470910752085065731) for Ethereum Smart Contract Auditors.   It was designed by Secureum Mentor [Josselin Feist](https://twitter.com/Montyly) from [Trail of Bits](https://twitter.com/trailofbits).
+
+<Callout type="info">
+  Participants of this quiz had to **answer 8 questions within the strict time limit of 16 minutes**. If you’re reading this in preparation for participating yourself, it’s best to give it a try under the same time limit!
+
+  As usual, I waited for submissions to close before publishing it and, to stay true to the original, I omitted syntax highlighting. Feel free to copy it into your favorite editor, but do so after starting the timer!
+</Callout>
+
+<p className="text-xs text-right">May 25, 2023 by [patrickd](/about#patrickd)</p>
+
+<style jsx>{`
+  input[type=checkbox] {
+    width: 15px;
+    height: 15px;
+  }
+  li {
+    padding: 0.5em;
+  }
+`}</style>
+
+export function HiddenSolution({ children }) {
+  return (
+    <details closed className="last-of-type:mb-0 rounded-lg bg-neutral-50 dark:bg-neutral-800 p-2 mt-4">
+      <summary>
+        <strong className="text-lg">Solution</strong>
+      </summary>
+      <div className="nx-p-2">{children}</div>
+    </details>
+  )
+}
+
+---
+
+### Code
+
+<Callout type="info">
+All 8 questions in this RACE are based on the below contract. This is the same contract you will see for all the 8 questions in this RACE. The question is below the shown contract.
+</Callout>
+
+
+```plaintext showLineNumbers
+pragma solidity ^0.8.0; // using 0.8 to be safe from arithmetic risks
+
+interface IERC20 {
+    function decimals() external view returns (uint256);
+    function balanceOf(address account) external view returns (uint256);
+    function transfer(address to, uint256 amount) external returns (bool);
+    function allowance(address owner, address spender) external view returns (uint256);
+    function approve(address spender, uint256 amount) external returns (bool);
+    function transferFrom(address from, address to, uint256 amount) external returns (bool);
+    function totalSupply() external view returns (uint256);
+
+    // Mint tokens
+    // The access controls only allows the Bank contract to call this function
+    // mint does not have callback (i.e. it does not allow reentrancies)
+    // [Secureum] Assume no bug
+    function mint(uint amount, address to) external;
+
+    // Burn token
+    // The access controls only allows the Bank contract to call this function
+    // burn does not have callback (i.e. it does not allow reentrancies)
+    // [Secureum] Assume no bug
+    function burn(uint amount, address to) external;
+}
+
+// This contract allows to deposit ether and mint tokens by locking Ether, at a rate of 1 ether = 10 tokens
+// The user needs to burn the token to unlock their balance
+// Once they minted tokens, the user cannot mint more, unless they burned the original amount
+// This contract is safe from reentrancies and front running risks
+contract Bank{
+
+    mapping(address => uint) balances;
+    mapping(address => uint) minted;
+    uint decimals_factor = 10**18;
+    IERC20 token;
+
+    uint8 isReenter = 1;
+    modifier nonReentrant{
+        require(isReenter>=1);
+        isReenter = 2;
+        _;
+        isReenter = 1;
+    }
+
+    constructor(address token_address){
+        token = IERC20(token_address);
+        // Only accept tokens with 18 decimals to ease the math
+        require(token.decimals() == 18);
+    }
+
+    /***
+    Deposit function
+    ***/
+
+    function deposit(uint amount) internal{
+        balances[msg.sender] += amount;
+    }
+
+    function deposit() payable nonReentrant public{
+        deposit(msg.value);
+    }
+
+    function depositTo(address to) payable nonReentrant public{
+        balances[to] = msg.value;
+    }
+
+    /***
+    Getter
+    ***/
+
+    // Return the balance of the user
+    function getBalances(address user) public nonReentrant returns(uint balance){
+        uint balance = balances[user];
+    }
+
+    /***
+    Withdraw functions
+    ***/
+
+    function withdraw(uint amount) nonReentrant public{
+        // Cannot withdraw if some tokens have been minted
+        require(minted[msg.sender]==0);
+        msg.sender.call{value: amount}("");
+        balances[msg.sender] -= amount;
+    }
+
+    function withdrawAll() nonReentrant public{
+        // Cannot withdraw if some tokens have been minted
+        require(minted[msg.sender]==0);
+        balances[msg.sender] = 0;
+        msg.sender.call{value: balances[msg.sender]}("");
+    }
+
+    /***
+    Mint/burn functions
+    ***/
+
+    // Mint tokens
+    // The user must have locked enough ether in the contract
+    // This function only mint whole number and not fraction.
+    // As a result, amount is expressed without the decimals.
+    // To mint 10 tokens, call mint(10);
+    // @param amount The number of tokens to be minted. amount is the whole number.
+    function mint(uint amount) nonReentrant public{
+        // Cannot mint if some tokens have already been minted
+        require(minted[msg.sender]==0);
+
+        _has_enough_balance(amount, balances[msg.sender]);
+        minted[msg.sender] = amount * decimals_factor;
+        // [Secureum] Assume token.mint has no bug and no callback
+        token.mint(amount * decimals_factor, msg.sender);
+    }
+
+    /// @notice burn the token and unlock the account.
+    function burn() nonReentrant public{
+        // This will revert if the user does not have minted[msg.sender] tokens in its balance
+        require(token.balanceOf(msg.sender) == minted[msg.sender]);
+        // [Secureum] Assume token.burn has no bug and no callback
+        token.burn(minted[msg.sender], msg.sender);
+        minted[msg.sender] = 0;
+    }
+
+    /// @notice Ensure that enough ethers are locked. 1 ether allows to mint 10 tokens
+    /// @param desired_tokens The number of tokens to buy
+    /// @param balance The ether balance available
+    function _has_enough_balance(uint256 desired_tokens, uint256 balance) internal view {
+        uint256 required_balance = (desired_tokens / 10) * decimals_factor;
+        require(balance >= required_balance);
+    }
+
+}
+```
+
+### Question 1 of 8
+
+What risk(s) should be considered when reviewing this contract?
+
+<ul>
+  <li><input type="checkbox" /> A. Reentrancy risks </li>
+  <li><input type="checkbox" /> B. Logic bugs </li>
+  <li><input type="checkbox" /> C. Front-running risks </li>
+  <li><input type="checkbox" /> D. Arithmetic risks </li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, B, C, D.**
+
+During an audit all risks should be **considered**! *(Duh)*
+
+This question wasn't about what *issues* the contract actually has, but these specific issues will be asked about later in this quiz.
+</HiddenSolution>
+
+---
+
+### Question 2 of 8
+
+Which of the following statement(s) is/are true?
+
+<ul>
+  <li><input type="checkbox" /> A. No overflow can ever occur in a contract compiled with solc version 0.8</li>
+  <li><input type="checkbox" /> B. `IERC20.decimals returns(uint256)`  is not a correct ERC20 function according to the  ERC20 specification</li>
+  <li><input type="checkbox" /> C. The contract does not follow Natspec for all the documentation</li>
+  <li><input type="checkbox" /> D. None of the above</li>
+</ul>
+
+<HiddenSolution>
+**Correct is B, C.**
+
+* A: With Solidity version 0.8, overflows (eg. from addition or multiplication) can still happen within `unsafe` blocks.
+* B: According to the ERC20 specification, the `decimals()` function should return `uint8`.
+* C: It's not followed everywhere, eg.: The `mint()` function's `@param` is not following Natspec because it's missing one slash.
+</HiddenSolution>
+
+---
+
+### Question 3 of 8
+
+Which of the following is an/are invariant(s) that should hold true? (assuming no bug)
+
+<ul>
+  <li><input type="checkbox" /> A. The contract's ether balance must be strictly equal to the sum of all the balances (in the `balances` mapping)</li>
+  <li><input type="checkbox" /> B. For any user, `minted[user] <= balances[user] * 10`</li>
+  <li><input type="checkbox" /> C. For any user, `token.balanceOf(user) == balances[user]`</li>
+  <li><input type="checkbox" /> D. None of the above</li>
+</ul>
+
+<HiddenSolution>
+**Correct is B.**
+
+* A: Strict equality with a contract's ether balance is an invariant that would be broken by an injection of ether value into the contract (eg. via `SELFDESTRUCT`)
+* B: This one will hold. A user is able to mint 10 times as many tokens as their ether balance. But they might have a larger balance than actually minted tokens. And most importantly, they should never have more minted token than what they have locked.
+* C: A user could transfer their token balance breaking the invariant.
+</HiddenSolution>
+
+---
+
+### Question 4 of 8
+
+Which of the following sentence(s) is/are true regarding `getBalances`?
+
+<ul>
+  <li><input type="checkbox" /> A. `getBalances(msg.sender)` returns the sender's balance</li>
+  <li><input type="checkbox" /> B. `getBalances` reverts if the user's balance is zero</li>
+  <li><input type="checkbox" /> C. `getBalances` always returns zero</li>
+  <li><input type="checkbox" /> D. None of the above</li>
+</ul>
+
+<HiddenSolution>
+**Correct is C.**
+
+While the function never reverts, it doesn't actually return the sender's balance. That's because the `balance` return variable is shadowed within the function's body (ie. a new variable with the same name is declared and used instead of the correct one). As the default value of unused variables is always zero-like the number returned by this function will always be 0 too.
+</HiddenSolution>
+
+---
+
+### Question 5 of 8
+
+Which of the following sentence(s) is/are true regarding the `balances` mapping?
+
+<ul>
+  <li><input type="checkbox" /> A. An attacker can increase their `balances` (theft) from  `balances[victim]` </li>
+  <li><input type="checkbox" /> B. An attacker can reset `balances[victim]`</li>
+  <li><input type="checkbox" /> C. An attacker can increase their `balances` to any amount</li>
+  <li><input type="checkbox" /> D. An attacker cannot compromise the `balances` mapping</li>
+</ul>
+
+<HiddenSolution>
+**Correct is B.**
+
+There are no vectors for A and C.
+
+But the `depositTo()` function is mistakenly using `=` instead of `=+`, therefore resetting the destination's balance. Attacker's can use this to set the `balances[victim]` to arbitrary values, most likely very small ones.
+</HiddenSolution>
+
+---
+
+### Question 6 of 8
+
+Which of the following sentence(s) is/are true regarding reentrancies in this contract? 
+
+<ul>
+  <li><input type="checkbox" /> A. `nonReentrant` protects the contract from reentrancies</li>
+  <li><input type="checkbox" /> B. A correct reentrancy protection modifier is not needed if `withdraw` is refactored to follow the CEI pattern</li>
+  <li><input type="checkbox" /> C. There are no reentrancy risks</li>
+  <li><input type="checkbox" /> D. None of the above</li>
+</ul>
+
+<HiddenSolution>
+**Correct is B.**
+
+* A: The `nonReentrant` modifier is not correctly implemented and won't protect the contract from reentrancies. (Its require should check for strict equality)
+* B: That's correct, following the CEI pattern would mean updating the user's balance before calling the `msg.sender`, making reentering the contract pointless.
+* C: The `withdraw` function does not follow the CEI pattern at this moment and the reentrancy-guard is broken, therefore there is a reentrancy risk.
+</HiddenSolution>
+
+---
+
+### Question 7 of 8
+
+The `mint` function has the following risks (assuming there are no bugs in the other functions)
+
+<ul>
+  <li><input type="checkbox" /> A. The user can generate tokens without having locked ether</li>
+  <li><input type="checkbox" /> B. An attacker can front-run a call to `mint` and make it revert</li>
+  <li><input type="checkbox" /> C. `minted[msg.sender] = amount * decimals_factor;` should be replaced by `minted[msg.sender] = amount / decimals_factor;`</li>
+  <li><input type="checkbox" /> D. None of the above</li>
+</ul>
+
+<HiddenSolution>
+**Correct is A.**
+
+* A: Is possible by exploiting a loss of precision error due to division-before-multiplication in `_has_enough_balance()`. This effectively allows minting up to 9 tokens without locking any ether.
+* B: There's nothing that a frontrunner could do to make a call to `mint` revert.
+* C: That change would not make sense.
+</HiddenSolution>
+
+---
+
+### Question 8 of 8
+
+The `burn` and `_has_enough_balance` functions have the following risks (assuming there are no bugs in the other functions)
+
+<ul>
+  <li><input type="checkbox" /> A. The user can unlock their balance without burning the underlying tokens</li>
+  <li><input type="checkbox" /> B. An attacker can front-run a call to `burn` and make it revert</li>
+  <li><input type="checkbox" /> C. `burn` should use `tx.origin` instead of `msg.sender` to prevent access control issues</li>
+  <li><input type="checkbox" /> D. None of the above</li>
+</ul>
+
+<HiddenSolution>
+**Correct is B.**
+
+* A: No way to do this.
+* B: Due to the strict equality requirement in `burn`, a frontrunner can transfer 1 wei of token to the user to make the burn-call revert.
+* C: Making this change would likely make the contract less secure (opens phishing vector) and would also be bad for composability (only EOAs could be users).
+</HiddenSolution>
+
+---

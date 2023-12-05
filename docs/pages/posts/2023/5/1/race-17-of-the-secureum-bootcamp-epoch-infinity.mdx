@@ -1,0 +1,290 @@
+# RACE #17 Of The Secureum Bootcamp Epoch∞
+
+import { Callout } from 'nextra/components'
+
+This is a Write-Up of RACE-17, Quiz of the [Secureum Bootcamp](https://twitter.com/0xRajeev/status/1470910752085065731) for Ethereum Smart Contract Auditors.   It was designed by Secureum Mentor [Desmond (aka Hickup)](https://twitter.com/HickupH), one of my colleagues at [Spearbit DAO](https://twitter.com/SpearbitDAO).
+
+<Callout type="info">
+  Participants of this quiz had to **answer 8 questions within the strict time limit of 16 minutes**. If you’re reading this in preparation for participating yourself, it’s best to give it a try under the same time limit!
+
+  As usual, I waited for submissions to close before publishing it and, to stay true to the original, I omitted syntax highlighting. Feel free to copy it into your favorite editor, but do so after starting the timer!
+</Callout>
+
+<p className="text-xs text-right">May 1, 2023 by [patrickd](/about#patrickd)</p>
+
+<style jsx>{`
+  input[type=checkbox] {
+    width: 15px;
+    height: 15px;
+  }
+  li {
+    padding: 0.5em;
+  }
+`}</style>
+
+export function HiddenSolution({ children }) {
+  return (
+    <details closed className="last-of-type:mb-0 rounded-lg bg-neutral-50 dark:bg-neutral-800 p-2 mt-4">
+      <summary>
+        <strong className="text-lg">Solution</strong>
+      </summary>
+      <div className="nx-p-2">{children}</div>
+    </details>
+  )
+}
+
+---
+
+### Code
+
+<Callout type="info">
+All 8 questions in this RACE are based on the below contract. This is the same contract you will see for all the 8 questions in this RACE. The question is below the shown contract.
+</Callout>
+
+
+```plaintext showLineNumbers
+pragma solidity 0.8.19;
+
+
+import {Pausable} from "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/security/Pausable.sol";
+import {IERC20} from "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/token/ERC20/utils/SafeERC20.sol";
+
+
+interface IWETH is IERC20 {
+   function deposit() external payable;
+   function withdraw(uint256) external;
+}
+
+
+contract Vault is Pausable {
+   using SafeERC20 for IWETH;
+
+
+   address public immutable controller;
+   IWETH public immutable WETH;
+
+
+   // about 4700 ETH
+   uint72 public constant TOTAL_CONTRIBUTION_CAP = type(uint72).max;
+   // ALLOWANCE_CAP = 40% of TOTAL_CONTRIBUTION_CAP
+   uint256 public immutable ALLOWANCE_CAP = 40 * uint256(TOTAL_CONTRIBUTION_CAP) / 100;
+   uint72 public totalContributions;
+   mapping (address => uint72) individualContributions;
+
+
+   uint256 numContributors;
+   event ContributorsUpdated(address newContributor, uint256 indexed oldNumContributors, uint256 indexed newNumContributors);
+
+
+   constructor(address _controller, IWETH _weth) {
+       controller = _controller;
+       WETH = _weth;
+   }
+
+
+   function deposit(uint72 amount) external payable whenNotPaused {
+       if (msg.value > 0) {
+           WETH.deposit{value: amount}();
+       } else {
+           WETH.transferFrom(msg.sender, address(this), amount);
+       }
+       require((totalContributions += amount) <= TOTAL_CONTRIBUTION_CAP, "cap exceeded");
+       if (individualContributions[msg.sender] == 0) emit ContributorsUpdated(msg.sender, numContributors, numContributors++);
+       individualContributions[msg.sender] += amount;
+   }
+
+
+   function withdraw(uint72 amount) external whenNotPaused {
+       individualContributions[msg.sender] -= amount;
+       totalContributions -= amount;
+       // unwrap and call
+       WETH.withdraw(amount);
+       (bool success, ) = payable(address(msg.sender)).call{value: amount}("");
+       require(success, "failed to transfer ETH");
+   }
+
+
+   function requestAllowance(uint256 amount) external {
+       // ALLOWANCE_CAP is 40% of TOTAL_CAP
+       uint256 allowanceCap = ALLOWANCE_CAP;
+       uint256 allowance = amount > totalContributions ? allowanceCap : amount;
+       WETH.safeApprove(controller, allowance);
+   }
+
+
+   // for unwrapping WETH -> ETH
+   receive() external payable {
+       require(msg.sender == address(WETH), "only WETH contract");
+   }
+}
+```
+
+### Question 1 of 8
+
+`deposit()` can revert:
+
+<ul>
+  <li><input type="checkbox" /> A. If insufficient ETH was sent with the call </li>
+  <li><input type="checkbox" /> B. If the caller has insufficient WETH balance </li>
+  <li><input type="checkbox" /> C. With the `"cap exceeded"` error </li>
+  <li><input type="checkbox" /> D. If called internally </li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, B.**
+
+* A: If the ether `(msg.value > 0)` provided with the call to `deposit()` is less than the specified amount, the attempt to call `WETH.deposit()` may revert.
+* B: If no ether was provided with the call and the caller has an insufficient balance of WETH, or given insufficient approval to their WETH balance, the attempt to call `WETH.transferFrom()` will revert.
+* C: For the `"cap exceeded"` error to be thrown, `totalContributions + amount > TOTAL_CONTRIBUTION_CAP`. But `TOTAL_CONTRIBUTION_CAP = type(uint72).max` and `totalContributions` is `uint72`. So the attempt to add an amount to `totalContributions` that would make it larger than `type(uint72).max` would revert from an integer overflow error before the `require()` ever could. This makes the `require()` basically redundant and it can be removed.
+* D: The `deposit()` function is a external. An attempt to call it internally would not revert but never compile in the first place. The contract could still call this function via `this.deposit()` though, which would make the contract `CALL` itself like it would an external contract.
+</HiddenSolution>
+
+---
+
+### Question 2 of 8
+
+What issues pertain to the `deposit()` function?
+
+<ul>
+  <li><input type="checkbox" /> A. Funds can be drained through re-entrancy </li>
+  <li><input type="checkbox" /> B. Accounting mismatch if user specifies `amount` > `msg.value` </li>
+  <li><input type="checkbox" /> C. Accounting mismatch if user specifies `amount` < `msg.value` </li>
+  <li><input type="checkbox" /> D. `totalContributionCap` isn't enforced on an individual level </li>
+</ul>
+
+<HiddenSolution>
+**Correct is C.**
+
+* A: For a re-entrancy an unsafe external call needs to be made. All the external calls being made within the `deposit()` are to the trusted WETH contract which does also not have any sender callbacks/hooks like an ERC777 would have.
+* B/C: If the specified `amount` was larger than the sent `msg.value`, the function would revert. But on the other hand, if the `amount` was smaller than the actual sent `msg.value` the deposit would only handle the `amount` and the rest of the ether would be left in the `Vault` contract (allowing someone else to pick it up on another deposit).
+* D: The fact that `totalContributionCap` isn't enforced on an individual level does not cause an issue as `totalContributions`'s value would revert before any individual contributor would be able to make deposits beyond the cap.
+</HiddenSolution>
+
+---
+
+### Question 3 of 8
+
+Which of the following is/are true about `withdraw()`?
+
+<ul>
+  <li><input type="checkbox" /> A. Funds can be drained through re-entrancy </li>
+  <li><input type="checkbox" /> B. Funds can be drained due to improper amount accounting in `deposit()` </li>
+  <li><input type="checkbox" /> C. Assuming a sufficiently high gas limit, the function reverts from the recipient (caller) consuming all forwarded gas </li>
+  <li><input type="checkbox" /> D. May revert with `"failed to transfer ETH"` </li>
+</ul>
+
+<HiddenSolution>
+**Correct is D.**
+
+* A: The `withdraw()` function follows the Checks-Effects-Interactions pattern: (Check) Subtracting the amount from the individual's contribution would revert if the integer were to underflow. (Effect) The individual contributor's balance is updated before the value is transferred. (Interactions) The unsafe external call to the `msg.sender` is only made once all Checks and Effects have been applied. Re-entering the contract would not allow draining any funds.
+* B: It's true that there's improper accounting, but the effect is that funds that were left over from a `deposit()` can be recovered/stolen by another depositor and then withdrawn. This does not allow to drain the Vault of any funds that have been properly accounted for though.
+* C: As only $63/64$ gas is forwarded, the function should have sufficient gas remaining for execution (hence the high gas limit assumption).
+* D: True, if `msg.sender` reverts (eg. is a contract that lacks `payable` / `fallback` function).
+</HiddenSolution>
+
+---
+
+### Question 4 of 8
+
+Which of the following parameters are correctly emitted in the `ContributorsUpdated()` event?
+
+<ul>
+  <li><input type="checkbox" /> A. `newContributor` </li>
+  <li><input type="checkbox" /> B. `oldNumContributors` </li>
+  <li><input type="checkbox" /> C. `newNumContributors` </li>
+  <li><input type="checkbox" /> D. None of the above. </li>
+</ul>
+
+<HiddenSolution>
+**Correct is A.**
+
+* A: Option A is understandably ambiguous: if withdrawals were working, then you could have an existing contributor be recognized as a new one. Nevertheless, in its current state, we can take it to emit for only legitimately new contributors.
+* B: Generally, it's not save to make assumptions about the evaluation order of expressions in Solidity. How obscure this can be especially for event emissions has been shown in last year's [Underhanded Solidity contest](https://github.com/ethereum/solidity-underhanded-contest/blob/master/2022/submissions_2022/submission9_TynanRichards/SPOILERS.md): "The indexed parameters are evaluated first in right-to-left order, then the non-indexed parameters are evaluated left-to-right". Because of this, the general best practice is to avoid nested expressions whenever possible and do them within separate lines of code.
+* C: One of the most common gas optimizations seen in Code4rena reports is how the prefix increment (`++i`) is more efficient than postfix (`i++`). However, most aren't aware of a key difference: Prefix increments returns the value AFTER the increment, postfix returns the value BEFORE.
+</HiddenSolution>
+
+---
+
+### Question 5 of 8
+
+The vault deployer can pause the following functions:
+
+<ul>
+  <li><input type="checkbox" /> A. `deposit()` </li>
+  <li><input type="checkbox" /> B. `withdraw()` </li>
+  <li><input type="checkbox" /> C. `requestAllowance()` </li>
+  <li><input type="checkbox" /> D. None of the above </li>
+</ul>
+
+<HiddenSolution>
+**Correct is D.**
+
+The contract can't be paused because the pause and unpause functionality aren't exposed.
+
+Author notes: Sort of a trick question that requires knowledge about the Pausable contract. As mentioned in the Spearbit community workshop I gave recently, it can be difficult to spot what's absent, not just what's present.
+</HiddenSolution>
+
+---
+
+### Question 6 of 8
+
+What is the largest possible allowance given to the `controller`?
+
+<ul>
+  <li><input type="checkbox" /> A. 40% of `totalContributionCap` </li>
+  <li><input type="checkbox" /> B. 60% of `totalContributionCap` </li>
+  <li><input type="checkbox" /> C. 100% of `totalContributionCap` </li>
+  <li><input type="checkbox" /> D. Unbounded </li>
+</ul>
+
+<HiddenSolution>
+**Correct is C.**
+
+The allowance is only capped as long as the specified `amount` is larger the current `totalContributions`. That means as soon as the `totalContributions` are larger than `ALLOWANCE_CAP`, it's possible to give an allowance of 100%.
+</HiddenSolution>
+
+---
+
+### Question 7 of 8
+
+The `requestAllowance()` implementation would have failed after the 1st call for tokens that only allow zero to non-zero allowances. Which of the following mitigations do NOT work? 
+
+<ul>
+  <li><input type="checkbox" /> A. `safeApprove(0)` followed by `safeApprove(type(uint256).max)` </li>
+  <li><input type="checkbox" /> B. `safeIncreaseAllowance(type(uint256).max)` </li>
+  <li><input type="checkbox" /> C. `safeIncreaseAllowance(0)` followed by `safeIncreaseAllowance(type(uint256).max)` </li>
+  <li><input type="checkbox" /> D. `safeDecreaseAllowance(0)` followed by `safeApprove(type(uint256).max)` </li>
+</ul>
+
+<HiddenSolution>
+**Correct is B, C, D.**
+
+There are some implementations of ERC20 tokens that require an approval to be reset to 0 before it can be updated to another non-zero value.
+
+The `safeIncreaseAllowance()` / `safeDecreaseAllowance()` functions request the current allowance, adding/subtracting the specified amount and then update it by calling `approve()`. These functions do not set the approval to 0 in between, so for these tokens the function would still fail after the 1st call.
+</HiddenSolution>
+
+---
+
+### Question 8 of 8
+
+Which of the following gas optimizations are relevant in reducing runtime gas costs for the vault contract?
+
+<ul>
+  <li><input type="checkbox" /> A. Changing `ALLOWANCE_CAP` type from `immutable` to `constant`, ie. `uint256 public constant ALLOWANCE_CAP = 40 * uint256(TOTAL_CONTRIBUTION_CAP) / 100;` </li>
+  <li><input type="checkbox" /> B. Increase number of solc `runs` (assuming default was `200 runs`) </li>
+  <li><input type="checkbox" /> C. Renaming functions so that the most used functions have smaller method IDs </li>
+  <li><input type="checkbox" /> D. Use unchecked math in `withdraw()` </li>
+</ul>
+
+<HiddenSolution>
+**Correct is B, (C).**
+
+* A: Changing `ALLOWANCE_CAP` to be `constant` would actually consume more runtime gas as the expression would then be evaluated on every call, while with `immutable` the expression would be calculated during deployment and then become a static value. (Note that there's no difference between these options anymore when the via-IR compilation pipeline and optimization is used).
+* B: Increasing the optimizer's `runs` configuration will increase the deployment bytecode size but decrease the gas usage at runtime.
+* C: (The smaller the function's ID the earlier it can be found by the function selector.) – In hindsight, this is not entirely true: Including the public variable getters, the Vault contract has 9 function signatures exposed. For contracts with more than 4 function IDs the Solidity compiler starts using a [binary search algorithm](https://github.com/0xArcturus/binarysearch/) instead of using a sorted-if-then selector. So in the case of the Vault contract, there's no guarantee that renaming the functions in the described manner would actually ensure reduced runtime costs for all of the most used functions. It's still true that the function with the lowest ID will have the shortest path (one pivot, on EQ), but the same is not guaranteed for the other functions.
+* D: It wouldn't be safe to use unchecked math in the `withdraw()` function as it would potentially allow users to withdraw more than they should be able to. (The wording is intended to imply that the entire function's body would be put into an unchecked block.)
+</HiddenSolution>
+
+---

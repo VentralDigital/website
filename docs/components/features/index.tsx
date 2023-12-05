@@ -1,6 +1,5 @@
 import { ArrowRightIcon } from '@components/icons'
 import cn from 'clsx'
-import { motion } from 'framer-motion'
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 import styles from './style.module.css'
@@ -16,11 +15,7 @@ export function Feature({
   ...props
 }) {
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      whileInView={{ opacity: 1 }}
-      viewport={{ once: true, margin: '-20px' }}
-      transition={{ duration: Math.min(0.25 + index * 0.2, 0.8) }}
+    <div
       className={cn(
         styles.feature,
         large && styles.large,
@@ -36,7 +31,7 @@ export function Feature({
           <ArrowRightIcon width="1.5em" />
         </Link>
       ) : null}
-    </motion.div>
+    </div>
   )
 }
 

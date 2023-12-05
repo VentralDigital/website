@@ -1,0 +1,500 @@
+# RACE #21 Of The Secureum Bootcamp Epoch∞
+
+import { Callout } from 'nextra/components'
+
+This is a Write-Up of RACE-21, Quiz of the [Secureum Bootcamp](https://twitter.com/0xRajeev/status/1470910752085065731) for Ethereum Smart Contract Auditors. Secureum Mentor [Noah](https://twitter.com/NoahMarconi), one of my colleagues at Spearbit DAO.
+
+<Callout type="info">
+  Participants of this quiz had to **answer 8 questions within the strict time limit of 16 minutes** (yes, the time limit includes reading the code). If you’re reading this in preparation for participating yourself, it’s best to give it a try under the same time limit!
+
+  As usual, I waited for submissions to close before publishing it and, to stay true to the original, I omitted syntax highlighting. Feel free to copy it into your favorite editor, but do so after starting the timer!
+</Callout>
+
+<p className="text-xs text-right">September 9, 2023 by [patrickd](/about#patrickd)</p>
+
+<style jsx>{`
+  input[type=checkbox] {
+    width: 15px;
+    height: 15px;
+  }
+  li {
+    padding: 0.5em;
+  }
+`}</style>
+
+export function HiddenSolution({ children }) {
+  return (
+    <details closed className="last-of-type:mb-0 rounded-lg bg-neutral-50 dark:bg-neutral-800 p-2 mt-4">
+      <summary>
+        <strong className="text-lg">Solution</strong>
+      </summary>
+      <div className="nx-p-2">{children}</div>
+    </details>
+  )
+}
+
+---
+
+### Code
+
+<Callout type="info">
+All 8 questions in this RACE are based on the below contracts. This is the same contracts you will see for all the 8 questions in this RACE. The question is below the shown contracts.
+</Callout>
+
+
+```plaintext showLineNumbers
+// SPDX-License-Identifier: UNLICENSED
+pragma solidity 0.8.20;
+
+
+import { ERC721 } from "https://github.com/Vectorized/solady/blob/main/src/tokens/ERC721.sol";
+import { IERC20 } from "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/interfaces/IERC20.sol";
+import { ClonesWithImmutableArgs } from "https://github.com/wighawag/clones-with-immutable-args/blob/master/src/ClonesWithImmutableArgs.sol";
+import { Clone } from "https://github.com/wighawag/clones-with-immutable-args/blob/master/src/Clone.sol";
+
+
+/// @notice For the purpose of RACE-21 there are no bugs in the `Rabbits` token contract.
+///         If anything exists it's due to integrating with the token contract, not the token contract itself.
+contract Rabbits is ERC721 {
+    /* --------------------------------- Storage -------------------------------- */
+
+    string internal _name;
+    string internal _symbol;
+    address public deployer;
+
+    /* --------------------------------- Errors --------------------------------- */
+
+    error NotAuthorized();
+
+    /* -------------------------------- Modifiers ------------------------------- */
+
+    modifier onlyDeployer() {
+        if (msg.sender != deployer) {
+            revert NotAuthorized();
+        }
+        _;
+    }
+
+    /* ------------------------------- Constructor ------------------------------ */
+
+    constructor() {
+        _name = "RabidRabbits";
+        _symbol = "RABID";
+
+
+        deployer = msg.sender;
+    }
+
+    /* ---------------------------- Solady Overrides ---------------------------- */
+
+    /// @dev Returns the token collection name.
+    function name() public view override returns (string memory) {
+        return _name;
+    }
+
+    /// @dev Returns the token collection symbol.
+    function symbol() public view override returns (string memory) {
+        return _symbol;
+    }
+
+    /// @dev Returns the Uniform Resource Identifier (URI) for token `id`.
+    function tokenURI(uint256) public pure override returns (string memory) {
+        return "{ fancyJson: true }"; // not relevant for RACE-21
+    }
+
+    function mint(address to, uint256 tokenId) public onlyDeployer {
+        _mint(to, tokenId);
+    }
+
+    function sudoBurn(uint256 tokenId) public onlyDeployer {
+        _burn(tokenId);
+    }
+
+    function burn(uint256 tokenId) public {
+        _burn(msg.sender, tokenId);
+    }
+}
+
+interface SharedTypes {
+    /* ---------------------------------- Types --------------------------------- */
+
+    enum CommitReveal {
+        None,
+        Commit,
+        Reveal
+    }
+
+    struct Research {
+        CommitReveal commitReveal;
+        bool successfulFinding;
+    }
+
+    struct Entropy {
+        bytes32 entropy;
+        uint256 timestamp;
+        bytes32 previousEntropy;
+        bool previousResult;
+    }
+}
+
+/// @notice Uses clones-with-immutable-args to avoid cost of storage reads.
+///         See https://github.com/wighawag/clones-with-immutable-args
+contract ResearchLab is Clone {
+    /* --------------------------------- Storage -------------------------------- */
+
+    SharedTypes.Research[] public researchEndeavors;
+    SharedTypes.Entropy public entropy;
+
+    /* --------------------------------- Getters -------------------------------- */
+
+    /// @notice For clones-with-immutable-args custom getters are needed.
+    function getRandomOracle() public pure returns (address) {
+        return _getArgAddress(0);
+    }
+
+    function getEndeavor(uint256 idx) public view returns (SharedTypes.Research memory) {
+        return researchEndeavors[idx];
+    }
+
+    /* ------------------------ State Transition Function ----------------------- */
+
+    function commitReseachResources() public {
+        researchEndeavors.push(SharedTypes.Research(SharedTypes.CommitReveal.Commit, false));
+    }
+
+    function revealResearchResult(uint256 idx) public {
+        SharedTypes.Research storage endeavor = researchEndeavors[idx];
+        trulyRandomExternalCall(endeavor);
+    }
+
+    function trulyRandomExternalCall(SharedTypes.Research memory endeavor) internal {
+        // Update state at the same time
+        bytes memory payload = abi.encodeWithSelector(TrulyRandomOracleMock.oracleResult.selector, endeavor);
+
+        // Use TrulyRandomOracleMock to update state
+        getRandomOracle().delegatecall(payload);
+    }
+}
+
+contract TrulyRandomOracleMock {
+    /* --------------------------------- Storage -------------------------------- */
+
+    SharedTypes.Research[] internal researchEndeavors;
+    SharedTypes.Entropy public entropy;
+
+    /* ------------------------ State Transition Function ----------------------- */
+
+    // For the purpose of RACE-21 assume the random oracle obtains a seed from a truly random source.
+    function oracleResult(SharedTypes.Research memory endeavor) public {
+        // This line is a mock, assume it was actually random from external source.
+        bytes32 mockRandomSeed = keccak256(abi.encode(entropy, endeavor, block.timestamp));
+
+        // Calculate new entropy.
+        SharedTypes.Entropy memory newEntropy = entropy;
+        calculateResult(newEntropy, mockRandomSeed);
+
+        // Update entropy state.
+        entropy = newEntropy;
+
+        // Update endeavor state.
+        endeavor.commitReveal = SharedTypes.CommitReveal.Reveal;
+        endeavor.successfulFinding = newEntropy.previousResult;
+    }
+
+    /* --------------------------------- Helpers -------------------------------- */
+
+    function calculateResult(SharedTypes.Entropy memory newEntropy, bytes32 mockRandomSeed) internal view {
+        newEntropy.entropy = mockRandomSeed;
+        newEntropy.timestamp = block.timestamp;
+        newEntropy.previousEntropy = entropy.entropy;
+        // 1 in 10_000 chance but disallow 2 in a row
+        newEntropy.previousResult = uint256(mockRandomSeed) % 10_000 == 0 && !entropy.previousResult;
+    }
+}
+
+contract RabidRabbits {
+    using ClonesWithImmutableArgs for address;
+
+    /* --------------------------------- Errors --------------------------------- */
+
+    error NotDead();
+
+    /* ---------------------------------- Types --------------------------------- */
+
+    enum Rabies {
+        None,
+        Symptomatic,
+        Ded,
+        Cured
+    }
+
+    struct Bunny {
+        uint256 id;
+        Rabies rabies;
+        address owner;
+        uint256 birthed;
+        ResearchLab[] researchLabs;
+    }
+
+    /* -------------------------- Immutable / Constant -------------------------- */
+
+    uint256 public constant ADOPTION_PRICE = 10 ether;
+    uint256 public constant DR_FEES = 0.5 ether;
+
+    IERC20 public immutable lidoToken;
+    ResearchLab public immutable researchLabImpl;
+    address public immutable cloneArgsTarget;
+
+    /* --------------------------------- Storage -------------------------------- */
+
+    Bunny[] public bunnies;
+    Rabbits public rabbitToken;
+
+    /* ------------------------------- Constructor ------------------------------ */
+
+    // For the purpose of RACE-21 we are passing in the Lido token from mainnet
+    // https://etherscan.io/token/0x5a98fcbea516cf06857215779fd812ca3bef1b32#code
+    constructor(IERC20 _lidoToken, address _cloneArgsTarget) {
+        // Deploy contracts.
+        rabbitToken = new Rabbits();
+        researchLabImpl = new ResearchLab();
+
+        // Set contract state.
+        lidoToken = IERC20(_lidoToken);
+
+        cloneArgsTarget = _cloneArgsTarget;
+    }
+
+    /* --------------------------------- Getters -------------------------------- */
+
+    function labsOf(uint256 bunnyIdx, uint256 labIdx) public view returns (ResearchLab) {
+        return bunnies[bunnyIdx].researchLabs[labIdx];
+    }
+
+    /* ------------------------ Public State Transitions ------------------------ */
+
+    function adopt() public {
+        lidoToken.transferFrom(msg.sender, address(this), ADOPTION_PRICE);
+        rabbitToken.mint(msg.sender, bunnies.length);
+
+        // 1 in 1000 chance of having a rabbit with rabies.
+        uint256 randomSeed = uint256(blockhash(block.number));
+        Rabies rabies = randomSeed % uint32(1000) == 0 ? Rabies.Symptomatic : Rabies.None;
+        bunnies.push(Bunny(bunnies.length, rabies, msg.sender, block.timestamp, new ResearchLab[](0)));
+    }
+
+    function miracleCure(uint256 start, uint256 end) public {
+        // Once a cure is found we can cure symptomatic rabbits.
+        // "left as exercise for the reader"
+    }
+
+    function researchAndDevelopment(uint256 idx) public {
+        // Clone ResearchLab.
+        bytes memory cloneArgs = abi.encodePacked(cloneArgsTarget);
+        ResearchLab researchLab = ResearchLab(address(researchLabImpl).clone(cloneArgs));
+
+        // init multiple research initiatives.
+        for (uint256 i = 0; i < 10; i++) {
+            researchLab.commitReseachResources();
+            // This is a RACE, no time for actual commit/reveal.
+            researchLab.revealResearchResult(i);
+        }
+
+        // Credit where credit is due.
+        bunnies[idx].researchLabs.push(researchLab);
+    }
+
+    /// @notice if a rabbit has rabies and is not cured, it will die (╥﹏╥)
+    function burry(uint256 idx) public {
+        Bunny[] memory localBunnies = bunnies;
+
+        if (localBunnies[idx].rabies != Rabies.Symptomatic && (block.timestamp < 7 days + localBunnies[idx].birthed)) {
+            revert NotDead();
+        }
+
+        // Efficiently delete from array.
+        bunnies[idx] = bunnies[localBunnies.length - 1];
+        bunnies.pop();
+
+        // Tidy up and burn token.
+        rabbitToken.sudoBurn(idx);
+    }
+}
+```
+
+### Question 1 of 8
+
+Which of the following statement(s) is/are true about the `burry()` function? 
+
+<ul>
+  <li><input type="checkbox" /> A. The function always reverts when an out of bounds index (`idx`) is passed</li>
+  <li><input type="checkbox" /> B. The function always reverts when `localBunnies[idx].rabies` is not Rabies.Symptomatic</li>
+  <li><input type="checkbox" /> C. The function always reverts when less than 7 days have passed since the Rabbit was minted</li>
+  <li><input type="checkbox" /> D. None of the above</li>
+</ul>
+
+<HiddenSolution>
+**Correct is A.**
+
+* A: Solidity automatically checks for out-of-bounds index access and will revert.
+* B/C: There is an error in the function, the `&&` should be `||` as it should revert when either side is true. At the moment it would require both conditions to be true in order to revert.
+</HiddenSolution>
+
+---
+
+### Question 2 of 8
+
+[clones-with-immutable-args](https://github.com/wighawag/clones-with-immutable-args) are used to deploy `ResearchLabs`. Which of the following statement(s) about this pattern is/are true?
+
+<ul>
+  <li><input type="checkbox" /> A. Arguments originating from the proxy to the implementation are immutable</li>
+  <li><input type="checkbox" /> B. All arguments passed to the implementation are immutable</li>
+  <li><input type="checkbox" /> C. Gas costs are lower when cloning versus deploying new implementations</li>
+  <li><input type="checkbox" /> D. The implementation can be `selfdestruct`’ed by a malicious caller</li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, C, D.**
+
+This is based on the Astaria disclosure ([described here by @devtooligan](https://twitter.com/devtooligan/status/1671310173896585216)). Don’t let the name fool you, the proxy is where args are immutable; the implementation receives these arguments as calldata.
+
+When called by the proxy, everything works as intended. When the implementation is called directly, the caller controls the arguments and `delegatecalls` become particularly problematic.
+
+* A: As long as the proxy is involved, the arguments originating directly from it are indeed immutable.
+* B: The proxy may receive calldata from the `msg.sender`. It appends the immutable arguments to this before forwarding the call.
+* C: This is true because the bytecode of a proxy is usually much smaller and therefore cheaper to deploy than the actual implementation it points to (proxy clone pattern)
+* D: The `ResearchLab` contract can be directly called (without a proxy passing a valid immutable argument). This means that the address it delegate-calls to can be pointed to a contract that makes it self-destruct.
+</HiddenSolution>
+
+---
+
+### Question 3 of 8
+
+The `adopt()` function has a random calculation. Which of the following statement(s), if any, about the source of randomness is/are true?
+
+<ul>
+  <li><input type="checkbox" /> A. By using Flashbots a caller can guarantee that `Bunny.rabies == Rabies.None`</li>
+  <li><input type="checkbox" /> B. There is an error present that can be corrected by hashing `randomSeed` before using it</li>
+  <li><input type="checkbox" /> C. Integer overflow introduces unexpected behavior in this function</li>
+  <li><input type="checkbox" /> D. None of the above</li>
+</ul>
+
+<HiddenSolution>
+**Correct is D.**
+
+There is certainly a problem with the `randomSeed`, it is not random at all. The use of `blockhash` for the current block returns 0 (see [evm.codes](https://www.evm.codes/?fork=shanghai)) meaning `randomSeed` behaves more like a constant than a random number.
+
+* A: Misdirection: Not block hash will always be 0, can't be influenced using Flashbots.
+* B: Misdirection: Hashing a constant value will just return another constant.
+* C: Misdirection: No overflows possible in this Solidity version without the use of `unchecked`-blocks
+</HiddenSolution>
+
+---
+
+### Question 4 of 8
+
+Which of the following statement(s) is/are true about the `adopt()` function?
+
+<ul>
+  <li><input type="checkbox" /> A. Minting does not take place unless precisely `ADOPTION_PRICE` is paid in `lidoToken`</li>
+  <li><input type="checkbox" /> B. `lidoToken` is a known token and is immutable in this contract, therefore `transferFrom` is safe to use</li>
+  <li><input type="checkbox" /> C. In some but not all cases the `burry()` function can cause the `adopt()` function to be DOS’d</li>
+  <li><input type="checkbox" /> D. Duplicate bunnies array entries will be produced if they burn their Rabbits NFT using the Rabbits ERC721 contract directly instead of using the `RabidRabbits.burry()` function</li>
+</ul>
+
+<HiddenSolution>
+**Correct is C.**
+
+* A/B: The use of Lido token introduces [MiniMe](https://etherscan.io/token/0x5a98fcbea516cf06857215779fd812ca3bef1b32#code) Token to the system. These tokens do not revert on failure and instead return false. Even though a user cannot introduce a problematic token to the system, we have caused the issue ourselves in the constructor. The unchecked return value, i.e. not using `safeTransferFrom`, allows calls to succeed even when no tokens are transferred.
+* C: `burry()` reduces the length of the bunnies storage array. In the adopt function `bunnies.length` is used to decide which token id to mint. If any but the last bunnies index is buried, the array length decrements and the next call to adopt fails due to attempting to mint a duplicate token id.
+* D: While the array entries of those burned bunnies will remain, this won't cause duplicates as the array length isn't decreased, and therefore later bunnies will have a non-duplicate id.
+</HiddenSolution>
+
+---
+
+### Question 5 of 8
+
+`TrulyRandomOracleMock.oracleResult()` calls `calculateResult()` passing a struct in memory. `calculateResult()` attempts to modify the memory struct and does not return a value. Finally, `revealResearchResult()` writes the entropy struct to storage; this is going to:
+
+<ul>
+  <li><input type="checkbox" /> A. Silently fail to update the `newEntropy` struct and will store the original</li>
+  <li><input type="checkbox" /> B. Correctly update and then store the `newEntropy` struct</li>
+  <li><input type="checkbox" /> C. Revert at runtime</li>
+  <li><input type="checkbox" /> D. Fail at compile time</li>
+</ul>
+
+<HiddenSolution>
+**Correct is B.**
+
+When an internal function operates on memory, memory is updated in place. Contrasted with external calls where memory may be passed but is not updated in the calling contract.
+
+* A/B: The `oracleResult` function calls `calculateResult` and passes it the entropy state variable's value as a reference in memory. Since `calculateResult` is an internal function, it's able to adjust the `Entropy` values as `oracleResult` uses the same memory. This updated memory reference variable is then used to update the value in storage.
+* C/D: Misdirecting answers. It doesn't revert and compiles fine.
+</HiddenSolution>
+
+---
+
+### Question 6 of 8
+
+Which of the following statement(s) about the `constructor` is/are true?
+
+<ul>
+  <li><input type="checkbox" /> A. Gas can be saved by not double casting `lidoToken = IERC20(_lidoToken)`</li>
+  <li><input type="checkbox" /> B. Gas can be saved by making `rabbitToken` immutable</li>
+  <li><input type="checkbox" /> C. Gas can be saved by storing `cloneArgsTarget` as bytes </li>
+  <li><input type="checkbox" /> D. `_lidoToken` as an argument helps in deploying on multiple networks</li>
+</ul>
+
+<HiddenSolution>
+**Correct is B, D.**
+
+* A: At the bytecode level, casting is a noop and incurs no gas.
+* B: Immutable is cheaper than reading from storage
+* C: bytes would be a storage array (immutable variables cannot have a non-value type) meaning we would incur sload costs.
+* D: True, we can reference bridged Lido on other networks when deploying there. Further, testing and fuzzing benefits exist when not hardcoding addresses.
+</HiddenSolution>
+
+---
+
+### Question 7 of 8
+
+Which of the following statement(s) is/are true about the `burry()` function? 
+
+<ul>
+  <li><input type="checkbox" /> A. A user can DOS the `burry()` function for their `idx` if they burn their Rabbits NFT using the Rabbits ERC721 contract directly instead of using the `RabidRabbits.burry()` function</li>
+  <li><input type="checkbox" /> B. The `Bunny.researchLabs` array is correctly reset for the deleted `idx`</li>
+  <li><input type="checkbox" /> C. The entire `burry()` function can be DOS’d resulting in all calls to this function failing</li>
+  <li><input type="checkbox" /> D. None of the above</li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, B, C.**
+
+A: This function attempts to burn, meaning that if a token is burned already, calls to burry will revert.
+
+B: While possibly high in gas costs, the array is cleared and the index may be reused in the `adopt` function.
+
+C: Whatever we thought we were doing to be efficient in our array handling is negated by loading the entire array into memory with `Bunny[] memory localBunnies = bunnies;{:solidity}`. With at least 5 storage reads per array entry, after a few thousand entries in the array, the block gas limit is hit trying to load it all into memory.
+</HiddenSolution>
+
+---
+
+### Question 8 of 8
+
+Which of the following statement(s) is/are true about `ResearchLab.revealResearchResult()` and the functions it interacts with?
+
+<ul>
+  <li><input type="checkbox" /> A. The Solidity compiler will fail to compile</li>
+  <li><input type="checkbox" /> B. The storage for `entropy` is updated</li>
+  <li><input type="checkbox" /> C. The storage for `researchEndeavors[idx]` is updated</li>
+  <li><input type="checkbox" /> D. None of the above</li>
+</ul>
+
+<HiddenSolution>
+**Correct is B.**
+
+* A: Misdirection: This compiles without issues.
+* B/C: This question is included as a reminder to be aware of storage and memory context when calling between functions. To step through the functions and argument passing: `revealResearchResult` references endeavor in storage then calls `trulyRandomExternalCall` which loads the data into memory. `TrulyRandomOracleMock.oracleResult` is delegatecall’ed again with the endeavor data passed as memory. Delegatecall means `TrulyRandomOracleMock.oracleResult` has access to all of our storage, including `entropy` which it updates in storage. `endeavor` on the other hand is in memory, meaning `researchEndeavors[idx]` is not updated at all.
+</HiddenSolution>
+
+---

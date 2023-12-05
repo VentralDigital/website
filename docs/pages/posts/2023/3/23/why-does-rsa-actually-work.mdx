@@ -1,0 +1,329 @@
+# Why Does RSA Actually Work?
+
+<p className="text-xs text-right">March 23, 2023 by [patrickd](/about#patrickd)</p>
+
+![Tech-Tree diagram of RSA](./crypto-tech-diagram-rsa.jpg)
+
+RSA encryption appears so incredibly elegant and simple, it's as if it were some sort of mathematical magic. This article is an attempt to give the reader some intuition about why it works and make the seemingly magical aspects graspable. Note that it avoids mathematical proves where possible, it does not attempt to give an explanation on how to implement RSA securely or efficiently, and it skips any concepts that have been deemed irrelevant for understanding the "why".
+
+## The Magic
+
+$`p`$ and $`q`$ chosen as large random prime numbers
+
+$`N = p \* q`$
+
+$`phi(N) = phi(p)\*phi(q) = (p-1)\*(q-1)`$, phi being "Euler's Totient Function"
+
+$`e = 65537`$, fullfills requirements of $`1 < e < phi(n)`$ and $`gcd(e, phi(n)) = 1`$, combined with $`N`$ makes up the public key $`K(e, N)`$
+
+$`d -= e^(-1)" mod "phi(N)`$, combined with $`N`$ makes up the private key $`k(d, N)`$
+
+$`c -= m^e" mod "N`$, is the encrypted ciphertext $`c`$ of the message $`m`$
+
+$`m -= c^d" mod "N`$, is the decrypted message $`m`$ from the ciphertext $`c`$
+
+---
+
+## What is $`-= mod`$ ?
+
+You might already know that the triple line equal sign $`-=`$ stands for "congruence" rather than "equality" while $`mod`$ is short for modulo which yields the remainder of a division operation.
+
+In congruence both sides have the same remainder when divided by a particular modulus.
+
+$`(a -= b" mod "n) iff (b -= a" mod "n)`$
+
+$`a" mod "n = b" mod "n`$
+
+**Example**
+
+$`(2" mod "5 = 2)`$ and $`(12" mod "5 = 2)`$
+
+therefore
+
+$`(2 -= 12" mod "5)`$ and $`(12 -= 2" mod "5)`$
+
+---
+
+## What is $`e^(-1)`$ ?
+
+One might expect this to be $`e^(-1) = (1/e)^1`$, but we're only dealing with integers here and not rationals, so what could it be?
+
+According to RSA the following should be true:
+
+$`m -= c^d" mod "N`$
+
+$`m -= (m^e" mod "N)^d" mod "N`$
+
+$`m -= m^(e\*d)" mod "N`$
+
+$`m -= m^1" mod "N`$
+
+$`m -= m" mod "N`$
+
+The public exponent $`e`$ and the private exponent $`d`$ are cancelling each other out, making them "inverse" to each other. So in modular arithmetic $`e^(-1)`$ is the "modular multiplicative inverse" of $`e`$.
+
+$`e \* d -= e \* e^(-1) -= 1" mod "phi(N)`$
+
+Knowing that, we can also see why the notiation of $`e^(-1)`$ was chosen to represent the inverse when we go back to using rational numbers:
+
+$`e \* d = e \* e^(-1) = e \* (1/e)^1 = 1 `$
+
+---
+
+### Why does inversion work?
+
+At first it looks quite simple: We just have to find two integers $`e`$ and $`d`$ such that when multiplied with each other they result in 1 (within $`"mod " n`$) and are therefore inverse to each other:
+
+$`e * d -= 1" mod "n`$
+
+An interesting aspect to this is, that it only has solutions when $`e`$ and $`d`$ are "coprime" (or "relatively prime") to $`n`$. Meaning that the greatest common divisior, the biggest integer that divides both numbers without a remainder, is 1.
+
+$`gcd(e, n) = 1`$ and $`gcd(d, n) = 1`$
+
+**Example**
+
+Let's look for the inverse $`d`$ of 5 within $`("mod " 15)`$:
+
+$`5 * d -= 1" mod "15`$
+
+With $`gcd(5, 15) = 5`$ there should not be a solution for $`((d*5)" mod "15) = 1`$, is that true?
+
+```plaintext
+|              d |  0 |  1 |  2 |  3 |  4 |  5 |  6 |   ...    |
+|----------------|----|----|----|----|----|----|----|----------|
+| ((d⋅5) mod 15) |  0 |  5 | 10 |  0 |  5 | 10 |  0 | {0,5,10} |
+```
+
+The numbers this can yield quickly start to repeat and none of them are 1, so there is indeed no inverse.
+
+Okay, but 15 is a multiple of 5 so the result is not that much of a surprise.
+
+What about 6?
+
+$`6 * d -= 1" mod "15`$
+
+With $`gcd(6, 15) = 3`$ there should still not be a solution for $`((d*6)" mod "15) = 1`$, but this time 15 is clearly not a multiple of 6 so what happens now?
+
+```plaintext
+|              d |  0 |  1 |  2 |  3 |  4 |  5 |  6 |     ...      |
+|----------------|----|----|----|----|----|----|----|--------------|
+| ((d⋅6) mod 15) |  0 |  6 | 12 |  3 |  9 |  0 |  6 | {0,3,6,9,12} |
+```
+
+Still no inverse, but something interesting becomes visible: The numbers yielded are always multiples of $`gcd(e, n)`$.
+
+Let's try a number which should actually have an inverse: $`gcd(8, 15) = 1`$. It may be worth pointing out here that neither numbers are prime, but with this result they are still "relative prime" to each other.
+
+```plaintext
+|              d |  0 |  1 |  2 |  3 |  4 |  5 |  6 |  7 |  8 |  9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 |                ...                   |
+|----------------|----|----|----|----|----|----|----|----|----|----|----|----|----|----|----|----|----|----|--------------------------------------|
+| ((d⋅8) mod 15) |  0 |  8 |  1 |  9 |  2 | 10 |  3 | 11 |  4 | 12 |  5 | 13 |  6 | 14 |  7 |  0 |  8 |  1 | {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14} |
+```
+
+Not only has 8 an inverse but the numbers yielded are also all numbers from 0 to 14. Thanks to the greatest common divisor being 1, the resulting numbers are multiples of 1 as well. This time it is as if there's a 1-to-1 mapping between $`d`$ and the resulting numbers as long as $`d lt n`$.
+
+---
+
+### Why does an inverse from $`"mod "phi(N)`$ still seem to work in $`"mod "N`$ ?
+
+We've seen that the inverse of an integer depends on the modulo. The inverse for 8 in $`("mod "15)`$ is 2. But in $`("mod "13)`$ it would be 5.
+
+In RSA $`d`$ is calculated as the inverse of $`e`$ in $`"mod "phi(N)`$:
+
+$`d -= e^(-1)" mod "phi(N)`$ and therefore $`e\*d -= 1" mod "phi(N)`$
+
+But during decryption $`d`$ and $`e`$ appear to be cancelling each other out even under $`("mod "N)`$, why does that work?
+
+$`m -= m^(e\*d) -= m^1" mod "N`$
+
+Unfortunately there doesn't seem to be a good way to explain this without making use of (a little bit of magic called) Euler's Totient Theorem which shows that for an integer $`a`$ that is coprime with $`n`$ the following applies:
+
+$`a^(phi(n)) -= 1" mod "n`$
+
+To make use of that we have to look for a $`phi(N)`$ in the message's exponent and we can quite easily find it:
+
+$`e\*d -= 1" mod "phi(N) implies e\*d = 1 + k*phi(N)`$ with the integer $`k ge 0`$
+
+$`implies m -= m^(e\*d) -= m^(1 + k\*phi(N)) -= m^1 \* m^(phi(N)\*k) -= m \* (m^(phi(N)))^(k) -= m \* 1^k" mod "N`$
+
+Thanks to Euler's Theorem it seems like we can remove everything except for message $`m`$ from the formula with $`(m^(phi(N)) -= 1" mod "N)`$.
+
+But you might remember I mentioned the Theorem should only apply when $`m`$ is coprime with $`N`$, which would restrict the valid messages we would be able to encrypt. If $`N`$ was a prime that would not be an issue as all integers $`(1 le m lt N)`$ would be relatively prime to it.
+
+---
+
+### Why does Euler's Theorem still seem to apply for $`gcd(m, N) != 1`$?
+
+First, note that because both $`p`$ and $`q`$ are prime their greatest common divisor is always 1. If $`m`$ is not coprime with $`N`$ that must mean that it is a multiple of either $`p`$ or $`q`$, meaning it can't be coprime with one of them. But it must be coprime with at least one of them, because in order to not be coprime with both of them it must be a multiple of both $`p`$ and $`q`$ and that cannot be the case as long as $`m lt N`$ since $`N`$ is the first possible number to be a multiple of both: $`N = p\*q`$.
+
+Therefore even when $`gcd(m, N) != 1`$ either $`p`$ or $`q`$ will share a residue of 0 with the message (since $`m`$ would be a multiple of it without leaving a remainder) and the other one would be either:
+
+$`(gdc(m, p) = 1) implies (m \* m^(phi(N)) -= m \* m^(phi(p)\*phi(q)) -= m \* (m^(phi(p)))^(phi(q)) -= m \* 1^(phi(q)) -= m \* 1" mod "p)`$
+
+or
+
+$`(gdc(m, q) = 1) implies (m \* m^(phi(N)) -= m \* m^(phi(p)\*phi(q)) -= m \* (m^(phi(q)))^(phi(p)) -= m \* 1^(phi(p)) -= m \* 1" mod "q)`$
+
+With these, we have either one of the following systems of congruence:
+
+$`(m -= m" mod "p)`$, $`(m -= 0" mod "q)`$
+
+or
+
+$`(m -= 0" mod "p)`$, $`(m -= m" mod "q)`$
+
+Both of which can be simplified using the Chinese Remainder Theorem to:
+
+$`(m -= m" mod "p\*q\)`$
+
+**Example**
+
+$`p = 7, q = 11`$
+
+$`N = p \* q\ = 7 \* 11 = 77`$
+
+$`phi(N) = phi(p)\*phi(q) = (p-1)\*(q-1) = (7-1)\*(11-1) = 60`$
+
+$`e = 7`$
+
+$`d -= e^(-1)" mod "phi(N) = 43" mod "60`$ with $`7 \* 43 -= 1" mod "60`$ 
+
+$`c -= m^e" mod "N -= 42^7" mod "77 = 70`$ with $`gcd(m, N) = gcd(42, 60) = 6`$
+
+$`m -= c^d" mod "N -= 70^43" mod "77 -= 42`$
+
+Despite $`m`$ not being coprime with $`N`$ thanks to:
+
+$`gcd(m, p) = gcd(42, 7) = 7`$ therefore $`m -= m" mod "p -= 42" mod "7 -= 0" mod "7`$
+
+$`gcd(m, q) = gcd(42, 11) = 1`$ therefore $`m -= m^(ed) -= m^(1 + k\*phi(q)) -= m^1 \* (m^(phi(q)))^k -= m \* 1^k" mod "q -= 42" mod "11`$
+
+Therefore $`m -= m" mod "p\*q -= 42" mod "(7\*11)`$
+
+---
+
+### Why does Euler's Theorem work?
+
+First of all, Euler's Totient Theorem is a generalization of Fermat's Little Theorem where for a prime $`p`$ for any integer $`a`$ the following is true:
+
+$`(a^p -= a" mod "p) iff (a^p - a -= 0" mod "p)`$
+
+Next, we need to look at Euler's function, denoted as $`phi(n)`$. This function counts the number of positive integers up to $`n`$ that are relatively prime to $`n`$. In other words, it counts the number of integers that have a greatest common divisor of 1 with $`n`$. When $`n`$ is a prime number $`p`$, all the numbers from $`1`$ to $`(p - 1)`$ are relatively prime to $`p`$, so $`phi(p) = p - 1`$.
+
+Euler's Theorem generalizes Fermat's Little Theorem and states that for any positive integer $`n`$ and any integer $`a`$ relatively prime to $`n`$, we have:
+
+$`(a^phi(n)) -= 1 ("mod "n)`$
+
+Which is in case for $`n = p`$ prime equivalent to:
+
+$`(a^(p-1)) -= 1 ("mod "p)`$
+
+**Example**
+
+A very simple way to gain some intution for these Theorems is through, what one might call, a modulo-lookup-table: 
+
+```plaintext
+|    0 |    1 |    2 |    3 |    4 |
+|------|------|------|------|------|
+|    5 |    6 |    7 |    8 |    9 |
+|   10 |   11 |   12 |   13 |   14 |
+|   15 |   16 |   17 |   18 |   19 |
+|   20 |   21 |   22 |   23 |   24 |
+|   25 |   26 |   27 |   28 |   29 |
+|   30 |   31 |   32 |   33 |   34 |
+:      :      :      :      :      :
+|   80 |   81 |   82 |   83 |   84 |
+:      :      :      :      :      :
+|  240 |  241 |  242 |  243 |  244 |
+|  245 |  246 |  247 |  248 |  249 |
+|  250 |  251 |  252 |  253 |  254 |
+|  255 |  256 |  257 |  258 |  259 |
+:      :      :      :      :      :
+| 1020 | 1021 | 1022 | 1023 | 1024 |
+:      :      :      :      :      :
+```
+
+Imagine this (modulo 5) lookup-table just continues to infinity and always tells us at what remainder we would end up with if we applied $`(mod 5)`$.
+
+Now let's check $`(a^p -= a" mod "p)`$:
+
+```plaintext
+0**5 mod 5 =    0 mod 5
+1**5 mod 5 =    1 mod 5
+2**5 mod 5 =   32 mod 5
+3**5 mod 5 =  243 mod 5
+4**5 mod 5 = 1024 mod 5
+```
+
+With the help of the lookup-table we can easily determine the remainder of the division by checking in which column we find the number. The Theorem works.
+
+Although it's mathematically equivalent, let's check $`(a^p - a -= 0" mod "p)`$ too:
+
+```plaintext
+0**5 mod 5 = (   0 - 0) mod 5 =    0 mod 5
+1**5 mod 5 = (   1 - 1) mod 5 =    0 mod 5
+2**5 mod 5 = (  32 - 2) mod 5 =   30 mod 5
+3**5 mod 5 = ( 243 - 3) mod 5 =  240 mod 5
+4**5 mod 5 = (1024 - 4) mod 5 = 1020 mod 5
+```
+
+Here we can see that we always end up in the 0-column, just as we should.
+
+Finally, let's look at $`a^(p-1) -= 1" mod "p`$:
+
+```plaintext
+0**4 mod 5 =    0 mod 5
+1**4 mod 5 =    1 mod 5
+2**4 mod 5 =   16 mod 5
+3**4 mod 5 =   81 mod 5
+4**4 mod 5 =  256 mod 5
+```
+
+Since 0 can't have a greatest common divisor with anything, it also can't be coprime so it yields 0 instead of 1. But as long as the base is coprime to the modulo we always end up in the 1-column.
+
+---
+
+### What is the Chinese Remainder Theorem?
+
+The last trick to explain is why the Chinese Remainder Theorem shows that $`(m -= m \* m^(phi(N))" mod "p\*q\) implies (m -= m \* 1" mod "p\*q\)`$ despite $`m`$ not being coprime to both $`p`$ and $`q`$.
+
+The Chinese Remainder Theorem (CRT) allows us to solve a system of linear congruences with pairwise coprime moduli. It states that if you have a system of linear congruences like:
+
+```plaintext
+x ≡ a1 (mod n1)
+x ≡ a2 (mod n2)
+...
+x ≡ ak (mod nk)
+```
+
+where $`n1, n2, ..., nk`$ are pairwise coprime (i.e., they share no common factors other than 1), then there exists a unique solution for $`x`$ modulo the product of the moduli, i.e., modulo $`N = n1 \* n2 \*`$ ... $`\* nk`$:
+
+$`x -= (a_1 \* N/(n_1) \* ((N/(n_1))^(-1)" mod "n_1)) + (a_2 \* N/(n_2) \* ((N/(n_2))^(-1)" mod "n_2)) +`$ ... $`+ (a_k \* N/(n_k) \* ((N/(n_k))^(-1)" mod "n_k)) ("mod "N)`$
+
+In the context of RSA, we have $`N = p \* q`$ where $`p`$ and $`q`$ are distinct prime numbers, and thus, they are coprime.
+
+```plaintext
+m ≡ m (mod p)
+m ≡ m (mod q)
+```
+
+**Example**
+
+Based on the systems of congruence from the previous RSA calculation example:
+
+$`m -= m" mod "p -= 42" mod "7 -= 0" mod "7`$
+
+$`m -= m^(ed) -= m^(1 + k\*phi(q)) -= m^1 \* (m^(phi(q)))^k -= m \* 1^k" mod "q -= 42" mod "11`$
+
+We now use the CRT step by step:
+
+$`m = ((m" mod "p) \* (p\*q)/p \* (((p\*q)/p)^(-1)" mod "p)) + ((m" mod "q) \* (p\*q)/q \* (((p\*q)/q)^(-1)" mod "p)) ("mod "p\*q)`$
+
+$`m = ((m" mod "p) \* q \* (q^(-1)" mod "p)) + ((m" mod "q) \* p \* (p^(-1)" mod "q)) ("mod "p\*q)`$
+
+$`m = ((0" mod "p) \* 11 \* (11^(-1)" mod "7)) + ((42" mod "q) \* 7 \* (7^(-1)" mod "11)) ("mod "7\*11)`$
+
+$`m = (0 \* 11 \* 2) + (9 \* 7 \* 8) ("mod "77)`$
+
+$`m = 504 ("mod "77) = 42`$
+

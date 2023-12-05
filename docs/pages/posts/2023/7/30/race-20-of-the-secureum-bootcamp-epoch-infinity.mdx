@@ -1,0 +1,382 @@
+# RACE #20 Of The Secureum Bootcamp Epoch∞
+
+import { Callout } from 'nextra/components'
+
+This is a Write-Up of RACE-12, Quiz of the [Secureum Bootcamp](https://twitter.com/0xRajeev/status/1470910752085065731) for Ethereum Smart Contract Auditors.   This one was designed by none other than [Hari (@hrkrshnn)](https://twitter.com/_hrkrshnn), Secureum Mentor and Co-Founder of Spearbit. With his background in working on the Solidity compiler this one was sure to be a doozy…
+
+<Callout type="info">
+  Before tackling this race, participants were recommended to review EVM basics as well as spend some time understanding inline-assembly. Aside from that, it’s the usual **8 questions within the strict time limit of 16 minutes**.
+
+  As always, I waited for submissions to close before publishing it and, to stay true to the original, I omitted syntax highlighting. Feel free to copy it into your favorite editor, but do so after starting the timer!
+</Callout>
+
+<p className="text-xs text-right">July 27, 2023 by [patrickd](/about#patrickd)</p>
+
+<style jsx>{`
+  input[type=checkbox] {
+    width: 15px;
+    height: 15px;
+  }
+  li {
+    padding: 0.5em;
+  }
+`}</style>
+
+export function HiddenSolution({ children }) {
+  return (
+    <details closed className="last-of-type:mb-0 rounded-lg bg-neutral-50 dark:bg-neutral-800 p-2 mt-4">
+      <summary>
+        <strong className="text-lg">Solution</strong>
+      </summary>
+      <div className="nx-p-2">{children}</div>
+    </details>
+  )
+}
+
+---
+
+### Code
+
+<Callout type="info">
+The first four questions are based on the below library:
+</Callout>
+
+
+```plaintext showLineNumbers
+// SPDX-License-Identifier: MIT
+pragma solidity >=0.8.0;
+
+/// @notice Efficient library for creating string representations of integers.
+/// @author Solmate (https://github.com/Rari-Capital/solmate/blob/v7/src/utils/LibString.sol)
+library LibString {
+    function toString(uint256 n) internal pure returns (string memory str) {
+        if (n == 0) return "0"; // Otherwise it'd output an empty string for 0.
+
+        assembly {
+            let k := 78 // Start with the max length a uint256 string could be.
+
+            // We'll store our string at the first chunk of free memory.
+            str := mload(0x40)
+
+            // The length of our string will start off at the max of 78.
+            mstore(str, k)
+
+            // Update the free memory pointer to prevent overriding our string.
+            // Add 128 to the str pointer instead of 78 because we want to maintain
+            // the Solidity convention of keeping the free memory pointer word aligned.
+            mstore(0x40, add(str, 128))
+
+            // We'll populate the string from right to left.
+            // prettier-ignore
+            for {} n {} {
+                // The ASCII digit offset for '0' is 48.
+                let char := add(48, mod(n, 10))
+
+                // Write the current character into str.
+                mstore(add(str, k), char)
+
+                k := sub(k, 1)
+                n := div(n, 10)
+            }
+
+            // Shift the pointer to the start of the string.
+            str := add(str, k)
+
+            // Set the length of the string to the correct value.
+            mstore(str, sub(78, k))
+        }
+    }
+}
+```
+
+### Question 1 of 8
+
+Select all true statements:
+
+<ul>
+  <li><input type="checkbox" /> A. The inline assembly block is `memory-safe`</li>
+  <li><input type="checkbox" /> B. The memory after `toString(...)` call is always 32-byte aligned</li>
+  <li><input type="checkbox" /> C. Instead of allocating memory from 0x40, the function can allocate from 0x0 to save gas (memory expansion cost) and still be correct</li>
+  <li><input type="checkbox" /> D. None of the above</li>
+</ul>
+
+<HiddenSolution>
+**Correct is A.**
+
+A: The inline assembly block is indeed [memory-safe](https://docs.soliditylang.org/en/latest/assembly.html#memory-safety), as it only writes to allowed memory ranges. In this specific case it always allocates memory starting from the free memory pointer. A "pointer" is an address within memory and the free memory pointer is the address pointing to the start of unallocated, free memory. This pointer itself is stored in memory at address 0x40 and, unless the value that was just stored in memory is temporary, it should be updated to skip over any recently allocated memory.
+
+B: While the memory itself is allocated in chunks of 32-byte slots, the values within these slots will not be properly aligned to each slot. First, note that each string stored in memory consists of two components: The first 32 bytes of a string are always its length. After the length, each further 32 bytes slot will contain part of the actual string's value. Therefore, if you want a pointer to the beginning of a string, you have to add 32 bytes to the string's pointer.
+
+Step #0: Initial memory state before `toString(1)` is executed
+```
+0x00 0x0000000000000000000000000000000000000000000000000000000000000000 scratch space
+0x20 0x0000000000000000000000000000000000000000000000000000000000000000 scratch space
+0x40 0x0000000000000000000000000000000000000000000000000000000000000080 free memory pointer
+0x60 0x0000000000000000000000000000000000000000000000000000000000000000 zero slot
+0x80 0x0000000000000000000000000000000000000000000000000000000000000000 (unallocated free memory)
+```
+
+Step #1: Memory pointer was updated and initial length of string was written
+
+```
+0x00 0x0000000000000000000000000000000000000000000000000000000000000000 scratch space
+0x20 0x0000000000000000000000000000000000000000000000000000000000000000 scratch space
+0x40 0x0000000000000000000000000000000000000000000000000000000000000100 free memory pointer (increased by 128)
+0x60 0x0000000000000000000000000000000000000000000000000000000000000000 zero slot
+0x80 0x000000000000000000000000000000000000000000000000000000000000004E string length (78)
+```
+
+Step #2: The `char` for "1" is determined to be 0x31 (48+1), its value is then stored to (`str + k`) 0x80 + 0x4E = 0xCE
+
+```
+0x00 0x0000000000000000000000000000000000000000000000000000000000000000 scratch space
+0x20 0x0000000000000000000000000000000000000000000000000000000000000000 scratch space
+0x40 0x0000000000000000000000000000000000000000000000000000000000000100 free memory pointer (increased by 128)
+0x60 0x0000000000000000000000000000000000000000000000000000000000000000 zero slot
+0x80 0x000000000000000000000000000000000000000000000000000000000000004E string length (78)
+0xA0 0x0000000000000000000000000000000000000000000000000000000000000000 1st part of string
+0xC0 0x0000000000000000000000000000000000000000000000000000000000000000 2nd part of string
+0xE0 0x0000000000000000000000000031000000000000000000000000000000000000 3rd part of string (and trailing unused zero bytes)
+```
+
+Remember that `MSTORE` writes chunks of 32 bytes, so when it writes 0x31 to 0xCE the byte carrying the value will end up in 0xE0's slot because of all the leading zeros (`0x0000000000000000000000000000000000000000000000000000000000000031`). The number is being converted to a string from right to left. If it would be done the other way around, previous numbers to the left would be overwritten by the following character being placed in memory. By doing it right to left, the `MSTORE`s won't impact the characters already written on the right.
+
+But this is also why a short number such as 1 would end up with many leading zero-bytes in front of it. To prevent this from happening, the `str` reference variable is updated to point to the 32 bytes before the string starts – causing the string's start to no longer be aligned with the beginning of a 32 byte slot. This is the place where finally the string's length will be set at:
+
+```
+0x00 0x0000000000000000000000000000000000000000000000000000000000000000 scratch space
+0x20 0x0000000000000000000000000000000000000000000000000000000000000000 scratch space
+0x40 0x0000000000000000000000000000000000000000000000000000000000000100 free memory pointer (increased by 128)
+0x60 0x0000000000000000000000000000000000000000000000000000000000000000 zero slot
+0x80 0x000000000000000000000000000000000000000000000000000000000000004E old string length (78), no longer used
+0xA0 0x0000000000000000000000000000000000000000000000000000000000000000 unused but reserved memory
+0xC0 0x0000000000000000000000000000000000000000000000000000000000000000 partially the string length
+0xE0 0x0000000000000000000000000131000000000000000000000000000000000000 string length (1) and the single char
+```
+
+C: The 64 bytes starting at memory address 0x0 are called the "scratch space". While they're usually used for operations like hashing, you're free to use them to temporarily store things there and leave them without having to clean them up. But there's no guarantee that anything placed in scratch space will remain there for long as any other part of the contract may use it for temporary operations as well. This function's purpose would be harmed if the returned string would be overwritten at random, therefore, while it may safe gas to attempt doing so, it cannot be said that it would still be correct to use the memory at 0x0 instead of allocating fresh dedicated memory. Furthermore, for the largest `uint256`, this function requires more memory than the 64-byte scratch space can offer.
+</HiddenSolution>
+
+---
+
+### Question 2 of 8
+
+Select all true statements about the expression `mstore(0x40, add(str, 128))`:
+
+<ul>
+  <li><input type="checkbox" /> A. The expression allocated more memory than required. The value 128 can be replaced by 96.</li>
+  <li><input type="checkbox" /> B. The expression allocates less memory than required. The value 128 can be replaced by 160.</li>
+  <li><input type="checkbox" /> C. The expression is redundant and can be removed to save gas</li>
+  <li><input type="checkbox" /> D. The expression is not `‘memory-safe’` assembly in this context</li>
+</ul>
+
+<HiddenSolution>
+**Correct is B.**
+
+A/B: While the expression allocates sufficient memory to ensure that later allocations won't overwrite the string, there's still an issue of dirty memory being returned when the actual string contents are read once the memory after the string is in use:
+
+```
+0x00  0x0000000000000000000000000000000000000000000000000000000000000000 scratch space
+0x20  0x0000000000000000000000000000000000000000000000000000000000000000 scratch space
+0x40  0x0000000000000000000000000000000000000000000000000000000000000100 free memory pointer (increased by 128)
+0x60  0x0000000000000000000000000000000000000000000000000000000000000000 zero slot
+0x80  0x000000000000000000000000000000000000000000000000000000000000004E old string length (78), no longer used
+0xA0  0x0000000000000000000000000000000000000000000000000000000000000000 unused but reserved memory
+0xC0  0x0000000000000000000000000000000000000000000000000000000000000000 partially the string length
+0xE0  0x0000000000000000000000000131000000000000000000000000000000000000 string length (1) and the single char
+0x100 0xfff
+```
+
+Loading 32 bytes to obtain the string's length at the str pointer will work correctly: `0x0000000000000000000000000000000000000000000000000000000000000001`
+
+But loading 32 bytes to obtain the actual string's contents at `add(str, 32)` will partially return data not belonging to the string: `0x31000000000000000000000000000000000000ffffffffffffffffffffffffff`
+
+To prevent this, the expression should allocate another 32 bytes, therefore a sum of 160 bytes instead of 128.
+
+C: Removing the expression would cause later allocations of memory to use the space where the string has been stored, causing it to be overwritten.
+
+D: This expression, as well as the rest of the inline `assembly` block, is memory-safe as already covered by the previous question.
+</HiddenSolution>
+
+---
+
+### Question 3 of 8
+
+Select all true statements:
+
+<ul>
+  <li><input type="checkbox" /> A. The expression `mstore(str, k)` at the beginning can be removed to save gas</li>
+  <li><input type="checkbox" /> B. The expression `mstore(add(str, k), char)` can be replaced by an equivalent `mstore8(...)` to simplify the code.</li>
+  <li><input type="checkbox" /> C. The final expression `mstore(str, sub(78, k))` can be removed to save gas</li>
+  <li><input type="checkbox" /> D. The function does not return the correct output for `n = 2**256 - 1`</li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, B.**
+
+* A: The expression storing the string's length at the beginning can indeed be removed to save gas as it's supposed to be overwritten by the actual string's length at the function's end.
+* B: As explained in one of the previous answers, `MSTORE` always writes 32 bytes, which is quite unnecessary (as we're only writing one byte each round) and makes the algorithm more complicated to understand. Using `MSTORE8` this could be significantly simplified as it would only touch a single byte in memory, just as needed by this algorithm.
+* C: The expression storing the final string's length shouldn't be removed as the string would end up having a length of 0 according to the str pointer pointing at the 32 zero-bytes before the actual string value starts.
+* D: The function actually does return the correct output for the maximum uint256 integer value.
+</HiddenSolution>
+
+---
+
+### Question 4 of 8
+
+Select all true statements:
+
+<ul>
+  <li><input type="checkbox" /> A. The function correctly cleans all necessary memory regions</li>
+  <li><input type="checkbox" /> B. Solidity will correctly be able to handle the string returned by the function</li>
+  <li><input type="checkbox" /> C. The last bits of memory in the string may be dirty</li>
+  <li><input type="checkbox" /> D. None of the above</li>
+</ul>
+
+<HiddenSolution>
+**Correct is B, C.**
+
+A: The function does not properly clean all the memory regions that it accesses, this allows dirty bits to remain. Remember that using memory that is still marked "free" according to the free-memory-pointer doesn't guarantee that it hasn't been used as a temporary memory by previous operations. Based on the previous `toString(1)` example, here's how the memory would look like if all of the "free" bytes have been set to 0xff before the function was called:
+
+```
+0x00 0x0000000000000000000000000000000000000000000000000000000000000000 scratch space
+0x20 0x0000000000000000000000000000000000000000000000000000000000000000 scratch space
+0x40 0x0000000000000000000000000000000000000000000000000000000000000100 free memory pointer (increased by 128)
+0x60 0x0000000000000000000000000000000000000000000000000000000000000000 zero slot
+0x80 0x000000000000000000000000000000000000000000000000000000000000004E old string length (78), no longer used
+0xA0 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff unused but reserved memory
+0xC0 0xffffffffffffffffffffffffff00000000000000000000000000000000000000 partially the string length
+0xE0 0x0000000000000000000000000131ffffffffffffffffffffffffffffffffffff string length (1) and the single char
+```
+
+B: Despite all of the function's imperfections, it'll still be able to appear to be working perfectly fine outside of assembly thanks to Solidity's cleanup measures.
+
+C: This once again references the issue of insufficient memory being allocated (See Q2) causing later memory allocations to overlap with the end of the string.
+
+</HiddenSolution>
+
+---
+
+<Callout type="info">
+The last four questions are based on the below abstract contract:
+</Callout>
+
+```plaintext showLineNumbers
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+
+abstract contract Proxy is ReentrancyGuard {
+    function _delegate(address implementation) nonReentrant internal virtual {
+        assembly ("memory-safe") {
+            // Copy msg.data. We take full control of memory in this inline assembly
+            // block because it will not return to Solidity code. We overwrite the
+            // Solidity scratch pad at memory position 0.
+            calldatacopy(0, 0, calldatasize())
+
+            // Call the implementation.
+            // out and outsize are 0 because we don't know the size yet.
+            let result := delegatecall(gas(), implementation, 0, calldatasize(), 0, 0)
+
+            // Copy the returned data.
+            returndatacopy(0, 0, returndatasize())
+
+            switch result
+            // delegatecall returns 0 on error.
+            case 0 {
+                revert(0, returndatasize())
+            }
+            default {
+                return(0, returndatasize())
+            }
+        }
+    }
+}
+```
+
+---
+
+### Question 5 of 8
+
+Select all true statements:
+
+<ul>
+  <li><input type="checkbox" /> A. The re-entrancy lock is always unnecessary as it’s never possible to re-enter the contract</li>
+  <li><input type="checkbox" /> B. Calls to `_delegate` are correctly protected for re-entrancy.</li>
+  <li><input type="checkbox" /> C. The re-entrancy lock is correctly unlocked in some cases</li>
+  <li><input type="checkbox" /> D. The re-entrancy lock is correctly unlocked in all cases</li>
+</ul>
+
+<HiddenSolution>
+**Correct is C.**
+
+* A: This is an abstract contract, meaning it'll need be inherited by another which may have more functions, functions that may allow reentering. Furthermore, the implementation contract's functions are unknown as well and they too may allow to re-enter. Based on the available information it's not possible to come to the conclusion that it's "never possible to re-enter".
+* B: The fact that it's "protecting" against reentrancy is more of an happy accident of the bug. It'll prevent reentrancy in practice, but it'll also deadlock the contract forever. With that being the case it cannot be said that calls to the delegation function are "correctly protected".
+* C/D: The function will always either `revert` or `return`. Returning within assembly is a bit different than returning in Solidity: The `RETURN` opcode will end the current EVM execution context immediately and return the specified data to the external caller. This means that the code in `nonReentrant` responsible for unlocking is practically unreachable, leaving the contract in a deadlock state. It may still seemingly correctly unlock if the implementation contract's storage variables re-use the same storage slot and unlock it from there. In the reverting case the code responsible for unlocking will be skipped, as intended, and instead the contract is unlocked by the fact that all changes done to the contract's state are reverted.
+</HiddenSolution>
+
+---
+
+### Question 6 of 8
+
+Select all true statements:
+
+<ul>
+  <li><input type="checkbox" /> A. The assembly block is correctly marked as `‘memory-safe’`</li>
+  <li><input type="checkbox" /> B. The assembly block will always violate the memory requirements needed for `memory-safe` blocks</li>
+  <li><input type="checkbox" /> C. In some cases, the assembly block will not violate the requirement needed for `memory-safe` blocks</li>
+  <li><input type="checkbox" /> D. None of the above</li>
+</ul>
+
+<HiddenSolution>
+**Correct is C.**
+
+* A: The assembly block is purposely not memory-safe (it takes "full control of memory") and the reason it gives for it in the first inline comment is that this is not an issue as "it will not return to Solidity code". Meaning that it can do whatever it wants as this EVM context will end after its execution. But that isn't actually true anymore due to the usage of the `nonReentrant` modifier. Such an inconsistency would be a big hint that something smells here during a secure code review.
+* B/C: It won't violate the memory requirements as long as the `calldata` and the `returndata` is empty or fits into the memory's scratch space.
+</HiddenSolution>
+
+---
+
+### Question 7 of 8
+
+Select all true statements:
+
+<ul>
+  <li><input type="checkbox" /> A. The expression `calldatacopy(0, 0, calldatasize())` violates `memory-safe` assembly annotation</li>
+  <li><input type="checkbox" /> B. The expression `returndatacopy(0, 0, returndatasize())` violates `memory-safe` assembly annotation</li>
+  <li><input type="checkbox" /> C. The expression `delegatecall(gas(), implementation, 0, calldatasize(), 0, 0)` violates `memory-safe` assembly annotation</li>
+  <li><input type="checkbox" /> D. The expression `return(0, returndatasize())` violates `memory-safe` assembly annotation</li>
+  <li><input type="checkbox" /> E. The expression `revert(0, returndatasize())` violates `memory-safe` assembly annotation</li>
+  <li><input type="checkbox" /> F. None of the above.</li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, B.**
+
+* A: Copies `calldata` into memory starting in the scratch space. If `calldata` doesn't fit it'll violate memory-safety.
+* B: Does the same, but with the data returned from the external delegate-call.
+* C: The delegate-call operation only reads from memory and the actual execution happens within a fresh EVM context. No violations can happen here.
+* D/E: Both operations only read from memory and immediately end the current EVM execution context.
+</HiddenSolution>
+
+---
+
+### Question 8 of 8
+
+Select all true statements:
+
+<ul>
+  <li><input type="checkbox" /> A. `delegatecall` can never re-enter as the state is shared</li>
+  <li><input type="checkbox" /> B. `delegatecall` proxies without proper access controls may be prone to `selfdestruct`</li>
+  <li><input type="checkbox" /> C. Proxies are typically used to save deploy-time gas costs</li>
+  <li><input type="checkbox" /> D. Proxies can be used to prevent contract size limit issues</li>
+</ul>
+
+<HiddenSolution>
+**Correct is B, C, D.**
+
+* A: Nonsensical filler option.
+* B: It's true that delegate-call operations are very dangerous, especially if an attacker is able to get control over the destination address which could be a self-destructing contract.
+* C: Extremely small proxies, usually referred to as clones, can be used to deploy code only once and re-use it over and over again.
+* D: Proxies may delegate to multiple implementations allowing the code size limit to be bypassed.
+</HiddenSolution>
+
+---

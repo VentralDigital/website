@@ -1,0 +1,330 @@
+# RACE #19 Of The Secureum Bootcamp Epoch∞
+
+import { Callout } from 'nextra/components'
+
+This is a Write-Up of RACE-19, Quiz of the [Secureum Bootcamp](https://twitter.com/0xRajeev/status/1470910752085065731) for Ethereum Smart Contract Auditors.   It was designed by Secureum Mentor [Pashov](https://twitter.com/pashovkrum), an independent smart contract security researcher.
+
+<Callout type="info">
+  Participants of this quiz had to **answer 8 questions within the strict time limit of 16 minutes**. If you’re reading this in preparation for participating yourself, it’s best to give it a try under the same time limit!
+
+  As usual, I waited for submissions to close before publishing it and, to stay true to the original, I omitted syntax highlighting. Feel free to copy it into your favorite editor, but do so after starting the timer!
+</Callout>
+
+<p className="text-xs text-right">July 1, 2023 by [patrickd](/about#patrickd)</p>
+
+<style jsx>{`
+  input[type=checkbox] {
+    width: 15px;
+    height: 15px;
+  }
+  li {
+    padding: 0.5em;
+  }
+`}</style>
+
+export function HiddenSolution({ children }) {
+  return (
+    <details closed className="last-of-type:mb-0 rounded-lg bg-neutral-50 dark:bg-neutral-800 p-2 mt-4">
+      <summary>
+        <strong className="text-lg">Solution</strong>
+      </summary>
+      <div className="nx-p-2">{children}</div>
+    </details>
+  )
+}
+
+---
+
+### Code
+
+<Callout type="info">
+All 8 questions in this RACE are based on the below contracts. This is the same contracts you will see for all the 8 questions in this RACE. The question is below the shown contracts.
+</Callout>
+
+
+```plaintext showLineNumbers
+pragma solidity 0.8.20;
+
+
+import {ERC721Burnable} from "@openzeppelin/contracts/token/ERC721/extensions/ERC721Burnable.sol";
+import {ERC1155Burnable} from "@openzeppelin/contracts/token/ERC1155/extensions/ERC1155Burnable.sol";
+import {Address} from "@openzeppelin/contracts/utils/Address.sol";
+
+
+contract WalletFactory {
+    using Address for address;
+
+
+    address immutable implementation;
+
+
+    constructor(address _implementation) {
+        implementation = _implementation;
+    }
+
+
+    function deployAndLoad(uint256 salt) external payable returns (address addr) {
+        addr = deploy(salt);
+        payable(addr).send(msg.value);
+    }
+
+
+    function deploy(uint256 salt) public returns (address addr) {
+        bytes memory code = implementation.code;
+        assembly {
+            addr := create2(0, add(code, 0x20), mload(code), salt)
+        }
+    }
+}
+
+
+contract Wallet {
+
+
+    struct Transaction {
+        address from;
+        address to;
+        uint256 value;
+        bytes data;
+    }
+
+
+    uint256 nonce;
+
+
+    receive() external payable {}
+    fallback() external payable {}
+
+
+    function execute(Transaction calldata transaction, bytes calldata signature) public payable {
+        bytes32 hash = keccak256(abi.encode(address(this), nonce, transaction));
+
+
+        bytes32 r = readBytes32(signature, 0);
+        bytes32 s = readBytes32(signature, 32);
+        uint8 v = uint8(signature[64]);
+        address signer = ecrecover(hash, v, r, s); 
+
+
+        if (signer == msg.sender || signer == transaction.from) { 
+            address to = transaction.to;
+            uint256 value = transaction.value;
+            bytes memory data = transaction.data;
+
+
+            assembly {
+                let res := call(gas(), to, value, add(data, 0x20), mload(data), 0, 0)
+            }
+            return;
+        } 
+
+
+        nonce++;
+    }
+
+
+    function executeMultiple(Transaction[] calldata transactions, bytes[] calldata signatures) external payable {
+        for(uint256 i = 0; i < transactions.length; ++i) execute(transactions[i], signatures[i]);
+    }
+
+
+    function readBytes32(bytes memory b, uint256 index) internal pure returns (bytes32 result) {
+        index += 32;
+        require(b.length >= index);
+
+
+        assembly {
+            result := mload(add(b, index))
+        }
+    }
+
+
+    function burnNFT(address owner, ERC721Burnable nftContract, uint256 id) external {
+        require(msg.sender == owner, "Unauthorized");
+        nftContract.burn(id);
+    }
+
+
+   function burnERC1155(ERC1155Burnable semiFungibleToken, uint256 id, uint256 amount) external {
+        semiFungibleToken.burn(msg.sender, id, amount);
+    }
+}
+```
+
+### Question 1 of 8
+
+The deployment concern(s) here for different EVM-compatible chains is/are:
+
+<ul>
+  <li><input type="checkbox" /> A. `receive` method behavior might be undefined </li>
+  <li><input type="checkbox" /> B. The presence of `ecrecover` precompile is potentially dangerous</li>
+  <li><input type="checkbox" /> C. Not all opcodes in the bytecode are guaranteed to be supported</li>
+  <li><input type="checkbox" /> D. None of the above</li>
+</ul>
+
+<HiddenSolution>
+**Correct is C.**
+
+* A: The `receive` method (as well as the `fallback` method) is a Solidity construct and won't be influenced by different EVM versions or alternative chains.
+* B: The mere presence of `ecrecover` by itself is not potentially dangerous in regards to the deployment of these contracts. It certainly is a critical thing to thoroughly review contracts like these though.
+* C: Full EVM-compatibility may not be guaranteed with all chains since they might be slower to adapt newly introduced changes. For example, Ethereum recently added the `PUSH0` opcode to the EVM and the Solidity compiler will make use of it starting with version 0.8.20. Arbitrum has not added `PUSH0` to their EVM yet causing issues when such compiled contracts are attempted to be deployed there.
+</HiddenSolution>
+
+---
+
+### Question 2 of 8
+
+The security concern(s) in `WalletFactory` is/are:
+
+<ul>
+  <li><input type="checkbox" /> A. ETH funds may get stuck in it forever</li>
+  <li><input type="checkbox" /> B. The `deploy` method is not marked as `payable`</li>
+  <li><input type="checkbox" /> C. No access control on wallet deployment</li>
+  <li><input type="checkbox" /> D. Deployment may silently fail</li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, D.**
+
+* A: Generally, one could inject funds into `WalletFactory` using self-destruct and coinbase. But in this specific case it could happen because the success-vaule of the `send()` method is not checked when the ether is transferred to the Wallet after its deployment with `deployAndLoad()`. The transfer could fail and then the funds would get stuck in the factory. To fix this, the `sendValue()` method of the already included `Address` library should be used instead.
+* B: There's no need for the `deploy()` method to be payable, even if it's internally called by a payable function. That is because the "must not have value"-check is part of the function selector and would be skipped during an internal call. When called publicly, there's also no need for it to be payable since it does not deal with any value itself.
+* C: Assuming that anyone is free to use the factory to deploy their wallet (as it commonly is), there's no concern with people deploying wallets without access control.
+* D: The `create2` call would return the zero-address if the deployment of a `Wallet` via the factory failed. In that case `deployAndLoad()` would burn any `msg.value` by sending it to the zero-address.
+
+Participants have pointed out that, with the missing send-success-check alone within the context of the code as-is, funds cannot get stuck. That may be correct (until proven otherwise), but it's still a breach of a best practice that would've cost very little and may have prevented a loss of funds. We'd recommend reporting issues like these during an audit, even if there's no obvious way to exploit them.
+</HiddenSolution>
+
+---
+
+### Question 3 of 8
+
+Design flaw(s) of `Wallet` is/are:
+
+<ul>
+  <li><input type="checkbox" /> A. Missing wallet owner role and appropriate access control</li>
+  <li><input type="checkbox" /> B. Inability to rescue stuck tokens</li>
+  <li><input type="checkbox" /> C. Assembly usage is unsafe for the Yul IR pipeline</li>
+  <li><input type="checkbox" /> D. Calling a `payable` method in a for-loop</li>
+</ul>
+
+<HiddenSolution>
+**Correct is A.**
+
+* A: The wallet has no `owner` roles and basically no access control at all. The signature check may look like such, but it has no real effect at all since it would accept any signatures either signed by the `msg.sender` or by the specified `transaction.from` which can be freely chosen.
+* B: The `execute()` function allows making arbitrary external calls which would allow to rescue any stuck tokens. (Or in this case, allows stealing them.)
+* C: The usage of assembly cannot be called unsafe, but it is indeed not optimal since the inline `assembly`-blacks are not marked as `memory`-safe, preventing the optimizer from doing its best job.
+* D: This isn't an issue since `msg.value` is not relied upon.
+</HiddenSolution>
+
+---
+
+### Question 4 of 8
+
+The security concern(s) with hashing of `transaction` parameter in `execute` is/are:
+
+<ul>
+  <li><input type="checkbox" /> A. Cross-contract replay attacks</li>
+  <li><input type="checkbox" /> B. Cross-chain replay attacks</li>
+  <li><input type="checkbox" /> C. keccak256 hash collision attacks</li>
+  <li><input type="checkbox" /> D. Reentrancy attacks</li>
+</ul>
+
+<HiddenSolution>
+**Correct is B.**
+
+* A: Cross-contract replay would not be possible thanks to the inclusion of `address(this)` (the Wallet contract's address) within the message hash.
+* B: Cross-chain replay attacks are possible due to the missing `block.chainid` within the message hash. This would enable an attacker to replay a published signed transaction on another chain, potentially stealing tokens.
+* C: The way the message-hashing has been implemented, a hash collision attack is very unlikely (assuming the attacker has no supercomputers). If the code used `encodePacked()` instead and used variable-length values in other places than the end of the message, an attack vector would become more likely.
+* D: While it's true that CEI is not followed and that could lead to issues, the question's context only concerns the hashing of `transaction` parameter in `execute` – therefore the fact that reentrancy attacks would be possible, is of no relevance here. This option was purposefully misleading and Question 7 was intended to check whether the reentrancy issue was noticed.
+</HiddenSolution>
+
+---
+
+### Question 5 of 8
+
+If the hashed payload in `execute` were to exclude a nonce, the security concern(s) with `ecrecover` would be:
+
+<ul>
+  <li><input type="checkbox" /> A. Signature malleability by flipping the `s` or `v` values</li>
+  <li><input type="checkbox" /> B. Signature malleability by using compact signatures</li>
+  <li><input type="checkbox" /> C. Signature malleability by hash collisions</li>
+  <li><input type="checkbox" /> D. Forcefully reverting transactions</li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, (B).**
+
+* A: Due to the symmetric nature of Elliptic Curve Cryptography, every signature has another valid value signing the same message (by flipping to the other side of the curve by changing the value of `v`). Similarly, there's another "lower s" value that would be accepted as a valid signature for the same message and can be calculated from the original signature. ECDSA libraries like OpenZeppelin's will prevent this from being exploited.
+* B: ERC-2098 introduced so called "compact signatures" which are now accepted by `ecrecover` as well. A known signature can be compacted and still stay valid for the same message. Due to this, malleability is inherent to ECDSA signatures in Ethereum, and that is why one should never rely on them as unique identifiers (and use nonces instead).
+* C: Nonsensical option.
+* D: Nonsensical option.
+
+<Callout type="error">
+  As reported by one of the participants, this answer wasn't quite correct: Compact signatures wouldn't work in this example, as in those, the v value is taken from the 64th byte, not the 65th. So B should not have been a correct answer.
+</Callout>
+
+</HiddenSolution>
+
+---
+
+### Question 6 of 8
+
+The security concern(s) with `Wallet` is/are:
+
+<ul>
+  <li><input type="checkbox" /> A. Ether sent to the contract will be stuck forever</li>
+  <li><input type="checkbox" /> B. Anyone can execute arbitrary calls</li>
+  <li><input type="checkbox" /> C. Anyone can steal the contract ETH balance</li>
+  <li><input type="checkbox" /> D. None of the above </li>
+</ul>
+
+<HiddenSolution>
+**Correct is B, C.**
+
+* A: The `execute()` function allows making raw calls with value. Therefore it would be possible to transfer ether and wouldn't be stuck forever.
+* B: As already mentioned, `Wallet` is missing proper authentication allowing anyone to execute arbitrary external calls.
+* C: See the explanations of A & B.
+</HiddenSolution>
+
+---
+
+### Question 7 of 8
+
+The nonce best practice(s) **not** followed correctly is/are:
+
+<ul>
+  <li><input type="checkbox" /> A. Nonce is not incremented before the low-level call</li>
+  <li><input type="checkbox" /> B. Nonce is not guaranteed to be included in the signature</li>
+  <li><input type="checkbox" /> C. Nonce is not incremented correctly on transaction execution</li>
+  <li><input type="checkbox" /> D. None of the above</li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, C.**
+
+The `if`-clause that contains the external call would `return;` before ever reaching the code that would increment the `nonce`. But even without that, the Checks-Effects-Interactions pattern is not followed which would allow a called contract to reenter and reuse the same transaction.
+</HiddenSolution>
+
+---
+
+### Question 8 of 8
+
+The security concern(s) with `Wallet` contract related to ERC721 tokens is/are:
+
+<ul>
+  <li><input type="checkbox" /> A. There is no way to get ERC721 tokens out of the contract</li>
+  <li><input type="checkbox" /> B. Failure to receive ERC721 tokens depending on the transfer method</li>
+  <li><input type="checkbox" /> C. Failure to receive any ERC721 tokens </li>
+  <li><input type="checkbox" /> D. Unauthorized burning of ERC721 tokens</li>
+</ul>
+
+<HiddenSolution>
+**Correct is B, D.**
+
+* A: Since arbitrary external calls are possible through the `execute()` function, there's no worry of ERC721 tokens to get stuck.
+* B: Because the `onERC721Received()` method is missing, the contract would not be able to receive ERC721 tokens if the `safeTransfer()` method would be used.
+* C: A normal transfer of ERC721 that does not check for the hook/callback mentioned in B would still allow the contract to receive some tokens.
+* D: Anyone can burn tokens, not only through the burn-specific methods that are missing access control, but also through arbitrary calls made through `execute()`.
+</HiddenSolution>
+
+---

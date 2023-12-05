@@ -8,5 +8,15 @@
     "title": "Fuzzing For Memory Bugs In Solidity",
     "href": "/posts/2022/4/28/fuzzing-for-memory-bugs-in-solidity/",
     "newWindow": false
+  },
+  "fuzzing-vyper-contracts-using-foundry": {
+    "title": "Fuzzing Vyper Contracts Using Foundry",
+    "href": "/posts/2023/4/29/fuzzing-vyper-contracts-using-foundry/",
+    "newWindow": false
+  },
+  "differential-fuzzing-on-solidity-fixed-point-libraries": {
+    "title": "Differential Fuzzing On Solidity Fixed-Point Libraries",
+    "href": "/posts/2023/6/28/differential-fuzzing-on-solidity-fixed-point-libraries/",
+    "newWindow": false
   }
 }

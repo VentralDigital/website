@@ -3,5 +3,10 @@
     "title": "Why Does RSA Actually Work?",
     "href": "/posts/2023/3/23/why-does-rsa-actually-work/",
     "newWindow": false
+  },
+  "applied-elliptic-curve-cryptography": {
+    "title": "Applied Elliptic Curve Cryptography",
+    "href": "/posts/2023/8/22/applied-elliptic-curve-cryptography/",
+    "newWindow": false
   }
 }

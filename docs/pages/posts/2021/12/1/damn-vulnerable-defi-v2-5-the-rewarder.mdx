@@ -151,3 +151,21 @@ Done in 2.62s.
 ## Conclusion
 
 Learning? It's not so simple this time, since it wasn't a typical "vulnerability" but rather a naive implementation. Even if you'd force the round-start (snapshot) to be within a different transaction/block than the deposit of liquidity in order to prevent attacks from flash loans, a user with lots of tokens could still simply deposit them at the end of a round and withdraw immediately after claiming their rewards after the new round was started. Your protocol probably wants to incentivize long-term staking and not, short-term arbitrage trades. So it would probably be best to get rid of rounds and instead reward users for every second they are providing liquidity like many modern DeFi projects are doing today.
+
+---
+
+import { Card, Cards } from 'nextra/components'
+import { FileIcon, NewsletterIcon } from '@components/icons'
+
+<Cards>
+  <Card
+    icon={<FileIcon />}
+    title="← Damn Vulnerable DeFi V2 - Part #1: Setup And Challenges 1 To 4"
+    href="/posts/2021/11/13/damn-vulnerable-defi-v2-part-1-setup-and-challenges-1-to-4/"
+  />
+  <Card
+    icon={<FileIcon />}
+    title="Damn Vulnerable DeFi V2 - #6 Selfie →"
+    href="/posts/2022/2/21/damn-vulnerable-defi-v2-6-selfie/"
+  />
+</Cards>

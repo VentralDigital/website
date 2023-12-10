@@ -16,17 +16,16 @@ const config: DocsThemeConfig = {
       <Image src={logoImage} height={50} alt="Ventral Digital"/>
     </>
   ),
-  /* Adding announcement banner to top:
+  /* Adding announcement banner to top: */
   banner: {
     dismissible: true,
-    key: '2.0-release', // Storage key to remember dismissed state
+    key: '2023-12-05-relaunch', // Storage key to remember dismissed state
     text: (
-      <a href="https://nextra.site" target="_blank">
-        🎉 Nextra 2.0 is released. Read more →
+      <a href="https://twitter.com/patrickd_de/status/1732445343625642317" target="_blank">
+        🎉 This website has just relaunched! Report any issues you find to get a Cantina Code! →
       </a>
     )
   },
-  */
   head: function useHead() {
     const { title } = useConfig()
     return (
@@ -74,7 +73,7 @@ const config: DocsThemeConfig = {
     text: (
       <div className="flex w-full flex-col items-center sm:items-start">
         <p className="mt-6 text-xs">
-          <i>All security/hacking related information on this website is for educational purposes. In no event shall the authors or copyright holders be liable for any effects arising from the usage of the information. Do not use the information against devices that are not your own property or without permission of the owner.</i>
+          <i>All security/hacking related information on this website is for educational purposes. In no event shall the authors or copyright holders be held liable for any effects arising from the usage of the information. Do not use the information against devices or services that are not your own property or without permission of the owner.</i>
         </p>
         <p className="mt-6 text-xs">
           © {new Date().getFullYear()} Ventral Digital LLC

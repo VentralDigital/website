@@ -336,3 +336,21 @@ Done in 4.88s.
 This exploit was really fun to put together! At first, I tried making the Timelock Contract the proposer instead and _schedule_-call within the operations, but I abandoned it soon since I got a headache from infinite recursion.
 
 Although it's not your textbook "reentrancy" vulnerability, it could in fact have been prevented by following the [checks-effects-interactions](https://fravoll.github.io/solidity-patterns/checks_effects_interactions.html) pattern in the Timelock's `execute` function.
+
+---
+
+import { Card, Cards } from 'nextra/components'
+import { FileIcon, NewsletterIcon } from '@components/icons'
+
+<Cards>
+  <Card
+    icon={<FileIcon />}
+    title="← Damn Vulnerable DeFi V2 - #11 Backdoor"
+    href="/posts/2022/6/28/damn-vulnerable-defi-v2-11-backdoor/"
+  />
+  <Card
+    icon={<FileIcon />}
+    title="Damn Vulnerable DeFi V2 - #13 Junior Miners →"
+    href="/posts/2022/7/2/damn-vulnerable-defi-v2-13-junior-miners/"
+  />
+</Cards>

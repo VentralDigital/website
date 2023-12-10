@@ -155,3 +155,21 @@ Puzzle solved!
 ```
 
 Initially I forgot that the old balance of the puzzle is used. Assuming that it's the current one I thought about having to send some of the balance back to the puzzle. Since sending value with `CALL` would trigger the puzzle's bytecode again though the only way to do that would be deploying another contract that uses `SELFDESTRUCT` to inject value into the puzzle without that happening. Surprised by how convoluted this solution seemed, I later noticed the challenge was actually way easier than that - took me a while though.
+
+---
+
+import { Card, Cards } from 'nextra/components'
+import { FileIcon, NewsletterIcon } from '@components/icons'
+
+<Cards>
+  <Card
+    icon={<FileIcon />}
+    title="← More EVM Puzzles - Part 1"
+    href="/posts/2022/5/24/more-evm-puzzles-part-1/"
+  />
+  <Card
+    icon={<FileIcon />}
+    title="More EVM Puzzles - Part 3 →"
+    href="/posts/2022/6/6/more-evm-puzzles-part-3/"
+  />
+</Cards>

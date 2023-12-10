@@ -749,3 +749,26 @@ ConfidentialTransactionValues.withdraw({
 ## Caveats
 
 Using Borromean Ring Signatures for Range Proofs is unfortunately very inefficient and only practical when sacrificing some specificity (due to a small mantissa) and some privacy (public exponent leaking a range on how valuable a commitment is). At the time, that seemed to be the best choice under the condition that no new cryptographic assumptions would be introduced into the system. But despite those efforts, the proposal never made it into Bitcoin. Instead, implementations of Confidential Transactions can be found in the [Elements Framework](https://elementsproject.org/) and the [MimbleWimble Blockchain](https://www.mwc.mw/).
+
+---
+
+import { Card, Cards } from 'nextra/components'
+import { FileIcon, NewsletterIcon } from '@components/icons'
+
+<Cards>
+  <Card
+    icon={<FileIcon />}
+    title="← Cryptocurrency Privacy Technologies: Borromean Ring Signatures"
+    href="/posts/2023/10/17/cryptocurrency-privacy-technologies-borromean-ring-signatures/"
+  />
+  <Card
+    icon={<FileIcon />}
+    title="← Applied Elliptic Curve Cryptography"
+    href="/posts/2023/8/22/applied-elliptic-curve-cryptography/"
+  />
+  <Card
+    icon={<FileIcon />}
+    title="← Exploiting EC-Recover For Efficient Borromean Ring Signatures"
+    href="/posts/2023/10/21/exploiting-ec-recover-for-efficient-borromean-ring-signatures/"
+  />
+</Cards>

@@ -219,3 +219,21 @@ contract BlindCashPool {
 * It's centralized. Since this scheme requires a trusted party signing with their private key, it comes with a whole bunch of related issues. The trustee could rugpull all of the pool's funds by creating as many notes as it wants. The trustee could censor/skip certain deposits and never sign their blinded notes. The trustee could be hacked or socially engineered to leak the private key. The trustee's off-chain service could become unavailable locking up any new deposits forever. etc. etc.
 * RSA is hard to get right. In this specific example, the fact that the trustee will sign anything that he observes from a Deposit event could likely cause issues, especially if what's being signed is a very small message. Little gotchas like that are why it's generally considered a bad practice to "roll your own crypto".
 * The withdrawing party needs ether to pay the gas cost for the withdrawal. But in order to obtain that they might already lose some anonymity. To avoid this, one could make use of relays or, more recently Account Abstraction (EIP-4337).
+
+---
+
+import { Card, Cards } from 'nextra/components'
+import { FileIcon, NewsletterIcon } from '@components/icons'
+
+<Cards>
+  <Card
+    icon={<FileIcon />}
+    title="← Why Does RSA Actually Work?"
+    href="/posts/2023/3/23/why-does-rsa-actually-work/"
+  />
+  <Card
+    icon={<FileIcon />}
+    title="Cryptocurrency Privacy Technologies: Ring Signatures →"
+    href="/posts/2023/9/27/cryptocurrency-privacy-technologies-ring-signatures/"
+  />
+</Cards>

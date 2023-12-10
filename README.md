@@ -1,6 +1,6 @@
 # Ventral.Digital website
 
-Based on the [Nextra Docs](https://github.com/shuding/nextra/tree/main/docs) with automatic IPFS deployment via [Fleek](https://fleek.co/).
+Based on the [Nextra Docs](https://github.com/shuding/nextra/tree/main/docs), adjusted to be exported and deployed to IPFS.
 
 ## First-Time Setup
 

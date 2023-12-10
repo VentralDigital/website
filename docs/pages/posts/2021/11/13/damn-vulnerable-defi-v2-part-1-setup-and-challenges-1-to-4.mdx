@@ -364,3 +364,14 @@ it('Exploit', async function () {
 Learning: Even if you implement the checks-effects-interactions pattern properly within each individual function, you might still want to consider making use of a ReentrancyGuard if you're not sure that there might be a reentrancy possible by combining these functions in some manner. That would've been an easy fix here, although not cheap in regards to gas costs. Another solution would be to keep track of the sum of deposits and make sure that it's never higher than the actual contract balance.
 
 ---
+
+import { Card, Cards } from 'nextra/components'
+import { FileIcon, NewsletterIcon } from '@components/icons'
+
+<Cards>
+  <Card
+    icon={<FileIcon />}
+    title="Damn Vulnerable DeFi V2 - #5 The Rewarder →"
+    href="/posts/2021/12/1/damn-vulnerable-defi-v2-5-the-rewarder/"
+  />
+</Cards>

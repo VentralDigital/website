@@ -116,7 +116,17 @@
   },
   "race-23-veridise": {
     "title": "RACE #23",
-    "href": "https://veridise.notion.site/veridise/RACE-23-Answers-d63cb0b5373f43f0ba43612e89596547",
-    "newWindow": true
+    "href": "/posts/2023/11/8/race-23-of-the-secureum-bootcamp-epoch-infinity/",
+    "newWindow": false
+  },
+  "race-24-hexen": {
+    "title": "RACE #24",
+    "href": "/posts/2023/12/17/race-24-of-the-secureum-bootcamp-epoch-infinity/",
+    "newWindow": false
+  },
+  "race-25-of-the-secureum-bootcamp-epoch-infinity": {
+    "title": "RACE #25",
+    "href": "/posts/2024/1/1/race-25-of-the-secureum-bootcamp-epoch-infinity/",
+    "newWindow": false
   }
 }

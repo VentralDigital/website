@@ -1,6 +1,6 @@
 # Cryptocurrency Privacy Technologies: Zerocoin
 
-<p className="text-xs text-right">December ??, 2023 by [patrickd](/about#patrickd)</p>
+<p className="text-xs text-right">January 9, 2023 by [patrickd](/about#patrickd)</p>
 
 import { Callout } from 'nextra/components'
 import { Tabs } from 'nextra/components'
@@ -30,31 +30,32 @@ This proposal would have effectively extended Bitcoin with a native laundry func
 
 ### Scheme
 
-[Transaction graph]
+![Bitcoin, traceable transaction graph example](./bitcoin-transaction.jpg)
 
 As you may already know from the previous [Confidential Transactions article](/posts/2023/10/31/cryptocurrency-privacy-technologies-confidential-transaction-values), Bitcoins are not actually transacted "from one account to another". Rather than that, there exist Unspent Transaction Outputs (UTXOs) that each have a "Locking Script" (`ScriptPubKey`) associated with them. This script dictates the condition under which a UTXO can be spent. Typically, this condition is that the transaction's signer matches with the address specified in the Locking Script ("Pay-to-Public-Key-Hash"). The signer, having therefore proven ownership over the Bitcoin amount contained by the UTXO, may then spent it (or multiple of them) and create new UTXOs with different unlocking conditions (eg. such that only the new owner of the coins may spend them).
 
-[Transaction graph with Zerocoin]
+![Bitcoin transaction made untraceable with Zerocoin](./zerocoin-transaction.jpg)
 
-Zerocoin introduces a new such condition: A user may choose to specify a locking script in their UTXO which "mints" a Zerocoin. With this, the BTC value stays locked in within this UTXO while the creator receives a "Zerocoin" for which they may later redeem the value for. A commitment to the Zerocoin's unique identifier is added to the list of all Zerocoin commitments, and later the user may use this identifier to "spend" the Zerocoin in exchange for the locked value it represents. The crux is, that the user is able to prove that the identifier's commitment is within the list without revealing the specific commitment using a zero-knowledge proof. Having proven ownership, the user may now choose any mint-UTXO containing the appropriate value in exchange for their Zerocoin. By avoiding their own transaction which they used to mint the Zerocoin, it is no longer possible to trace the funds using Bitcoin's transaction graph.
+Zerocoin introduces a new such condition: A user may choose to specify a locking script in their UTXO which "mints" a Zerocoin by publishing a commitment to the coin's unique identifier. This commitment is added to an accumulator containing all legitimately minted Zerocoin commitments. The BTC value within the user's UTXO can be redeemed by anyone who too has minted a Zerocoin of the same denomination. Some time later, the user may decide to reveal their coin's unique identifier to "spend" the Zerocoin in exchange for the locked value it represents. The crux is, that the user is able to prove that the identifier's commitment is within the accumulator without revealing the commitment itself using a zero-knowledge proof. With this, the user is able to prove ownership over a legitimately minted Zerocoin, unlocking the value of one (any) other Zerocoin-minting UTXO holding the appropriate value, with no connection to the user's own minting UTXO.
 
 <DetailBox title="Example">
 
-To show how the protocol works, let's imagine Alice is owner over an UTXO holding a value of 2.4 BTC. She'd like to mint two Zerocoins each representing the denomination of 1 BTC. To do so, she locally generates two unique serial numbers $`S_a`$ and $`S_b`$ which she will keep secret until she decides to spend the coins. She signs a transaction containing 3 output UTXOs: One sending the change of 0.4 BTC back to herself and the other two each locking one BTC into the e-cash system. The Locking Scripts of these two Zerocoin-minting UTXOs contain commitments $`C_a`$ and $`C_b`$ which each commit to the yet to be revealed serial numbers. Bitcoin's blockchain now acts as a public bulletin board containing a set of commitments $`C_1, ..., C_N`$ each representing a minted Zerocoin of 1 BTC value. Basically, the protocol is acting as an escrow pool and it's possible to mint different kinds of Zerocoins for various denominations.
+To show how the protocol works, let's imagine Alice is owner over an UTXO holding a value of 2.4 BTC. She'd like to mint two Zerocoins each representing the denomination of 1 BTC. To do so, she locally generates two unique serial numbers $`S_a`$ and $`S_b`$ which she will keep secret until she decides to spend the coins. She signs a transaction containing 3 output UTXOs: One sending the change of 0.4 BTC back to herself and the other two each locking one BTC into the e-cash system. The Locking Scripts of these two Zerocoin-minting UTXOs contain commitments $`C_a`$ and $`C_b`$ which each commit to the yet to be revealed serial numbers. Bitcoin's blockchain now acts as a public bulletin board containing a set of commitments $`C_1, ..., C_N`$ each representing a minted Zerocoin of 1 BTC value. Basically, the protocol is acting as an escrow pool and it's possible to mint different kinds of Zerocoins for various denominations by maintaining multiple accumulators.
 
 After waiting for a while for other users to participate in the e-cash system, Alice may decide to redeem a Zerocoin in exchange for any other UTXO locking 1 BTC for the Zerocoin protocol ($`C_x`$): Alice generates a proof $`pi_a`$ that shows she knows $`S_a`$ for a commitment within the set of all unspent commitments $`C_1, ..., C_N`$, without revealing which of the commitments the associated $`C_a`$ is. Alice signs a Transaction where she chose any Zerocoin-minting UTXO as input, "proved her ownership" over it using $`(S_a, pi_a)`$, and sends the unlocked BTC to a fresh address that has no known association with her. The protocol will keep record of all revealed serial numbers $`S`$ in order to prevent double spending. Alice was able to hide the origin of her funds within the anonymity set of all other Zerocoin holders.
 
+*I've omitted mentioning transaction fees for simplicity, but they'd not require any changes with the introduction of Zerocoin to Bitcoin. It might also be noteworthy that the anonymity set resets once _all_ commitments in the accumulator have been spent, although this seems an unlikely scenario assuming that the system would find continuous use.*
 </DetailBox>
 
 <Callout>
-  "[Burning Zerocoins for fun and profit](https://www.chaac.tf.fau.de/files/2018/04/attack-cryptocur.pdf)" reveals a fundamental flaw with using plaintext identifiers: An attacker observing transactions may notice a user's intention for spending a legitimate Zerocoin with serial number $`S`$. The attacker may quickly mint and redeem a Zerocoin with that very same serial number $`S`$ and, if they succeeded to do this before the user's spend transaction was included, it would now be rejected since the specified serial number has already been marked as "spent". The user's Zerocoin is then effectively unspendable and the user will not be able to redeem it for its value.
+  "[Burning Zerocoins for fun and profit](https://www.chaac.tf.fau.de/files/2018/04/attack-cryptocur.pdf)" reveals a fundamental flaw with using plaintext identifiers: An attacker observing transactions may notice a user's intention for spending a legitimate Zerocoin with serial number $`S`$. The attacker may quickly mint and redeem a Zerocoin with that very same serial number $`S`$ and, if they succeeded to do this before the user's spend transaction was included, the user would now be rejected since the specified serial number has already been marked as "spent". The user's Zerocoin is then effectively unspendable and the user will not be able to redeem it for its value.
 
-  The paper suggests using a public key as serial number instead, and adjusting the protocol to have the spender proof they know the appropriate private key by having them sign a message with it.
+  The paper suggests using a public key as serial number instead, and adjusting the protocol to have the spender proof they know the appropriate private key by having them sign the transaction with it.
 </Callout>
 
 ### Accumulators
 
-Proving that an element is part of a list without revealing which, is a classical membership problem. We previously discussed [Ring Signatures](/posts/2023/9/27/cryptocurrency-privacy-technologies-ring-signatures/) which offer one solution to it, but they wouldn't allow the anonymity set to be very large: The size of a Ring Signature is linear to the number of ring members, not a good fit for what Zerocoin is attempting to achieve with including all commitments in the list.
+Proving that an element is part of a list without revealing which, is a classical membership problem. We previously discussed [Ring Signatures](/posts/2023/9/27/cryptocurrency-privacy-technologies-ring-signatures/) which offer one solution to it, but they don't allow the anonymity set to grow very large: The size of a Ring Signature is linear to the number of ring members, not a good fit for what Zerocoin wants to achieve with including all commitments in the list.
 
 Instead, Zerocoin makes use of an "accumulator": An algorithm that allows one to combine a set of values into one short value. For a value within the accumulator, there exists a witness $`w`$ that proofs the inclusion, while at the same time it is infeasible to find a witness for a value that was not accumulated.
 
@@ -147,17 +148,13 @@ $`g^color(red)(r) = g^((color(red)(r)+cancel(color(red)(s)*e)) + cancel((-color(
 
 A prover would only be able to determine a legitimate value $`y`$ by knowing the actual values of its components ($`color(red)(r) + color(red)(s)*e`$). A malicious prover attempting to authenticate for a $`v`$ is, just like the verifier, unable to extract $`color(red)(s)`$ due to DLP. But knowing the value $`color(red)(s)`$ is required for coming up with a valid $`y`$ value.
 
-Looking at $`y`$, you should also be able to notice why it's important that the verifier adds randomness with $`color(red)(r)`$. After all, if it were simply $`y = color(red)(s) * e`$, the verifier would be able to extract $`color(red)(s)`$ simply by division of known values: $`color(red)(s) = y / e" "("mod " q)`$
+Looking at $`y`$, you should also be able to notice why it's important that the prover adds randomness with $`color(red)(r)`$. After all, if it were simply $`y = color(red)(s) * e`$, the verifier would be able to extract $`color(red)(s)`$ simply by division of known values: $`color(red)(s) = y / e" "("mod " q)`$
 
 <Callout>
   To perform modular division, one has to multiply with the multiplicative inverse of the divisor within the modulus: $`s = y * e^(-1)" "("mod " q)`$
 </Callout>
 
 Lastly, it's essential that the prover is challenged with $`e`$. If a prover were able to guess $`e`$ before committing to a specific $`x`$, the prover could choose to calculate an $`x = g^y * v^e`$ (with a randomly chosen $`y`$) without knowing $`s`$. This $`x`$ would pass verification and allow the prover to fake knowledge about about any public key's secret value.
-
-<Callout type="warning">
-  Conventional DLP is a lot more fragile than ECDLP and requires choosing many of the above parameters very carefully.
-</Callout>
 
 </Tabs.Tab>
 <Tabs.Tab>
@@ -192,7 +189,7 @@ $`(color(red)(r) + color(red)(s)*e)*G = (color(red)(r) + color(red)(s)*e)*G`$
 
 A prover would only be able to determine a legitimate scalar $`y`$ by knowing the actual values of its components ($`color(red)(r) + color(red)(s)*e`$). A malicious prover attempting to authenticate for a $`V`$ is, just like the verifier, unable to extract $`color(red)(s)`$ due to ECDLP. But knowing the scalar $`color(red)(s)`$ is required for coming up with a valid $`y`$ value.
 
-Looking at $`y`$, you should also be able to notice why it's important that the verifier adds randomness with $`color(red)(r)`$. After all, if it were simply $`y = color(red)(s) * e`$, the verifier would be able to extract $`color(red)(s)`$ simply by division of known values: $`color(red)(s) = y / e" "("mod " n)`$
+Looking at $`y`$, you should also be able to notice why it's important that the prover adds randomness with $`color(red)(r)`$. After all, if it were simply $`y = color(red)(s) * e`$, the verifier would be able to extract $`color(red)(s)`$ simply by division of known values: $`color(red)(s) = y / e" "("mod " n)`$
 
 <Callout>
   To perform modular division, one has to multiply with the multiplicative inverse of the divisor within the modulus: $`s = y * e^(-1)" "("mod " n)`$
@@ -202,6 +199,10 @@ Lastly, it's essential that the prover is challenged with $`e`$. If a prover wer
 
 </Tabs.Tab>
 </Tabs>
+
+<Callout type="warning">
+  Conventional DLP is a lot more fragile than ECDLP and requires choosing many of the above parameters very carefully.
+</Callout>
 
 ### Making Interactive Proofs Non-Interactive
 
@@ -222,7 +223,7 @@ $`bb"ZKSoK"[m]{(color(red)(s)): v = g^(-color(red)(s))}`$
 
 | Prover                                                 | Verifier                                        |
 | -----------------------------------------------------: | :---------------------------------------------- |
-| Knows $`(g, v, color(red)(s))`$                        | Knows $`(g, v)`$                                |
+| Knows $`(g, v, color(red)(s), m)`$                     | Knows $`(g, v)`$                                |
 | Chooses a random value $`color(red)(r)`$               |                                                 |
 | $`x = g^color(red)(r)" "("mod " p)`$                   |                                                 |
 | $`e = tt"hash"(m\|\|x)`$                               |                                                 |
@@ -239,7 +240,7 @@ $`g^color(red)(r) = g^(color(red)(r) + cancel(color(red)(s)*e) cancel(-color(red
 
 $`g^color(red)(r) = g^color(red)(r)`$
 
-One obvious drawback of non-interactive proofs of knowledge is that they can no longer be used for authentication since they can fundamentally be replayed.
+One obvious drawback of non-interactive proofs of knowledge is that they can no longer be used for authentication since they can fundamentally be replayed. (Unless it's turned interactive again by including a challenge in the message $`m`$, which is a common way of doing authentication with websites in web3).
 
 </Tabs.Tab>
 <Tabs.Tab>
@@ -275,13 +276,13 @@ $`color(red)(r)G = (color(red)(r) + cancel(color(red)(s)*e) - cancel(e*color(red
 
 $`color(red)(r)G = color(red)(r)G`$
 
-One obvious drawback of non-interactive proofs of knowledge is that they can no longer be used for authentication since they can fundamentally be replayed.
+One obvious drawback of non-interactive proofs of knowledge is that they can no longer be used for authentication since they can fundamentally be replayed. (Unless it's turned interactive again by including a challenge in the message $`m`$, which is a common way of doing authentication with websites in web3).
 
 </Tabs.Tab>
 </Tabs>
 
 <Callout type="info">
-  The ECC Notation may be more intuitive for some readers, but since we're not dealing with points on curves in this article, further descriptions will make use of the Exponential Notation instead.
+  The ECC Notation may be more intuitive for some readers, but since we're not dealing with points on curves in this article, further descriptions will make use of the Exponential Notation only.
 </Callout>
 
 ## The Math
@@ -306,25 +307,25 @@ For this accumulator to be considered "strong" it needs to be collision-free. Th
 
 #### Trusted Setup
 
-To initialize the accumulator we need two random primes $`hat p`$ and $`hat q`$. To strengthen against attacks we wouldn't choose these directly, instead we'll randomly generate prime numbers $`hat p'`$ and $`hat q'`$ until the following conditions are met:
+To initialize the accumulator we need two random primes $`p'`$ and $`q'`$. To strengthen against attacks we wouldn't choose these directly, instead we'll randomly generate prime numbers $`p''`$ and $`q''`$ until the following conditions are met:
 
 $$
-`hat p = 2*hat p' + 1`
+`p' = 2*p'' + 1`
 $$
 $$
-`hat q = 2*hat q' + 1`
+`q' = 2*q'' + 1`
 $$
 $$
-`hat p, hat q, hat p', hat q'" are all odd primes"`
+`p', q', p'', q''" are all odd primes"`
 $$
 
-Parameters $`hat p`$, $`hat q`$ generated like this are considered "safe primes" while $`hat p'`$ and $`hat q'`$ are referred to as Sophie Germain primes. This makes $`n = hat p hat q`$ a "rigid integer" and very hard to factor.<R reference='13' />
+Parameters $`p'`$, $`q'`$ generated like this are considered "safe primes" while $`p''`$ and $`q''`$ are referred to as Sophie Germain primes. This makes $`n = p' q'`$ a "rigid integer" and very hard to factor.<R reference='13' />
 
-After calculating $`n = hat p * hat q`$ within a trusted environment, $`hat p`$ and $`hat q`$ are no longer needed. In fact, they're toxic waste and should be destroyed immediately because the consequences of them leaking is that someone could forge Zerocoin spend transactions.<R reference='21' />
+After calculating $`n = p' * q'`$ within a trusted environment, $`p'`$ and $`q'`$ are no longer needed. In fact, they're toxic waste and should be destroyed immediately because the consequences of them leaking is that someone could forge Zerocoin spend transactions.<R reference='21' />
 
 <Callout>
   In other RSA Accumulator use-cases with a trusted centralized party, this trapdoor information is actually useful: It allows removing a value $`C`$ that is accumulated within $`Lambda`$ by calculating
-  $`Lambda' = Lambda^((C^(-1)" mod("phi(n)")")) " mod("n")`$ where $`phi(n) = (hat p - 1)*(hat q - 1)`$.
+  $`Lambda' = Lambda^((C^(-1)" mod("phi(n)")")) " mod("n")`$ where $`phi(n) = (p' - 1)*(q' - 1)`$.
 </Callout>
 
 Alternatively, the Zerocoin paper suggested generating so-called RSA-UFOs ("Un-Forgeable Opaque") for accumulator parameters without a trapdoor. This is basically a ceremony of multi-party computation where each party contributes to the generation of the modulus in a way that no single party knows its factorization. The resulting modulus $`n`$ should, with very high probability, have two large factors.<R reference='37' />
@@ -347,12 +348,12 @@ But the principle stays the same: We have two randomly chosen generators of the 
 Since Strong RSA Accumulators only allow prime numbers to be added, we may need a few attempts to find a pair $`(S, r)`$ for which the resulting pedersen commitment is prime.
 
 <Callout type="info">
-  Note that the modulus $`p`$ used for the Pedersen Commitment is unrelated to the RSA Accumulator, though similar in its creation: $`p = 2^(omega) * q + 1`$ where both $`p, q`$ are prime with $`omega >= 1`$. Generators $`g, h`$ are of the subgroup $`ZZ_q^(**)`$ from which the random values for $`S, r`$ are taken.
+  Note that the modulus $`p`$ used for the Pedersen Commitment is unrelated to the RSA Accumulator's trapdoor information, though similar in its generation: $`p = 2^(omega) * q + 1`$ where both $`p, q`$ are prime with $`omega >= 1`$. Generators $`g, h`$ are of the subgroup $`ZZ_q^(**)`$ from which the random values for $`S, r`$ are taken.
 </Callout>
 
 ### Zero-knowledge Proofs
 
-So far, we've learned how to initialize an Accumulator $`Lambda`$, and how to create a prime commitment $`C`$ to a Zerocoin's serial number $`S`$, blinded by a random value $`r`$. By remembering the accumulator's state before adding the commitment, we generate a witness $`w = Lambda`$ that we can use to prove inclusion of the commitment in $`Lambda' = Lambda^C`$. These are the techniques necessary in order to lock some BTC into the mixing pool and "mint" an appropriate Zerocoin in exchange.
+So far, we've learned how to initialize an Accumulator $`Lambda`$, and how to create a prime commitment $`C`$ to a Zerocoin's serial number $`S`$, blinded by a random value $`r`$. By remembering the accumulator's state before adding the commitment, we generate a witness $`w = Lambda`$ that we can use to prove inclusion of the commitment in $`Lambda' = Lambda^C`$. These are the techniques necessary in order to lock some BTC into the mixing pool and "mint" an Zerocoin in exchange.
 
 In order to redeem the Zerocoin later, we'd have to prove that (1) our coin's commitment $`C`$ is indeed included within the Accumulator $`Lambda'`$, and (2) that the unspent Serial number $`S`$ we're revealing was indeed the one that was committed to. But, in order to stay anonymous, we must prove this without revealing $`C`$, $`w`$, or $`r`$ since any of these would allow connecting the redemption to the transaction that minted the Zerocoin. 
 
@@ -371,43 +372,43 @@ $$
 $$
 
 <Callout>
-  The authors consider the described Zero-Knowledge Proof of Knowledge efficient; although the large proof sizes and the resulting inefficiencies are arguably one of Zerocoin's biggest drawbacks. But still, compared to an inclusion proof that, like Ring Signatures, grows linearly with each member within the group, the used proof is indeed much more efficient.
+  The authors consider the described Zero-Knowledge Proof of Knowledge efficient; although the large proof sizes and the resulting inefficiencies are arguably one of Zerocoin's biggest drawbacks. But still, compared to an inclusion proof that, like Ring Signatures, grows linearly with each member within the group, the used proof is indeed much more efficient (logarithmic).
 </Callout>
 
 To construct the proof, we once again need to make use of a pedersen commitment $`CC_Lambda`$, which commits to the commitment $`C`$ which was added to the accumulator as a value. The proof then works by showing that the value $`C`$ is contained in both the commitment $`CC_Lambda`$ as well as within the accumulator $`Lambda`$ without revealing $`C`$. Only the new commitment $`CC_Lambda`$ has to be revealed as part of this protocol.
 
 $$
-`CC_Lambda = g^C*h^r`
+`CC_Lambda = bar g^C* bar h^r" "("mod "bar p)`
 $$
 
 <Callout type="info">
   In addition to being prime, further restrictions on the choice of the $`C`$ commitment values are necessary to ensure the proofs security: First, commitments must be within a sub-range $`chi_(A,B)`$ as $`2 < A <= C <= B < A^2`$ to guarantee that the product of any two commitments falls outside of the range.<R reference='20' /> Second, for $`chi_(A,B)`$ and the choice of $`q`$ it's required that $`B*2^(lambda'+lambda''+2) < A^2 - 1 < q/2`$ holds, where $`lambda', lambda''`$ are adjustable security parameters.
 </Callout>
 
-Next, we need a few more auxiliary (helper) commitments. These don't make use of the same generators as $`CC_Lambda`$ though, instead $`tilde g, tilde h`$ are two elements from $`QR_n`$ (quadratic residues within the accumulator's modulo $`n`$) for which $`log_(g)(h)`$ is unknown (similarly to how in ECC the relationship $`H = x*G`$ must remain unknown in order to prevent the prover from tempering with the committed values). The blinding factors $`r_1, r_2, r_3`$ are chosen randomly from $`ZZ_([n/4])`$.
+Next, we need a few more auxiliary (helper) commitments. While $`CC_Lambda`$'s generators are from a sub group $`ZZ_(bar q)^(**)`$ of order $`bar q`$, these auxiliary commitments instead have $`tilde g, tilde h`$ which are two elements from $`QR_n`$ (quadratic residues within the accumulator's modulo $`n`$) for which $`log_(g)(h)`$ is unknown (similarly to how in ECC the relationship $`H = x*G`$ must remain unknown in order to prevent the prover from tempering with the committed values). The blinding factors $`r_1, r_2, r_3`$ are chosen randomly from $`ZZ_([n/4])`$.
 
 | Prover                                                                | Verifier                                        |
 | --------------------------------------------------------------------: | :---------------------------------------------- |
-| Knows $`(g, h, n, tilde g, tilde h, Lambda', CC_Lambda, color(red)(r), color(red)(C), color(red)(w))`$     | Knows $`(g, h, n, tilde g, tilde h, Lambda', CC_Lambda)`$ |
+| Knows $`(bar g, bar h, n, tilde g, tilde h, Lambda', CC_Lambda, color(red)(r), color(red)(C), color(red)(w))`$ | Knows $`(bar g, bar h, n, tilde g, tilde h, Lambda', CC_Lambda)`$ |
 | Chooses random values $`(color(red)(r_1, r_2, r_3))`$                 | |
-| $`tilde CC_C = tilde g^color(red)(C)*tilde h^(color(red)(r_1))`$      | |
-| $`tilde CC_(w) = color(red)(w)*tilde h^(color(red)(r_2))`$            | |
-| $`tilde CC_r = tilde g^(color(red)(r_2))*tilde h^(color(red)(r_3))`$  | |
-| Sends $`(tilde CC_C, tilde CC_(w), tilde CC_r) Rightarrow`$           | Knows $`(g, h, n, tilde g, tilde h, Lambda', CC_Lambda, tilde CC_C, tilde CC_(w), tilde CC_r)`$ |
+| $`tilde CC_C = tilde g^color(red)(C)*tilde h^(color(red)(r_1))" mod("n")`$      | |
+| $`tilde CC_(w) = color(red)(w)*tilde h^(color(red)(r_2))" mod("n")`$            | |
+| $`tilde CC_r = tilde g^(color(red)(r_2))*tilde h^(color(red)(r_3))" mod("n")`$  | |
+| Sends $`(tilde CC_C, tilde CC_(w), tilde CC_r) Rightarrow`$           | Knows $`(bar g, bar h, n, tilde g, tilde h, Lambda', CC_Lambda, tilde CC_C, tilde CC_(w), tilde CC_r)`$ |
 
 Like $`CC_Lambda`$, the auxiliary commitment $`tilde CC_C`$ commits to $`C`$, the value accumulated by $`Lambda'`$. Additionally, $`tilde CC_w`$ commits to witness $`w`$ and will be used to prove that it corresponds to the $`C`$-th root value $`Lambda'`$ ($`Lambda' = Lambda^C = w^C hArr root(C)(Lambda') = w`$).
 
 | Prover                                                                | Verifier                                        |
 | --------------------------------------------------------------------: | :---------------------------------------------- |
-| Knows $`(g, h, n, tilde g, tilde h, CC_Lambda, Lambda', tilde CC_C, tilde CC_(w), tilde CC_r, color(red)(r), color(red)(C), color(red)(w))`$ | Knows $`(g, h, n, tilde g, tilde h, CC_Lambda, Lambda', tilde CC_C, tilde CC_(w), tilde CC_r)`$ |
+| Knows $`(bar g, bar h, n, tilde g, tilde h, CC_Lambda, Lambda', tilde CC_C, tilde CC_(w), tilde CC_r, color(red)(r), color(red)(C), color(red)(w))`$ | Knows $`(bar g, bar h, n, tilde g, tilde h, CC_Lambda, Lambda', tilde CC_C, tilde CC_(w), tilde CC_r)`$ |
 | Chooses random values $`(color(red)(alpha, beta, gamma, delta, epsilon, zeta, varphi, psi, eta), sigma, xi)`$ | |
-| $`t_1 = g^color(red)(alpha)*h^color(red)(varphi)`$                    | |
-| $`t_2 = (CC_Lambda/g)^color(red)(gamma)*h^color(red)(psi)`$                  | |
-| $`t_3 = (gCC)^sigma*h^xi`$                                            | |
-| $`tilde t_1 = tilde h^color(red)(epsilon)*tilde g^color(red)(zeta)`$  | |
-| $`tilde t_2 = tilde h^color(red)(alpha)*tilde g^color(red)(eta)`$     | |
-| $`tilde t_3 = (tilde CC_w)^color(red)(alpha)*tilde h^-color(red)(beta)`$ | |
-| $`tilde t_4 = (tilde CC_r)^color(red)(alpha)*tilde h^-color(red)(delta)*tilde g^-color(red)(beta)`$ | |
+| $`t_1 = bar g^color(red)(alpha)* bar h^color(red)(varphi)" mod("bar p")`$           | |
+| $`t_2 = (CC_Lambda/bar g)^color(red)(gamma)* bar h^color(red)(psi)" mod("bar p")`$  | |
+| $`t_3 = (bar g * CC_Lambda)^sigma*bar h^xi" mod("bar p")`$                                    | |
+| $`tilde t_1 = tilde g^color(red)(epsilon)*tilde h^color(red)(zeta)" mod("n")`$  | |
+| $`tilde t_2 = tilde g^color(red)(alpha)*tilde h^color(red)(eta)" mod("n")`$     | |
+| $`tilde t_3 = (tilde CC_w)^color(red)(alpha)*tilde h^-color(red)(beta)" mod("n")`$ | |
+| $`tilde t_4 = (tilde CC_r)^color(red)(alpha)*tilde h^-color(red)(delta)*tilde g^-color(red)(beta)" mod("n")`$ | |
 | Sends $`(t_1, t_2, t_3, tilde t_1, tilde t_2, tilde t_3, tilde t_4) Rightarrow`$ | Knows $`(..., t_1, t_2, t_3, tilde t_1, tilde t_2, tilde t_3, tilde t_4)`$ |
 |                                                                       | Chooses a random challenge $`e in {0,1}^lambda`$ |
 | Knows $`(..., e)`$                                                    | $`Leftarrow`$ Sends $`e`$ 
@@ -417,95 +418,140 @@ Like $`CC_Lambda`$, the auxiliary commitment $`tilde CC_C`$ commits to $`C`$, th
 | $`bar eta = color(red)(eta) - e*color(red)(r_1)`$                     | |
 | $`bar epsilon = color(red)(epsilon) - e*color(red)(r_2)`$             | |
 | $`bar delta = color(red)(delta) - e*color(red)(r_3*C)`$               | |
-| $`bar varphi = color(red)(varphi) - e*color(red)(r)`$                 | |
-| $`bar gamma = color(red)(gamma) - e*(color(red)(C) - 1)^-1`$          | |
-| $`bar psi = color(red)(psi) - e*color(red)(r)*(color(red)(C) - 1)^-1`$| |
-| $`bar sigma = sigma - e*(color(red)(C) + 1)^-1`$                      | |
-| $`bar xi = xi - e*color(red)(r)*(color(red)(C) + 1)^-1`$              | |
+| $`bar varphi = color(red)(varphi) - e*color(red)(r)" mod("bar q")`$                 | |
+| $`bar gamma = color(red)(gamma) - e*(color(red)(C) - 1)^-1" mod("bar q")`$          | |
+| $`bar psi = color(red)(psi) + e*color(red)(r)*(color(red)(C) - 1)^-1" mod("bar q")`$| |
+| $`bar sigma = sigma - e*(color(red)(C) + 1)^-1" mod("bar q")`$                      | |
+| $`bar xi = xi + e*color(red)(r)*(color(red)(C) + 1)^-1" mod("bar q")`$              | |
 | Sends $`(bar alpha, bar beta, bar gamma, bar delta, bar epsilon, bar zeta, bar varphi, bar psi, bar eta, bar sigma, bar xi) Rightarrow`$ | Knows $`(..., bar alpha, bar beta, bar gamma, bar delta, bar epsilon, bar zeta, bar varphi, bar psi, bar eta, bar sigma, bar xi)`$ |
-|                                                                       | $`t_1" "overset(?)(=)" "(CC_Lambda)^e*g^(bar alpha)*h^(bar varphi) `$ |
-|                                                                       | $`t_2" "overset(?)(=)" "g^e*(CC_Lambda/g)^(bar gamma)*h^(bar psi)`$ |
-|                                                                       | $`t_3" "overset(?)(=)" "g^e*(gCC)^(bar sigma)*h^(bar xi)`$ |
-|                                                                       | $`tilde t_1" "overset(?)(=)" "(tilde CC_r)^e*tilde h^(bar epsilon)*tilde g^(bar zeta)`$ |
-|                                                                       | $`tilde t_2" "overset(?)(=)" "(tilde CC_C)^e*tilde h^(bar alpha)*tilde g^(bar eta)`$ |
-|                                                                       | $`tilde t_3" "overset(?)(=)" "(Lambda')^e*(tilde CC_w)^(bar alpha)*tilde h^(-bar beta)`$ |
-|                                                                       | $`tilde t_4" "overset(?)(=)" "(tilde CC_r)^(bar alpha)*tilde h^(-bar delta)*tilde g^(-bar beta)`$ |
+|                                                                       | $`t_1" "overset(?)(=)" "(CC_Lambda)^e*bar g^(bar alpha)*bar h^(bar varphi) " mod("bar p")`$ |
+|                                                                       | $`t_2" "overset(?)(=)" "bar g^e*(CC_Lambda/bar g)^(bar gamma)*bar h^(bar psi)" mod("bar p")`$ |
+|                                                                       | $`t_3" "overset(?)(=)" "bar g^e*(bar g * CC_Lambda)^(bar sigma)*bar h^(bar xi)" mod("bar p")`$ |
+|                                                                       | $`tilde t_1" "overset(?)(=)" "(tilde CC_r)^e*tilde g^(bar epsilon)*tilde h^(bar zeta)" mod("n")`$ |
+|                                                                       | $`tilde t_2" "overset(?)(=)" "(tilde CC_C)^e*tilde g^(bar alpha)*tilde h^(bar eta)" mod("n")`$ |
+|                                                                       | $`tilde t_3" "overset(?)(=)" "(Lambda')^e*(tilde CC_w)^(bar alpha)*tilde h^(-bar beta)" mod("n")`$ |
+|                                                                       | $`tilde t_4" "overset(?)(=)" "(tilde CC_r)^(bar alpha)*tilde h^(-bar delta)*tilde g^(-bar beta)" mod("n")`$ |
 |                                                                       | $`bar alpha" "overset(?)(in)" "[-B*2^(lambda'+lambda''+1), B*2^(lambda'+lambda''+1)]`$ |
 
 <Callout type="info">
-  Note that the above calculations are within $`"(mod "q")"`$ and that the random exponents have to be selected as follows: $`alpha in (-B*2^(lambda'+lambda''), ..., B*2^(lambda'+lambda'')), gamma, varphi, psi, sigma, xi in ZZ_q, epsilon, eta, zeta in (-|__n/4__|*2^(lambda'+lambda''), ..., |__n/4__|*2^(lambda'+lambda'')), and beta, delta in (-|__n/4__|*q2^(lambda'+lambda''), ..., |__n/4__|*q2^(lambda'+lambda''))`$.
+  Note that the random exponents have to be selected as follows: $`alpha in (-B*2^(lambda'+lambda''), ..., B*2^(lambda'+lambda'')), gamma, varphi, psi, sigma, xi in ZZ_q, epsilon, eta, zeta in (-|__n/4__|*2^(lambda'+lambda''), ..., |__n/4__|*2^(lambda'+lambda'')), and beta, delta in (-|__n/4__|*q2^(lambda'+lambda''), ..., |__n/4__|*q2^(lambda'+lambda''))`$.
 </Callout>
 
+Granted, this Zero Knowledge Proof protocol appears much more complex than what we initially introduced as the technique of Schnorr. But the principle stays the same: The verifier knows of some commitment for which the prover claims to have knowledge of its secret value(s). Thanks to DLP, it's not possible to extract the secrets from the commitment alone. The prover chooses randomness ($`alpha, ...`$) and uses it to calculate temporary commitments $`t`$ which are sent to the verifier. The verifier too generates randomness and sends it to the prover as the challenge $`e`$. The prover mixes ($`bar alpha, ...`$) its own randomness with the challenge and the secrets in a manner that will allow for things to cancel each other out for the verifier, resulting in a value matching that of the temporary commitments $`t`$. The verifier knows that the prover wouldn't have been able to generate the appropriate mixes ($`bar alpha, ...`$) without knowledge of the secret values, for things to match at the end.
+
 <details className="last-of-type:mb-0 rounded-lg bg-neutral-50 dark:bg-neutral-800 p-2 mt-4">
   <summary>
-    <strong className="text-lg">$`t_1" "overset(?)(=)" "(CC_Lambda)^e*g^(bar alpha)*h^(bar varphi)`$</strong>
+    <strong className="text-lg">$`t_1" "overset(?)(=)" "(CC_Lambda)^e*bar g^(bar alpha)*bar h^(bar varphi)`$</strong>
   </summary>
   <div className="nx-p-2">
-    Substitute $`t_1 = g^color(red)(alpha)*h^color(red)(varphi)" , "CC_Lambda = g^color(red)(C)*h^color(red)(r)" , "bar alpha = color(red)(alpha) - e*color(red)(C)" , "bar varphi = color(red)(varphi) - e*color(red)(r)`$
+    Substitute $`t_1 = bar g^color(red)(alpha)*bar h^color(red)(varphi)" , "CC_Lambda = bar g^color(red)(C)*bar h^color(red)(r)" , "bar alpha = color(red)(alpha) - e*color(red)(C)" , "bar varphi = color(red)(varphi) - e*color(red)(r)`$
 
-    $`g^color(red)(alpha)*h^color(red)(varphi)" "overset(?)(=)" "(g^color(red)(C)*h^color(red)(r))^e * g^(color(red)(alpha) - e*color(red)(C)) * h^(color(red)(varphi) - e*color(red)(r))`$
+    $`bar g^color(red)(alpha)*bar h^color(red)(varphi)" "overset(?)(=)" "(bar g^color(red)(C)*bar h^color(red)(r))^e * bar g^(color(red)(alpha) - e*color(red)(C)) * bar h^(color(red)(varphi) - e*color(red)(r))`$
 
-    $`g^color(red)(alpha)*h^color(red)(varphi)" "overset(?)(=)" "g^(e*color(red)(C))*h^(e*color(red)(r)) * g^(color(red)(alpha) - e*color(red)(C)) * h^(color(red)(varphi) - e*color(red)(r))`$
+    $`bar g^color(red)(alpha)*bar h^color(red)(varphi)" "overset(?)(=)" "bar g^(e*color(red)(C))*bar h^(e*color(red)(r)) * bar g^(color(red)(alpha) - e*color(red)(C)) * bar h^(color(red)(varphi) - e*color(red)(r))`$
 
-    $`g^color(red)(alpha)*h^color(red)(varphi)" "overset(?)(=)" "g^(e*color(red)(C) + color(red)(alpha) - e*color(red)(C))*h^(e*color(red)(r) + color(red)(varphi) - e*color(red)(r))`$
+    $`bar g^color(red)(alpha)*bar h^color(red)(varphi)" "overset(?)(=)" "bar g^(e*color(red)(C) + color(red)(alpha) - e*color(red)(C))*bar h^(e*color(red)(r) + color(red)(varphi) - e*color(red)(r))`$
 
-    $`g^color(red)(alpha)*h^color(red)(varphi)" "overset(?)(=)" "g^(cancel(e*color(red)(C)) + color(red)(alpha) - cancel(e*color(red)(C)))*h^(cancel(e*color(red)(r)) + color(red)(varphi) - cancel(e*color(red)(r)))`$
+    $`bar g^color(red)(alpha)*bar h^color(red)(varphi)" "overset(?)(=)" "bar g^(cancel(e*color(red)(C)) + color(red)(alpha) - cancel(e*color(red)(C)))*bar h^(cancel(e*color(red)(r)) + color(red)(varphi) - cancel(e*color(red)(r)))`$
 
-    $`g^color(red)(alpha)*h^color(red)(varphi)" "overset(✓)(=)" "g^color(red)(alpha)*h^color(red)(varphi)`$
+    $`bar g^color(red)(alpha)*bar h^color(red)(varphi)" "overset(✓)(=)" "bar g^color(red)(alpha)*bar h^color(red)(varphi)`$
   </div>
 </details>
 
 <details className="last-of-type:mb-0 rounded-lg bg-neutral-50 dark:bg-neutral-800 p-2 mt-4">
   <summary>
-    <strong className="text-lg">$`t_2" "overset(?)(=)" "g^e*(CC_Lambda/g)^(bar gamma)*h^(bar psi)`$</strong>
+    <strong className="text-lg">$`t_2" "overset(?)(=)" "bar g^e*(CC_Lambda/bar g)^(bar gamma)*bar h^(bar psi)`$</strong>
   </summary>
   <div className="nx-p-2">
-    Substitute $`t_2 = (CC_Lambda/g)^color(red)(gamma)*h^color(red)(psi)" , "CC_Lambda = g^color(red)(C)*h^color(red)(r)" , "bar gamma = color(red)(gamma) - e*(color(red)(C) - 1)^-1" , "bar psi = color(red)(psi) - e*color(red)(r)*(color(red)(C) - 1)^-1`$
+    Substitute $`t_2 = (CC_Lambda/bar g)^color(red)(gamma)*bar h^color(red)(psi)" , "CC_Lambda = bar g^color(red)(C)*bar h^color(red)(r)" , "bar gamma = color(red)(gamma) - e*(color(red)(C) - 1)^-1" , "bar psi = color(red)(psi) + e*color(red)(r)*(color(red)(C) - 1)^-1`$
 
-    $`(CC_Lambda/g)^color(red)(gamma)*h^color(red)(psi)" "overset(?)(=)" "g^e*(CC_Lambda/g)^(color(red)(gamma) - e*(color(red)(C) - 1)^-1)*h^(color(red)(psi) - e*color(red)(r)*(color(red)(C) - 1)^-1)`$
+    $`(CC_Lambda/bar g)^color(red)(gamma)*bar h^color(red)(psi)" "overset(?)(=)" "bar g^e*(CC_Lambda/bar g)^(color(red)(gamma) - e*(color(red)(C) - 1)^-1)*bar h^(color(red)(psi) + e*color(red)(r)*(color(red)(C) - 1)^-1)`$
 
-    $`((g^color(red)(C)*h^color(red)(r))/g)^color(red)(gamma)*h^color(red)(psi)" "overset(?)(=)" "g^e*((g^color(red)(C)*h^color(red)(r))/g)^(color(red)(gamma) - e*(color(red)(C) - 1)^-1)*h^(color(red)(psi) - e*color(red)(r)*(color(red)(C) - 1)^-1)`$
+    $`((bar g^color(red)(C)*bar h^color(red)(r))/bar g)^color(red)(gamma)*bar h^color(red)(psi)" "overset(?)(=)" "bar g^e*((bar g^color(red)(C)*bar h^color(red)(r))/bar g)^(color(red)(gamma) - e*(color(red)(C) - 1)^-1)*bar h^(color(red)(psi) + e*color(red)(r)*(color(red)(C) - 1)^-1)`$
 
-    $`g^color(red)(Cgamma) * h^color(red)(rgamma) * g^-color(red)(gamma) * h^color(red)(psi)" "overset(?)(=)" "g^e* g^(color(red)(C)(color(red)(gamma) - e*(color(red)(C) - 1)^-1)) * h^(color(red)(r)(color(red)(gamma) - e*(color(red)(C) - 1)^-1)) * g^-(color(red)(gamma) - e*(color(red)(C) - 1)^-1) * h^(color(red)(psi) - e*color(red)(r)*(color(red)(C) - 1)^-1)`$
+    $`((bar g^color(red)(C)*bar h^color(red)(r)) * bar g^-1)^color(red)(gamma)*bar h^color(red)(psi)" "overset(?)(=)" "bar g^e*((bar g^color(red)(C)*bar h^color(red)(r))* bar g^-1)^(color(red)(gamma) - e*(color(red)(C) - 1)^-1)*bar h^(color(red)(psi) + e*color(red)(r)*(color(red)(C) - 1)^-1)`$
 
-    $`g^color(red)(Cgamma - gamma) * h^color(red)(rgamma+psi)" "overset(?)(=)" "g^(e + color(red)(C)(color(red)(gamma) - e*(color(red)(C) - 1)^-1) -(color(red)(gamma) - e*(color(red)(C) - 1)^-1)) * h^(color(red)(r)(color(red)(gamma) - e*(color(red)(C) - 1)^-1) + (color(red)(psi) - e*color(red)(r)*(color(red)(C) - 1)^-1))`$
+    $`(bar g^((color(red)(C)-1))*bar h^color(red)(r))^color(red)(gamma)*bar h^color(red)(psi)" "overset(?)(=)" "bar g^e*(bar g^((color(red)(C)-1))*bar h^color(red)(r))^(color(red)(gamma) - e*(color(red)(C) - 1)^-1)*bar h^(color(red)(psi) + e*color(red)(r)*(color(red)(C) - 1)^-1)`$
+
+    $`bar g^((color(red)(C)-1)*color(red)(gamma))*bar h^(color(red)(r)*color(red)(gamma))*bar h^color(red)(psi)" "overset(?)(=)" "bar g^e*bar g^((color(red)(C)-1)*(color(red)(gamma) - e*(color(red)(C) - 1)^-1))*bar h^(color(red)(r)*(color(red)(gamma) - e*(color(red)(C) - 1)^-1))*bar h^(color(red)(psi) + e*color(red)(r)*(color(red)(C) - 1)^-1)`$
+
+    $`bar g^((color(red)(C)-1)*color(red)(gamma))*bar h^(color(red)(r)*color(red)(gamma)+color(red)(psi))" "overset(?)(=)" "bar g^e*bar g^((color(red)(C)-1)*color(red)(gamma) - (color(red)(C)-1)*e*(color(red)(C) - 1)^-1)*bar h^(color(red)(r)*color(red)(gamma) - color(red)(r)*e*(color(red)(C) - 1)^-1)*bar h^(color(red)(psi) + e*color(red)(r)*(color(red)(C) - 1)^-1)`$
+
+    Since we're in an abelian group, the following holds true: $`(C-1) * (C-1)^-1 = 1" mod("bar p")"`$
+
+    $`bar g^((color(red)(C)-1)*color(red)(gamma))*bar h^(color(red)(r)*color(red)(gamma)+color(red)(psi))" "overset(?)(=)" "bar g^e*bar g^((color(red)(C)-1)*color(red)(gamma) - (cancel(color(red)(C)-1))*e*cancel((color(red)(C) - 1)^-1))*bar h^(color(red)(r)*color(red)(gamma) - color(red)(r)*e*(color(red)(C) - 1)^-1 + color(red)(psi) + e*color(red)(r)*(color(red)(C) - 1)^-1)`$
+
+    $`bar g^((color(red)(C)-1)*color(red)(gamma))*bar h^(color(red)(r)*color(red)(gamma)+color(red)(psi))" "overset(?)(=)" "bar g^(e + (color(red)(C)-1)*color(red)(gamma) - e)*bar h^(color(red)(r)*color(red)(gamma) - cancel(color(red)(r)*e*(color(red)(C) - 1)^-1) + color(red)(psi) + cancel(e*color(red)(r)*(color(red)(C) - 1)^-1))`$
+
+    $`bar g^((color(red)(C)-1)*color(red)(gamma))*bar h^(color(red)(r)*color(red)(gamma)+color(red)(psi))" "overset(?)(=)" "bar g^(cancel(e) + (color(red)(C)-1)*color(red)(gamma) cancel(- e))*bar h^(color(red)(r)*color(red)(gamma) + color(red)(psi))`$
+
+    $`bar g^((color(red)(C)-1)*color(red)(gamma))*bar h^(color(red)(r)*color(red)(gamma)+color(red)(psi))" "overset(✓)(=)" "bar g^((color(red)(C)-1)*color(red)(gamma))*bar h^(color(red)(r)*color(red)(gamma) + color(red)(psi))`$
+
   </div>
 </details>
 
 <details className="last-of-type:mb-0 rounded-lg bg-neutral-50 dark:bg-neutral-800 p-2 mt-4">
   <summary>
-    <strong className="text-lg">$`t_3" "overset(?)(=)" "g^e*(gCC)^(bar sigma)*h^(bar xi)`$</strong>
+    <strong className="text-lg">$`t_3" "overset(?)(=)" "bar g^e*(bar g * CC_Lambda)^(bar sigma)*bar h^(bar xi)`$</strong>
   </summary>
   <div className="nx-p-2">
-    Substitute $`t_3 = (gCC)^sigma*h^xi", "CC_Lambda = g^color(red)(C)*h^color(red)(r)" , "bar sigma = sigma - e*(color(red)(C) + 1)^-1" , "bar xi = xi - e*color(red)(r)*(color(red)(C) + 1)^-1`$
+    Substitute $`t_3 = (bar g * CC_Lambda)^sigma*bar h^xi", "CC_Lambda = bar g^color(red)(C)*bar h^color(red)(r)" , "bar sigma = sigma - e*(color(red)(C) + 1)^-1" , "bar xi = xi + e*color(red)(r)*(color(red)(C) + 1)^-1`$
 
-    $`(g(g^color(red)(C)*h^color(red)(r)))^sigma*h^xi" "overset(?)(=)" "g^e*(g(g^color(red)(C)*h^color(red)(r)))^(sigma - e*(color(red)(C) + 1)^-1)*h^(xi - e*color(red)(r)*(color(red)(C) + 1)^-1)`$
+    $`(bar g*(bar g^color(red)(C)*bar h^color(red)(r)))^sigma*bar h^xi" "overset(?)(=)" "bar g^e*(bar g*(bar g^color(red)(C)*bar h^color(red)(r)))^(sigma - e*(color(red)(C) + 1)^-1)*bar h^(xi + e*color(red)(r)*(color(red)(C) + 1)^-1)`$
+
+    $`(bar g^((color(red)(C)+1))*bar h^color(red)(r))^sigma*bar h^xi" "overset(?)(=)" "bar g^e*(bar g^((color(red)(C)+1))*bar h^color(red)(r))^(sigma - e*(color(red)(C) + 1)^-1)*bar h^(xi + e*color(red)(r)*(color(red)(C) + 1)^-1)`$
+
+    $`bar g^((color(red)(C)+1)*sigma)*bar h^(color(red)(r)*sigma)*bar h^xi" "overset(?)(=)" "bar g^e*bar g^((color(red)(C)+1)*(sigma - e*(color(red)(C) + 1)^-1))*bar h^(color(red)(r)*(sigma - e*(color(red)(C) + 1)^-1))*bar h^(xi + e*color(red)(r)*(color(red)(C) + 1)^-1)`$
+
+    $`bar g^((color(red)(C)+1)*sigma)*bar h^(color(red)(r)*sigma+xi)" "overset(?)(=)" "bar g^e*bar g^((color(red)(C)+1)*sigma - (color(red)(C)+1)*e*(color(red)(C) + 1)^-1)*bar h^(color(red)(r)*sigma - color(red)(r)*e*(color(red)(C) + 1)^-1)*bar h^(xi + e*color(red)(r)*(color(red)(C) + 1)^-1)`$
+
+    Since we're in an abelian group, the following holds true: $`(C+1) * (C+1)^-1 = 1" mod("bar p")"`$
+
+    $`bar g^((color(red)(C)+1)*sigma)*bar h^(color(red)(r)*sigma+xi)" "overset(?)(=)" "bar g^e*bar g^((color(red)(C)+1)*sigma - cancel((color(red)(C)+1))*e*cancel((color(red)(C) + 1)^-1))*bar h^(color(red)(r)*sigma - color(red)(r)*e*(color(red)(C) + 1)^-1)*bar h^(xi + e*color(red)(r)*(color(red)(C) + 1)^-1)`$
+
+    $`bar g^((color(red)(C)+1)*sigma)*bar h^(color(red)(r)*sigma+xi)" "overset(?)(=)" "bar g^(e + (color(red)(C)+1)*sigma - e)*bar h^(color(red)(r)*sigma - color(red)(r)*e*(color(red)(C) + 1)^-1 + xi + e*color(red)(r)*(color(red)(C) + 1)^-1)`$
+
+    $`bar g^((color(red)(C)+1)*sigma)*bar h^(color(red)(r)*sigma+xi)" "overset(?)(=)" "bar g^(cancel(e) + (color(red)(C)+1)*sigma cancel(- e))*bar h^(color(red)(r)*sigma cancel(- color(red)(r)*e*(color(red)(C) + 1)^-1) + xi + cancel(e*color(red)(r)*(color(red)(C) + 1)^-1))`$
+
+    $`bar g^((color(red)(C)+1)*sigma)*bar h^(color(red)(r)*sigma+xi)" "overset(✓)(=)" "bar g^((color(red)(C)+1)*sigma)*bar h^(color(red)(r)*sigma + xi)`$
   </div>
 </details>
 
 <details className="last-of-type:mb-0 rounded-lg bg-neutral-50 dark:bg-neutral-800 p-2 mt-4">
   <summary>
-    <strong className="text-lg">$`tilde t_1" "overset(?)(=)" "(tilde CC_r)^e*tilde h^(bar epsilon)*tilde g^(bar zeta)`$</strong>
+    <strong className="text-lg">$`tilde t_1" "overset(?)(=)" "(tilde CC_r)^e*tilde g^(bar epsilon)*tilde h^(bar zeta)`$</strong>
   </summary>
   <div className="nx-p-2">
-    Substitute $`tilde t_1 = tilde h^color(red)(epsilon)*tilde g^color(red)(zeta)" , "tilde CC_r = tilde g^(color(red)(r_2))*tilde h^(color(red)(r_3))" , "bar epsilon = color(red)(epsilon) - e*color(red)(r_2)" , "bar zeta = color(red)(zeta) - e*color(red)(r_3)`$
+    Substitute $`tilde t_1 = tilde g^color(red)(epsilon)*tilde h^color(red)(zeta)" , "tilde CC_r = tilde g^(color(red)(r_2))*tilde h^(color(red)(r_3))" , "bar epsilon = color(red)(epsilon) - e*color(red)(r_2)" , "bar zeta = color(red)(zeta) - e*color(red)(r_3)`$
 
-    $`tilde h^color(red)(epsilon)*tilde g^color(red)(zeta)" "overset(?)(=)" "(tilde g^(color(red)(r_2))*tilde h^(color(red)(r_3)))^e*tilde h^(color(red)(epsilon) - e*color(red)(r_2))*tilde g^(color(red)(zeta) - e*color(red)(r_3))`$
+    $`tilde g^color(red)(epsilon)*tilde h^color(red)(zeta)" "overset(?)(=)" "(tilde g^(color(red)(r_2))*tilde h^(color(red)(r_3)))^e*tilde g^(color(red)(epsilon) - e*color(red)(r_2))*tilde h^(color(red)(zeta) - e*color(red)(r_3))*`$
 
-    $`tilde h^color(red)(epsilon)*tilde g^color(red)(zeta)" "overset(?)(=)" "tilde g^(color(red)(r_2)*e)*tilde h^(color(red)(r_3)*e)*tilde h^(color(red)(epsilon) - e*color(red)(r_2))*tilde g^(color(red)(zeta) - e*color(red)(r_3))`$
+    $`tilde g^color(red)(epsilon)*tilde h^color(red)(zeta)" "overset(?)(=)" "tilde g^(color(red)(r_2)*e)*tilde h^(color(red)(r_3)*e)*tilde g^(color(red)(epsilon) - e*color(red)(r_2))*tilde h^(color(red)(zeta) - e*color(red)(r_3))*`$
 
-    $`tilde h^color(red)(epsilon)*tilde g^color(red)(zeta)" "overset(?)(=)" "tilde g^(color(red)(r_2)*e + color(red)(zeta) - e*color(red)(r_3))*tilde h^(color(red)(r_3)*e + color(red)(epsilon) - e*color(red)(r_2))`$
+    $`tilde g^color(red)(epsilon)*tilde h^color(red)(zeta)" "overset(?)(=)" "tilde g^(color(red)(r_2)*e + color(red)(epsilon) - e*color(red)(r_2))*tilde h^(color(red)(r_3)*e + color(red)(zeta) - e*color(red)(r_3))`$
+
+    $`tilde g^color(red)(epsilon)*tilde h^color(red)(zeta)" "overset(?)(=)" "tilde g^(cancel(color(red)(r_2)*e) + color(red)(epsilon) cancel(- e*color(red)(r_2)))*tilde h^(cancel(color(red)(r_3)*e) + color(red)(zeta) cancel(- e*color(red)(r_3)))`$
+
+    $`tilde g^color(red)(epsilon)*tilde h^color(red)(zeta)" "overset(✓)(=)" "tilde g^color(red)(epsilon)*tilde h^color(red)(zeta)`$
   </div>
 </details>
 
 <details className="last-of-type:mb-0 rounded-lg bg-neutral-50 dark:bg-neutral-800 p-2 mt-4">
   <summary>
-    <strong className="text-lg">$`tilde t_2" "overset(?)(=)" "(tilde CC_C)^e*tilde h^(bar alpha)*tilde g^(bar eta)`$</strong>
+    <strong className="text-lg">$`tilde t_2" "overset(?)(=)" "(tilde CC_C)^e*tilde g^(bar alpha)*tilde h^(bar eta)`$</strong>
   </summary>
   <div className="nx-p-2">
-    Substitute $`tilde t_2 = tilde h^color(red)(alpha)*tilde g^color(red)(eta)" , "tilde CC_C = tilde g^color(red)(C)*tilde h^(color(red)(r_1))" , "bar alpha = color(red)(alpha) - e*color(red)(C)" , "bar eta = color(red)(eta) - e*color(red)(r_1)`$
+    Substitute $`tilde t_2 = tilde g^color(red)(alpha)*tilde h^color(red)(eta)" , "tilde CC_C = tilde g^color(red)(C)*tilde h^(color(red)(r_1))" , "bar alpha = color(red)(alpha) - e*color(red)(C)" , "bar eta = color(red)(eta) - e*color(red)(r_1)`$
 
-    $`tilde h^color(red)(alpha)*tilde g^color(red)(eta)" "overset(?)(=)" "(tilde g^color(red)(C)*tilde h^(color(red)(r_1)))^e*tilde h^(color(red)(alpha) - e*color(red)(C))*tilde g^(color(red)(eta) - e*color(red)(r_1))`$
+    $`tilde g^color(red)(alpha)*tilde h^color(red)(eta)" "overset(?)(=)" "(tilde g^color(red)(C)*tilde h^(color(red)(r_1)))^e*tilde g^(color(red)(alpha) - e*color(red)(C))*tilde h^(color(red)(eta) - e*color(red)(r_1))`$
+
+    $`tilde g^color(red)(alpha)*tilde h^color(red)(eta)" "overset(?)(=)" "tilde g^(e*color(red)(C))*tilde h^(e*color(red)(r_1))*tilde g^(color(red)(alpha) - e*color(red)(C))*tilde h^(color(red)(eta) - e*color(red)(r_1))`$
+
+    $`tilde g^color(red)(alpha)*tilde h^color(red)(eta)" "overset(?)(=)" "tilde g^(e*color(red)(C) + color(red)(alpha) - e*color(red)(C))*tilde h^(e*color(red)(r_1) + color(red)(eta) - e*color(red)(r_1))`$
+
+    $`tilde g^color(red)(alpha)*tilde h^color(red)(eta)" "overset(?)(=)" "tilde g^(cancel(e*color(red)(C)) + color(red)(alpha) cancel(- e*color(red)(C)))*tilde h^(cancel(e*color(red)(r_1)) + color(red)(eta) cancel(- e*color(red)(r_1)))`$
+
+    $`tilde g^color(red)(alpha)*tilde h^color(red)(eta)" "overset(✓)(=)" "tilde g^(color(red)(alpha))*tilde h^(color(red)(eta))`$
   </div>
 </details>
 
@@ -514,7 +560,19 @@ Like $`CC_Lambda`$, the auxiliary commitment $`tilde CC_C`$ commits to $`C`$, th
     <strong className="text-lg">$`tilde t_3" "overset(?)(=)" "(Lambda')^e*(tilde CC_w)^(bar alpha)*tilde h^(-bar beta)`$</strong>
   </summary>
   <div className="nx-p-2">
-    asdadsasd
+    Substitute $`tilde t_3 = (tilde CC_w)^color(red)(alpha)*tilde h^-color(red)(beta)" , "bar alpha = color(red)(alpha) - e*color(red)(C)" , "bar beta = color(red)(beta) - e*color(red)(r_2*C)" , "tilde CC_(w) = color(red)(w)*tilde h^(color(red)(r_2))" , "Lambda' = color(red)(w)^color(red)(C)`$
+
+    $`(tilde CC_w)^color(red)(alpha)*tilde h^-color(red)(beta)" "overset(?)(=)" "(Lambda')^e*(tilde CC_w)^(color(red)(alpha) - e*color(red)(C))*tilde h^(-(color(red)(beta) - e*color(red)(r_2*C)))`$
+
+    $`(color(red)(w)*tilde h^(color(red)(r_2)))^color(red)(alpha)*tilde h^-color(red)(beta)" "overset(?)(=)" "(color(red)(w)^color(red)(C))^e*(color(red)(w)*tilde h^(color(red)(r_2)))^(color(red)(alpha) - e*color(red)(C))*tilde h^(-color(red)(beta) + e*color(red)(r_2*C))`$
+
+    $`color(red)(w)^(color(red)(alpha))*tilde h^(color(red)(r_2)*color(red)(alpha))*tilde h^-color(red)(beta)" "overset(?)(=)" "color(red)(w)^(color(red)(C)*e)*color(red)(w)^(color(red)(alpha) - e*color(red)(C))*tilde h^(color(red)(r_2)*(color(red)(alpha) - e*color(red)(C)))*tilde h^(-color(red)(beta) + e*color(red)(r_2*C))`$
+
+    $`color(red)(w)^(color(red)(alpha))*tilde h^(color(red)(r_2)*color(red)(alpha) -color(red)(beta))" "overset(?)(=)" "color(red)(w)^(color(red)(C)*e + color(red)(alpha) - e*color(red)(C))*tilde h^(color(red)(r_2)*color(red)(alpha) - color(red)(r_2)*e*color(red)(C) -color(red)(beta) + e*color(red)(r_2*C))`$
+
+    $`color(red)(w)^(color(red)(alpha))*tilde h^(color(red)(r_2)*color(red)(alpha) -color(red)(beta))" "overset(?)(=)" "color(red)(w)^(cancel(color(red)(C)*e) + color(red)(alpha) cancel(- e*color(red)(C)))*tilde h^(color(red)(r_2)*color(red)(alpha) cancel(- color(red)(r_2)*e*color(red)(C)) -color(red)(beta) cancel(+ e*color(red)(r_2*C)))`$
+
+    $`color(red)(w)^(color(red)(alpha))*tilde h^(color(red)(r_2)*color(red)(alpha) -color(red)(beta))" "overset(✓)(=)" "color(red)(w)^(color(red)(alpha))*tilde h^(color(red)(r_2)*color(red)(alpha) -color(red)(beta))`$
   </div>
 </details>
 
@@ -523,24 +581,35 @@ Like $`CC_Lambda`$, the auxiliary commitment $`tilde CC_C`$ commits to $`C`$, th
     <strong className="text-lg">$`tilde t_4" "overset(?)(=)" "(tilde CC_r)^(bar alpha)*tilde h^(-bar delta)*tilde g^(-bar beta)`$</strong>
   </summary>
   <div className="nx-p-2">
-    asdadsasd
+    Substitute $`tilde t_4 = (tilde CC_r)^color(red)(alpha)*tilde h^-color(red)(delta)*tilde g^-color(red)(beta)" , "bar alpha = color(red)(alpha) - e*color(red)(C)" , "bar delta = color(red)(delta) - e*color(red)(r_3*C)" , "bar beta = color(red)(beta) - e*color(red)(r_2*C)" , "tilde CC_r = tilde g^(color(red)(r_2))*tilde h^(color(red)(r_3))`$
+
+    $`(tilde CC_r)^color(red)(alpha)*tilde h^-color(red)(delta)*tilde g^-color(red)(beta)" "overset(?)(=)" "(tilde CC_r)^(color(red)(alpha) - e*color(red)(C))*tilde h^(-(color(red)(delta) - e*color(red)(r_3*C)))*tilde g^(-(color(red)(beta) - e*color(red)(r_2*C)))`$
+
+    $`(tilde g^(color(red)(r_2))*tilde h^(color(red)(r_3)))^color(red)(alpha)*tilde h^-color(red)(delta)*tilde g^-color(red)(beta)" "overset(?)(=)" "(tilde g^(color(red)(r_2))*tilde h^(color(red)(r_3)))^(color(red)(alpha) - e*color(red)(C))*tilde h^(-(color(red)(delta) - e*color(red)(r_3*C)))*tilde g^(-(color(red)(beta) - e*color(red)(r_2*C)))`$
+
+    $`tilde g^(color(red)(r_2)*color(red)(alpha))*tilde h^(color(red)(r_3)*color(red)(alpha))*tilde h^-color(red)(delta)*tilde g^-color(red)(beta)" "overset(?)(=)" "tilde g^(color(red)(r_2)*(color(red)(alpha) - e*color(red)(C)))*tilde h^(color(red)(r_3)*(color(red)(alpha) - e*color(red)(C)))*tilde h^(-(color(red)(delta) - e*color(red)(r_3*C)))*tilde g^(-(color(red)(beta) - e*color(red)(r_2*C)))`$
+
+    $`tilde g^(color(red)(r_2)*color(red)(alpha)-color(red)(beta))*tilde h^(color(red)(r_3)*color(red)(alpha) -color(red)(delta))" "overset(?)(=)" "tilde g^(color(red)(r_2)*color(red)(alpha) - color(red)(r_2)*e*color(red)(C))*tilde h^(color(red)(r_3)*color(red)(alpha) - color(red)(r_3)*e*color(red)(C))*tilde h^(-color(red)(delta) + e*color(red)(r_3*C))*tilde g^(-color(red)(beta) + e*color(red)(r_2*C))`$
+
+    $`tilde g^(color(red)(r_2)*color(red)(alpha)-color(red)(beta))*tilde h^(color(red)(r_3)*color(red)(alpha) -color(red)(delta))" "overset(?)(=)" "tilde g^(color(red)(r_2)*color(red)(alpha) - color(red)(r_2)*e*color(red)(C) -color(red)(beta) + e*color(red)(r_2*C))*tilde h^(color(red)(r_3)*color(red)(alpha) - color(red)(r_3)*e*color(red)(C) -color(red)(delta) + e*color(red)(r_3*C))`$
+
+    $`tilde g^(color(red)(r_2)*color(red)(alpha)-color(red)(beta))*tilde h^(color(red)(r_3)*color(red)(alpha) -color(red)(delta))" "overset(?)(=)" "tilde g^(color(red)(r_2)*color(red)(alpha) cancel(- color(red)(r_2)*e*color(red)(C)) -color(red)(beta) + cancel(e*color(red)(r_2*C)))*tilde h^(color(red)(r_3)*color(red)(alpha) cancel(- color(red)(r_3)*e*color(red)(C)) -color(red)(delta) + cancel(e*color(red)(r_3*C)))`$
+
+    $`tilde g^(color(red)(r_2)*color(red)(alpha)-color(red)(beta))*tilde h^(color(red)(r_3)*color(red)(alpha) -color(red)(delta))" "overset(✓)(=)" "tilde g^(color(red)(r_2)*color(red)(alpha) -color(red)(beta))*tilde h^(color(red)(r_3)*color(red)(alpha) -color(red)(delta))`$
   </div>
 </details>
 
-<details className="last-of-type:mb-0 rounded-lg bg-neutral-50 dark:bg-neutral-800 p-2 mt-4">
-  <summary>
-    <strong className="text-lg">$`bar alpha" "overset(?)(in)" "[-B*2^(lambda'+lambda''+1), B*2^(lambda'+lambda''+1)]`$</strong>
-  </summary>
-  <div className="nx-p-2">
-    asdadsasd
-  </div>
-</details>
+<Callout type="warning">
+  If you compare the above to the actual paper you may notice some differences. Unfortunately the paper had several errors in its description of the Proof of Knowledge which I had to correct. I confirmed these fixes with the actual implementation in libzerocoin.
+</Callout>
 
 #### Proof of Commitment opening ability
 
 Having proven that $`CC_Lambda`$ commits to a value $`C`$ that is contained within the RSA accumulator, we next have to proof that we know of such $`C = g^S * h^r`$ that is committed to a serial number $`S`$ that we'll be revealing. To do that, you guessed it, we need yet another commitment $`CC_S`$ that is committed to $`C`$ as well:
 
-$`CC_S = hat g^color(red)(C) * hat h^color(red)(w) = hat g^(g^S*h^color(red)(r)) * hat h^color(red)(w)`$
+$$
+`CC_S = hat g^color(red)(C) * hat h^color(red)(w) = hat g^(g^S*h^color(red)(r)) * hat h^color(red)(w)" mod("hat p")"`
+$$
 
 The complication here is that $`C`$ is a secret value and also an exponent of the accumulator's group, for which we need to prove that we're able to open the commitment $`C`$ (ie. proving knowledge of $`r`$) without revealing it. This requires a double-discrete logarithm proof.
 
@@ -548,15 +617,21 @@ The complication here is that $`C`$ is a secret value and also an exponent of th
 | --------------------------------------------------------------------: | :---------------------------------------------- |
 | Knows $`(g, h, hat g, hat h, CC_S, S, color(red)(C), color(red)(w), color(red)(r))`$ | Knows $`(g, h, hat g, hat h, CC_S, S)`$ |
 | Chooses random values $`(color(red)(alpha_i), color(red)(beta_i))`$   | |
-| $`t_i = hat g^(g^S*h^color(red)(alpha_i)) * hat h^color(red)(beta_i)`$| |    
+| $`t_i = hat g^(g^S*h^color(red)(alpha_i)" mod("hat q")") * hat h^color(red)(beta_i)" mod("hat p")"`$| |    
 | Sends $`(t_i) Rightarrow`$                                            | Knows $`(g, h, hat g, hat h, CC_S, S, t_i)`$ |
 |                                                                       | Chooses random challenge boolean $`e_i in {0, 1}`$ |
 | Knows $`(g, h, hat g, hat h, CC_S, S, color(red)(C), color(red)(w), color(red)(r), color(red)(alpha_i), color(red)(beta_i), t_i, e_i)`$ | $`Leftarrow`$ Sends $`e_i`$ 
-| $`"if ("e_i = 0") then: "bar alpha_i = color(red)(alpha_i)" , "bar beta_i = color(red)(beta_i)`$  | |
-| $`"else: "bar alpha_i = color(red)(alpha_i) - color(red)(r)" , "bar beta_i = color(red)(beta_i) - color(red)(w)*h^(color(red)(alpha_i) - color(red)(r))`$  | |
+| $`"if ("e_i = 0") then: "`$  <br/> $`bar alpha_i = color(red)(alpha_i)" , "bar beta_i = color(red)(beta_i)`$  | |
+| $`"else: "`$  <br/> $`bar alpha_i = color(red)(alpha_i) - color(red)(r)" , "bar beta_i = color(red)(beta_i) - color(red)(w)*h^(color(red)(alpha_i) - color(red)(r))" mod("hat q")"`$  | |
 | Sends $`(bar alpha_i, bar beta_i) Rightarrow`$                        | Knows $`(g, h, hat g, hat h, CC_S, S, t_i, e_i, bar alpha_i, bar beta_i)`$ |
-|                                                                       | $`"if ("e_i = 0") then: "t_i" "overset(?)(=)" "hat g^(g^S*h^bar alpha_i) * hat h^bar beta_i`$ |
-|                                                                       | $`"else: "t_i" "overset(?)(=)" "(CC_S)^(h^bar alpha_i) * hat h^bar beta_i`$ |
+|                                                                       | $`"if ("e_i = 0") then:"`$  <br/> $`t_i" "overset(?)(=)" "hat g^(g^S*h^(bar alpha_i)" mod("hat q")") * hat h^(bar beta_i)" mod("hat p")"`$ |
+|                                                                       | $`"else: "`$  <br/> $`t_i" "overset(?)(=)" "(CC_S)^(h^(bar alpha_i)" mod("hat q")") * hat h^(bar beta_i)" mod("hat p")"`$ |
+
+<Callout type="info">
+  The original Zerocoin paper does not provide much information on the construction of this proof, referring the reader to a future "full version". I assume that's Miers' dissertation<R reference="22" />, which seems to be mostly a copy containing both the Zerocoin and Zerocash papers. Based on other works<R reference="23" /> I assume that the abelian group of this proof is constructed in the same manner as that of the Pedersen Commmitment was.
+</Callout>
+
+In this protocol, the verifier responds with a boolean challenge value $`e`$, which is often referred to as a "coin flip", while the technique is called "cut-and-choose". We mentioned before that correctly guessing the challenge $`e`$ is fatal to the Zero Knowledge Proof since it would allow the prover to fake knowledge of the secret values. In case of a coin flip challenge, the prover has a 50/50 chance of guessing correctly. This danger is reduced by choosing a security parameter $`lambda`$ that determines how many rounds of the proving game are played. Note that each round $`i in [1; lambda]`$ can be played in parallel with the other rounds for efficiency.
 
 <details className="last-of-type:mb-0 rounded-lg bg-neutral-50 dark:bg-neutral-800 p-2 mt-4">
   <summary>
@@ -590,14 +665,6 @@ The complication here is that $`C`$ is a secret value and also an exponent of th
   </div>
 </details>
 
-(what generators are these? are ANY of the generators even the same? is w the witness?)
-
-coin flips, in rounds, but all the rounds can be done in parallel
-
-
-
-
-
 #### Proof of Commitment sameness
 
 <Callout>
@@ -609,7 +676,7 @@ coin flips, in rounds, but all the rounds can be done in parallel
 So far, the first proof shows that the commitment $`C`$ is indeed within the accumulator, representing a validly minted Zerocoin. The second proof shows that $`C`$ really commits to a serial number $`S`$, which, since already redeemed commitments aren't being removed from the accumulator, is remembered in order to prevent double spending. What's missing is a proof showing that both of them are even talking about the same commitment $`C`$. Without this, one could re-use the same commitment for the first proof over and over again (assuming that it really was added to the accumulator), but use some completely different commitment for the serial number (assuming that serial number had not been used yet, not necessary for the commitment to actually be accumulated).
 
 $$
-`bb"ZKPoK"{(color(red)(C_A), color(red)(C_B), color(red)(r), color(red)(w)): CC_Lambda = g^color(red)(C_A)*h^color(red)(r) ^^ CC_S = hat g^color(red)(C_B) * hat h^color(red)(w) ^^ color(red)(C_A) = color(red)(C_B)}`
+`bb"ZKPoK"{(color(red)(C_A), color(red)(C_B), color(red)(r), color(red)(w)): CC_Lambda = bar g^color(red)(C_A)* bar h^color(red)(r) ^^ CC_S = hat g^color(red)(C_B) * hat h^color(red)(w) ^^ color(red)(C_A) = color(red)(C_B)}`
 $$
 
 $$
@@ -618,36 +685,36 @@ $$
 
 | Prover                                                                | Verifier                                        |
 | --------------------------------------------------------------------: | :---------------------------------------------- |
-| Knows $`(g, h, hat g, hat h, CC_Lambda, CC_S, color(red)(C), color(red)(w), color(red)(r))`$ | Knows $`(g, h, hat g, hat h, CC_Lambda, CC_S)`$ |
+| Knows $`(bar g, bar h, hat g, hat h, CC_Lambda, CC_S, color(red)(C), color(red)(w), color(red)(r))`$ | Knows $`(bar g, bar h, hat g, hat h, CC_Lambda, CC_S)`$ |
 | Chooses random values $`(color(red)(alpha), color(red)(beta), color(red)(gamma))`$ | |
-| $`t_1 = g^color(red)(alpha)*h^color(red)(beta)`$                      | |
-| $`t_2 = hat g^color(red)(alpha)* hat h^color(red)(gamma)`$             | |
-| Sends $`(t_1, t_2) Rightarrow`$                                       | Knows $`(g, h, hat g, hat h, CC_Lambda, CC_S, t_1, t_2)`$ |
+| $`t_1 = bar g^color(red)(alpha)* bar h^color(red)(beta)" mod("bar p")"`$             | |
+| $`t_2 = hat g^color(red)(alpha)* hat h^color(red)(gamma)" mod("hat p")"`$            | |
+| Sends $`(t_1, t_2) Rightarrow`$                                       | Knows $`(bar g, bar h, hat g, hat h, CC_Lambda, CC_S, t_1, t_2)`$ |
 |                                                                       | Chooses random challenge $`e`$ |
-| Knows $`(g, h, hat g, hat h, CC_Lambda, CC_S, color(red)(C), color(red)(w), color(red)(r), color(red)(alpha), color(red)(beta), color(red)(gamma), t_1, t_2, e)`$ | $`Leftarrow`$ Sends $`e`$ 
+| Knows $`(bar g, bar h, hat g, hat h, CC_Lambda, CC_S, color(red)(C), color(red)(w), color(red)(r), color(red)(alpha), color(red)(beta), color(red)(gamma), t_1, t_2, e)`$ | $`Leftarrow`$ Sends $`e`$ 
 | $`bar alpha = color(red)(alpha) + color(red)(C) * e`$                 | |
 | $`bar beta = color(red)(beta) + color(red)(r) * e`$                   | |
 | $`bar gamma = color(red)(gamma) + color(red)(w) * e`$                 | |
-| Sends $`(bar alpha, bar beta, bar gamma) Rightarrow`$                 | Knows $`(g, h, hat g, hat h, CC_Lambda, CC_S, t_1, t_2, e, bar alpha, bar beta, bar gamma)`$ |
-|                                                                       | $`t_1 " "overset(?)(=)" "g^bar alpha * h^bar beta * (CC_Lambda)^(-e)`$ |
-|                                                                       | $`t_2 " "overset(?)(=)" "hat g^bar alpha * hat h^bar gamma * (CC_S)^(-e)`$ |
+| Sends $`(bar alpha, bar beta, bar gamma) Rightarrow`$                 | Knows $`(bar g, bar h, hat g, hat h, CC_Lambda, CC_S, t_1, t_2, e, bar alpha, bar beta, bar gamma)`$ |
+|                                                                       | $`t_1 " "overset(?)(=)" "bar g^bar alpha * bar h^bar beta * (CC_Lambda)^(-e)" mod("bar p")"`$ |
+|                                                                       | $`t_2 " "overset(?)(=)" "hat g^bar alpha * hat h^bar gamma * (CC_S)^(-e)" mod("hat p")"`$ |
 
 <details className="last-of-type:mb-0 rounded-lg bg-neutral-50 dark:bg-neutral-800 p-2 mt-4">
   <summary>
-    <strong className="text-lg">$`t_1 " "overset(?)(=)" "g^bar alpha * h^bar beta * (CC_Lambda)^(-e)`$</strong>
+    <strong className="text-lg">$`t_1 " "overset(?)(=)" "bar g^bar alpha * bar h^bar beta * (CC_Lambda)^(-e)`$</strong>
   </summary>
   <div className="nx-p-2">
-    Substitute $`t_1 = g^color(red)(alpha)*h^color(red)(beta)" , "bar alpha = color(red)(alpha) + color(red)(C) * e" , "bar beta = color(red)(beta) + color(red)(r) * e" , "CC_Lambda = g^color(red)(C)*h^color(red)(r)`$
+    Substitute $`t_1 = bar g^color(red)(alpha)*bar h^color(red)(beta)" , "bar alpha = color(red)(alpha) + color(red)(C) * e" , "bar beta = color(red)(beta) + color(red)(r) * e" , "CC_Lambda = bar g^color(red)(C)*bar h^color(red)(r)`$
 
-    $`g^color(red)(alpha)*h^color(red)(beta) " "overset(?)(=)" "g^(color(red)(alpha) + color(red)(C) * e) * h^(color(red)(beta) + color(red)(r) * e) * (g^color(red)(C)*h^color(red)(r))^(-e)`$
+    $`bar g^color(red)(alpha)*bar h^color(red)(beta) " "overset(?)(=)" "bar g^(color(red)(alpha) + color(red)(C) * e) * bar h^(color(red)(beta) + color(red)(r) * e) * (bar g^color(red)(C)*bar h^color(red)(r))^(-e)`$
 
-    $`g^color(red)(alpha)*h^color(red)(beta) " "overset(?)(=)" "g^(color(red)(alpha) + ecolor(red)(C)) * h^(color(red)(beta) + ecolor(red)(r)) * g^(-ecolor(red)(C))*h^(-ecolor(red)(r))`$
+    $`bar g^color(red)(alpha)*bar h^color(red)(beta) " "overset(?)(=)" "bar g^(color(red)(alpha) + ecolor(red)(C)) * bar h^(color(red)(beta) + ecolor(red)(r)) * bar g^(-ecolor(red)(C))*bar h^(-ecolor(red)(r))`$
 
-    $`g^color(red)(alpha)*h^color(red)(beta) " "overset(?)(=)" "g^(color(red)(alpha) + ecolor(red)(C) - ecolor(red)(C)) * h^(color(red)(beta) + ecolor(red)(r)-ecolor(red)(r))`$
+    $`bar g^color(red)(alpha)*bar h^color(red)(beta) " "overset(?)(=)" "bar g^(color(red)(alpha) + ecolor(red)(C) - ecolor(red)(C)) * bar h^(color(red)(beta) + ecolor(red)(r)-ecolor(red)(r))`$
 
-    $`g^color(red)(alpha)*h^color(red)(beta) " "overset(?)(=)" "g^(color(red)(alpha) + cancel(ecolor(red)(C) - ecolor(red)(C))) * h^(color(red)(beta) + cancel(ecolor(red)(r)-ecolor(red)(r)))`$
+    $`bar g^color(red)(alpha)*bar h^color(red)(beta) " "overset(?)(=)" "bar g^(color(red)(alpha) + cancel(ecolor(red)(C) - ecolor(red)(C))) * bar h^(color(red)(beta) + cancel(ecolor(red)(r)-ecolor(red)(r)))`$
 
-    $`g^color(red)(alpha)*h^color(red)(beta) " "overset(✓)(=)" "g^(color(red)(alpha)) * h^(color(red)(beta))`$
+    $`bar g^color(red)(alpha)*bar h^color(red)(beta) " "overset(✓)(=)" "bar g^(color(red)(alpha)) * bar h^(color(red)(beta))`$
   </div>
 </details>
 
@@ -670,9 +737,251 @@ $$
   </div>
 </details>
 
+The complication in this proof stems from the fact that, while both $`CC_Lambda`$ and $`CC_S`$ should commit to the same $`C`$, the commitments are made under different groups (ie. different moduli, orders, generators). The problem with that is, that the value of $`C`$ can be relatively large, but the group orders $`q`$ and $`hat q`$ are smaller. Therefore a $`C`$ can be chosen that satisfies the following conditions:
+
+$$
+`C_A -= C" mod("q")"`
+$$
+$$
+`C_B -= C" mod("hat q")"`
+$$
+
+To forge a coin, the attacker creates a proof with $`CC_Lambda = bar g^color(red)(C_A)*bar h^color(red)(r)`$ from a legitimately minted Zerocoin commitment $`C_A`$. Then the attacker creates a proof with $`CC_S = hat g^color(red)(C_B) * hat h^color(red)(w)`$ of a commitment $`C_B`$ for a Zerocoin that wasn't actually minted. Finally, the attacker can forge the above proof by determining a $`C`$ value that is equal to $`C_A`$ within a group of order $`q`$ and equal to $`C_B`$ within a group of order $`hat q`$. With that, it will appear that both $`CC_Lambda`$ and $`CC_S`$ are referring to the same commitment $`C`$.<R reference='27' /> 
+
+The Zcoin team suggested adjusting security parameters in a manner that would avoid this issue, but they called it a "band aid" that may introduce other unforeseen problems. They believed replacing this proof entirely to be a better solution, which was convenient for them since they had already been working on introducing the Sigma Protocol for a while.<R reference='25' />
+
+## The Code
+
+Here would normally be the part where I showcase a simple EVM implementation of the protocol presented. This time we'll instead look at [Zeth](https://github.com/firoorg/zeth), which is exactly that, an implementation of the libzerocoin code converted to solidity in order to run Zerocoin on Ethereum. Although its development was abandoned during the prototyping phase (due to the enormous gas cost making actual usage impractical), exploring the code will proof useful for connecting the theory of math formulas to some concrete real world code.
+
+```solidity filename="Zerocoin.sol"
+contract Zerocoin { 
+
+    using BigNumber for *;
+
+    ...
+```
+
+This implementation of the Zerocoin Protocol was written by [Tadhg Riordan](github.com/riordant) in 2017, but before he was able to do so, he actually needed to create a [BigNumber library](https://github.com/firoorg/solidity-BigNumber) for Solidity. While an EVM's word can fit a 256 bit integer, an arguably enormous number, the modulus used for the RSA Accumulator is 2048 bits large, which requires 8 words to fit.
+
+```solidity filename="BigNumbers.sol"
+struct BigNumber { 
+    bytes val;
+    bool neg;
+    uint bitlen;
+}
+```
+
+The library's `struct BigNumber{:solidity}` holds the number's value within Solidity's `bytes` type, which can store byte strings of variable length. Additionally, the struct keeps track of the values sign (+/-) and its bit length (position of the most significant bit). The library also provides functions to make actual calculations (add, sub, mul, ...) between big numbers.
+
+### Parameters
+
+```solidity filename="Zerocoin.sol"
+    ...
+
+    uint constant zkp_iterations = 80;
+
+    uint k_prime = 160;
+    uint k_dprime = 128;
+
+    ...
+```
+
+At the beginning, we find definitions of various parameter values. Noteworthy is the constant `zkp_iterations`, the security parameter $`lambda`$ for the Zero Knowledge Proof for $`CC_S`$, showing that its commitment $`C`$ really does commit to the Zerocoin's serial number $`S`$. The implementation chooses to execute 80 iterations (rounds) of the the "coin flip" proof, which means the chance for the prover guessing all rounds correctly is $`0.5^80`$. This is accordance with the paper, which suggested that a small size of 80 bits would be sufficient since breaking it would only allow forgery of a single coin.
+
+After that we find the security parameters $`Lambda'`$ and $`Lambda''`$ respectively, restricting the value of the commitment $`C`$ to the range $`chi_(A,B)`$ with $`B*2^(lambda'+lambda''+2) < A^2 - 1 < q/2`$. While omitted in the excerpt, this implementation too makes use of the RSA-2048 parameters generated in the 1991 factoring challenge.
+
+```solidity filename="Zerocoin.sol"
+    ...
+
+    struct commitment_group {
+        BigNumber.instance g;
+        BigNumber.instance h;
+        BigNumber.instance modulus;
+        BigNumber.instance group_order;
+    }
+
+    ...
+```
+
+Next, we see the declaration of several `commitment_group` (abelian group) instances:
+- `coin_commitment_group` for the commitment $`C`$, has generators $`g`$ and $`h`$ from the cyclic group $`ZZ_q^(**)`$ of a 256-bit order $`q`$ with a 1024-bit modulus $`p`$, both prime. The Zerocoin paper describes the relationship between these as $`p = 2^(omega) * q + 1`$ with $`omega >= 1`$, but it seems that the $`p`$ and $`q`$ used here have been created in a different way.
+- `accumulator_pok_commitment_group` for the commitment $`CC_Lambda`$ of the inclusion proof, has generators $`bar g`$ and $`bar h`$ from the cyclic group $`ZZ_(bar q)^(**)`$ of a 257-bit order $`bar q`$ with a 556-bit modulus $`bar p`$, both prime.
+- `accumulator_qrn_commitment_group` for the auxiliary commitments $`tilde CC_C, tilde CC_w, tilde CC_r`$ of the inclusion proof has elements $`tilde g`$ and $`tilde h`$ from $`QR_n`$. This group is defined with a `modulus` and `group_order` of 0, with calculations instead using the RSA Accumulator's modulus $`n`$.
+- `serial_number_sok_commitment_group` for the commitment $`CC_S`$ of the serial number proof, has generators $`hat g`$ and $`hat h`$ from the cyclic group $`ZZ_(hat q)^(**)`$ of a 1024-bit order $`hat q`$ with a 1033-bit modulus $`hat p`$, both prime.
+
+Interestingly, the `modulus` of `coin_commitment_group`, and the `group_order` of the `serial_number_sok_commitment_group` are both the same, and equal to the parameter `max_coin_value`, representing the maximum value that the commitment $`C`$ is allowed to have. It's a shame the papers are so sparse on explanations on these parameters, what their impact is, and how to best select them. 
+
+```solidity filename="Zerocoin.sol"
+    BigNumber.instance accumulator_base = BigNumber.instance(hex"00000000000000000000000000000000000000000000000000000000000003c1",false,10);
+```
+
+Finally, we come across the base value $`u`$ that the accumulator is initialized with. The value `0x03c1` is $`961`$ in decimals, which is indeed a quadratic with $`sqrt(961) = 31`$. No further comment on how this choice was made though.
+
+### Business Logic
+
+Work on this implementation was never completed, and it especially shows in the functions for minting and spending Zerocoins. I assume the intention was for the minting function to be `payable{:solidity}`, so that a caller is able to pass in some amount of ether and mint a Zerocoin of the appropriate denomination in return. Then later, the user would be able to spend the Zerocoin anonymously from a different address, receiving back the ether value they had paid. The Zerocoin contract would act as a mixing pool, similarly to how protocols like Tornado Cash work. Unfortunately, the code is in no state to do these things, there's merely a lot of `TODO` comments hinting at the intentions.
+
+```solidity filename="Zerocoin.sol"
+    ...
+
+    mapping(bytes32 => BigNumber.instance) private serial_numbers;
+    mapping(bytes32 => BigNumber.instance) private commitments;
+    mapping(bytes32 => BigNumber.instance) private accumulators;
+
+    BigNumber.instance[] accumulator_list;
+    BigNumber.instance[] commitment_list;
+
+    ...
+```
+
+Here we find the storage variables used by the minting and spending functions. The `serial_numbers` ($`S`$) are tracked to prevent double spending of the same coin. Commitments $`C`$ and iteratively computed accumulator states $`Lambda`$ are tracked in both mappings and arrays.
+
+```solidity filename="Zerocoin.sol"
+    function validate_coin_mint(BigNumber.instance commitment, BigNumber.instance[3] randomness) public returns (bool success){ //TODO instead of bool - perhaps log an event?
+        //TODO denominations & eth/gas handling.
+        
+        //should not be set if commitment is new.
+        BigNumber.instance memory stored_commitment = commitments[BigNumber.hash(commitment)]; 
+        assert (BigNumber.cmp(min_coin_value,commitment,true)==-1 && 
+                BigNumber.cmp(commitment, max_coin_value,true)==-1 && 
+                BigNumber.is_prime(commitment, randomness) &&
+                !(BigNumber.cmp(stored_commitment,commitment,true)==0)); // if new struct == stored struct, commitment is not new.
+
+        // must also check that denomination of eth sent is correct
+        
+        //add to accumulator. new accumulator = old accumulator ^ serial_number_commitment mod modulus.
+        BigNumber.instance memory old_accumulator = accumulator_list[accumulator_list.length-1];
+        BigNumber.instance memory accumulator = BigNumber.prepare_modexp(old_accumulator, commitment, modulus);
+        accumulators[BigNumber.hash(accumulator)] = accumulator; 
+        accumulator_list.push(accumulator); //add to list and map
+
+        commitments[BigNumber.hash(commitment)] = commitment;
+        commitment_list.push(commitment); //add to list and map
+
+        // add eth denomination to value pool.
+
+        return true;
+    }
+```
+
+In the minting function itself, we can observe the commitment $`C`$ validation: Ensuring that $`C`$ is within the allowed range $`chi_(A,B)`$, that $`C`$ is prime, and that $`C`$ has not been added to the accumulator before. After that, it loads the previously calculated accumulator state $`Lambda`$ and updates it with $`Lamda' = Lambda^C" mod("n")"`$.
+
+```solidity filename="Zerocoin.sol"
+    function verify_coin_spend(Commitment_pok commitment_pok, 
+                               Accumulator_pok accumulator_pok, 
+                               Serial_number_sok serial_number_sok, 
+                               BigNumber.instance accumulator,
+                               BigNumber.instance coin_serial_number,
+                               BigNumber.instance serial_number_commitment,
+                               BigNumber.instance accumulator_commitment,
+                               BigNumber.instance[4] accumulator_inverses,
+                               BigNumber.instance[2] commitment_inverses,
+                               address output_address) internal returns (bool result) { //internal for now - will be made public/external
+
+        BigNumber.instance memory stored_coin_serial_number = commitments[BigNumber.hash(coin_serial_number)]; //should be empty if this is a new serial
+
+        assert(verify_commitment_pok(commitment_pok, serial_number_commitment, accumulator_commitment, commitment_inverses) &&
+               verify_accumulator_pok(accumulator_pok, accumulator, accumulator_commitment, accumulator_inverses) &&
+               //verify_serial_number_sok(serial_number_sok, coin_serial_number, serial_number_commitment) &&
+               !( BigNumber.cmp(stored_coin_serial_number,coin_serial_number,true)==0) );
+        
+        //TODO send denomination of eth from value pool to output_address
+
+        //add coin_serial_number to map of used serial numbers
+        serial_numbers[BigNumber.hash(coin_serial_number)] = coin_serial_number;
+    }
+```
+
+The author was unable to make the spending function public as intended due to restrictions on how Solidity allowed data structures to be passed externally at the time. Instead, it seems there are some other publicly exposed functions that allow passing in the Proof of Knowledge parameters in an unserialized manner. Let's ignore those for now and move on with the assumption that this function would've been used.
+
+Three Proof/Signature of Knowledge structs are passed into the spending function, one for each of the proofs we've covered:
+- `struct Accumulator_pok{:solidity}` containing the auxiliary commitments $`tilde CC_C, tilde CC_w, tilde CC_r`$, the parameters $`t_1, t_2, t_3`$, $`tilde t_1, tilde t_2, tilde t_3, tilde t_4`$, and the exponents $`bar alpha, bar beta, bar gamma, bar delta, bar epsilon, bar zeta, bar varphi, bar psi, bar eta, bar sigma, bar xi`$. Calculation of the challenge $`e`$ from a hash was not yet implemented, but it would likely have been $`tt"hash"(CC_Lambda, tilde CC_C, tilde CC_w, tilde CC_r, Lambda', t_1, t_2, t_3, tilde t_1, tilde t_2, tilde t_3, tilde t_4)`$.
+- `struct Serial_number_sok{:solidity}` containing two arrays, one for each $`bar alpha`$ and $`bar beta`$. Furthermore, it contains a hash of which each bit represents one coin flip challenge ($`hash[i] = e_i`$) with the hash created from $`tt"hash"(T, CC_S, S, t_1, t_2, ..., t_i, ..., t_lambda)`$ with $`lambda`$ rounds. This proof is also a Signature of Knowledge since it signs some transaction data $`T`$.
+- `struct Commitment_pok{:solidity}` containing $`bar alpha, bar beta, bar gamma`$ and the challenge $`e`$ which, since the proof would be non-interactive, is a $`tt"hash"(CC_Lambda, CC_S, t_1, t_2)`$.
+
+The function would then verify all of them (assuming the last one wouldn't be commented out), ensure that the serial number hasn't been spent already, and finally mark it as spent after paying out the appropriate amount of ether.
+
+### Proof Verification
+
+<Callout>
+  Calculating the multiplicative inverse of a number is rather expensive, especially in a costly environment such as the EVM where there's no native function to do so. The Zerocoin contract, instead of calculating those inverses on-chain, has them passed in as function parameters in `inverse_results`. This can be done safely since it's very cheap to verify whether the number really is the inverse: $`("num" * "inv "overset(?)(=)" "1) rArr "inv "overset(✓)(=)" num"^(-1)`$.
+</Callout>
+
+```solidity filename="Zerocoin.sol"
+    // Verifies that a commitment c is accumulated in accumulator a
+    function verify_accumulator_pok(Accumulator_pok accumulator_pok, 
+                                    BigNumber.instance accumulator, 
+                                    BigNumber.instance accumulator_commitment,
+                                    BigNumber.instance[4] inverse_results) private returns (bool){
+
+        //initially verify that accumulator exists. mapping gives O(1) access
+        bytes32 accumulator_hash = BigNumber.hash(accumulator);
+        require(BigNumber.cmp(accumulators[BigNumber.hash(accumulator)], accumulator, true)==0);
+
+        //hash together inputs above in calculate
+        BigNumber.instance memory c = calculate_challege_accumulator_pok(accumulator_pok, accumulator_commitment); //this hash should be of length k_prime bits TODO layout
+
+        BigNumber.instance[3] memory st_prime;
+        BigNumber.instance[4] memory t_prime;
+
+        BigNumber.instance memory A;
+        BigNumber.instance memory B;
+        BigNumber.instance memory C;
+        
+        BigNumber.instance memory one = BigNumber.instance(hex"0000000000000000000000000000000000000000000000000000000000000001",false,1);
+        
+        A = BigNumber.prepare_modexp(accumulator_commitment, c, accumulator_pok_commitment_group.modulus);
+        B = BigNumber.prepare_modexp(accumulator_pok_commitment_group.g, accumulator_pok.s_alpha, accumulator_pok_commitment_group.modulus);
+        C = BigNumber.prepare_modexp(accumulator_pok_commitment_group.h, accumulator_pok.s_phi, accumulator_pok_commitment_group.modulus);
+        st_prime[0] = BigNumber.prepare_modexp(BigNumber.bn_mul(BigNumber.bn_mul(A,B),C), 
+                                               one, 
+                                               accumulator_pok_commitment_group.modulus);                        
+
+        ...
+
+        require(BigNumber.hash(accumulator_pok.st[0]) == BigNumber.hash(st_prime[0]));
+        ...
+
+        //(maxCoinValue * BigNumber.instance(2).pow(k_prime + k_dprime + 1))) in params as upper_result_range_value
+        //we check here that s_alpha lies between the positive and negative of this value.
+        bool result_range = (BigNumber.cmp(accumulator_pok.s_alpha, result_range_value,true) == -1);
+        result_range_value.neg = true;
+        result_range = result_range && (BigNumber.cmp(accumulator_pok.s_alpha, result_range_value,true) == -1);
+        result_range_value.neg = false; //reset negativity.
+
+        require(result_range);
+
+        return true;
+
+    }
+```
+
+At the beginning of the Accumulator Inclusion Proof verification function we find a check for wether the passed accumulator $`Lambda'`$ exists in the contract's storage. Remember that the proof works by showing $`Lambda' = color(red)(w)^color(red)(C)`$ where the witness is an accumulator state $`w = Lambda`$ without $`C`$. To actually remain anonymous, we shouldn't use the accumulator state that immediately resulted from minting the commitment $`C`$ as our $`Lambda'`$ during the proof. But with the given restriction of accumulator states having to be known to the contract, the actual anonymity set does not include the commitments that came before we minted. The effective anonymity set will only be those who came after our mint, since we're forced to use one of those future accumulator states for the proof.
+
+Following that check, we see the calculation of the challenge $`e`$ (`c`) from $`tt"hash"(CC_Lambda, tilde CC_C, tilde CC_w, tilde CC_r, Lambda', t_1, t_2, t_3, tilde t_1, tilde t_2, tilde t_3, tilde t_4)`$. With the protocol being non-interactive, that hash is the same one that the prover calculated after comitting to the $`t`$ values but before calculating the exponents $`bar alpha, bar beta, ...`$ using $`e`$. The validation then consists of repreducing the same $`t`$ values from the challenge and exponents.
+
+Due to the complexity of the proof, the code snippet was reduced to show only the following checks:
+
+$$
+`t_1" "overset(?)(=)" "(CC_Lambda)^e*bar g^(bar alpha)*bar h^(bar varphi) `
+$$
+
+$$
+`bar alpha" "overset(?)(in)" "[-B*2^(lambda'+lambda''+1), B*2^(lambda'+lambda''+1)]`
+$$
+
+With the other verifications mostly being more of the same, I'll stop here. Unfortunately I wasn't able to find the client that was intended to be used with these contracts, so I'm unable to present the code that was intended to build the ZK Proofs that are being verified here. But if you're curious, the original [C++ code of libzerocoin](https://github.com/Zerocoin/libzerocoin/blob/master/Commitment.cpp) is still available on github and not too bad in terms of readability.
+
+## Conclusion
+
+The history of the Zerocoin Protocol was troubled by many issues. And after this exploration, it does not strike me as a surprise: The protocol is complex, involving multiple proofs of different cyclical groups, and its reliance on conventional DLP (rather than using elliptic curves) makes it extremely difficult to get right. These technological choices were no accident though, while other Zero Knowledge systems like SNARKs were known, they were not considered as mature as they are today. Not long after Zerocash, the authors did suggest another protocol making use of more modern techniques though: The Zerocash Protocol, which became known mostly thanks to its implementation in Zcash.
+
+Newer methods also promised reducing the size of proofs. Zerocoin's proofs, depending on the degree of optimization could be anywhere from 10 to 30 kib. The verification time itself was also quite slow with a measured average, though constant, 300ms according to the paper's measurements. The size of the proofs was also directly correlated to the protocols security. When implementing the protocol, one had the choice between smaller proof sizes that were less secure, or larger ones that would protect the network against future technological progress. While the option to increase proof sizes over time was available, this was not considered easily done for all parts of the system. Especially regarding the RSA Accumulator the original paper mentioned that increasing its size would proof difficult later on and that a large value such as 3072 bit should be chosen for longevity.
+
+The paper suggested various improvements that could be made to the protocol and the authors followed up on some of them such as divisible coins<R reference='28' />, but looking at the Zerocoin landscape today you won't find many implementations of it still running. With the failure of the third proof, most cryptocurrencies turned the feature off or migrated away to another technology. Zcoin was the first to move on and now had multiple Protocol changes, from Zerocoin to Sigma, then Lelantus and soon Lelantus Spark.
 
 ## Appendix
-
 
 ### Tech-Tree
 
@@ -698,7 +1007,7 @@ $$
     * [Zoin](https://bitcointalk.org/index.php?topic=1671060.0) (later Noir), a Zcoin fork, launches without founder rewards
   </Year>
   <Year year='2017'>
-    * [Ian Miers' master thesis](https://jscholarship.library.jhu.edu/server/api/core/bitstreams/791c3d9d-804b-4534-a25e-86e07fdfee14/content) published, containing missing proofs
+    * [Ian Miers' dissertation](https://jscholarship.library.jhu.edu/server/api/core/bitstreams/791c3d9d-804b-4534-a25e-86e07fdfee14/content) published, containing missing proofs
     * [Zcoin suffers inflation attack](https://web.archive.org/web/20171115184742/http://zcoin.io/zcoin-hard-fork-statement/) due to implementation issues
     * [HexxCoin](https://coincentral.com/what-is-hexxcoin-a-beginners-guide/) launches with Zerocoin implemented
   </Year>
@@ -804,7 +1113,7 @@ $$
     Reuben Yap, 2019, May, *Zerocoin Critical Flaw Explained With Reuben of Zcoin Crypto*, Lark Davis, https://www.youtube.com/watch?v=FEoda23otIY
   </Reference>
   <Reference reference='26'>
-    Tadhg Riorden, 2018m June, *Tadhg Riorden Explains Zerocoin Protocol at Bitcoin Wednesday*, Zeth: Zerocoin on Ethereum, Bitcoin Wednesday, https://www.youtube.com/watch?v=ZZyqkLDpc3A
+    Tadhg Riorden, 2018, June, *Tadhg Riorden Explains Zerocoin Protocol at Bitcoin Wednesday*, Zeth: Zerocoin on Ethereum, Bitcoin Wednesday, https://www.youtube.com/watch?v=ZZyqkLDpc3A
   </Reference>
   <Reference reference='27'>
     Reuben Yap, 2019, April, *Cryptographic description of Zerocoin attack*, https://web.archive.org/web/20190430131937/https://zcoin.io/cryptographic-description-of-zerocoin-attack/
@@ -842,5 +1151,20 @@ $$
   </Reference>
   <Reference reference='37'>
     Dobson, S., Galbraith, S. and Smith, B., 2022. *Trustless unknown-order groups*. arXiv preprint arXiv:2211.16128.
+  </Reference>
+  <Reference reference='38'>
+    Schnorr, C.P., 1991. *Efficient signature generation by smart cards*. Journal of cryptology, 4, pp.161-174.
+  </Reference>
+  <Reference reference='39'>
+    Goldwasser, S., Micali, S. and Rackoff, C., 1985. *The Knowledge Complexity of Interactive Proof-Systems In ACM Symposium on Theory of Computing*.
+  </Reference>
+  <Reference reference='40'>
+    Pedersen, T.P., 1991, August. *Non-interactive and information-theoretic secure verifiable secret sharing*. In Annual international cryptology conference (pp. 129-140). Berlin, Heidelberg: Springer Berlin Heidelberg.
+  </Reference>
+  <Reference reference='41'>
+    Camenisch, J. and Michels, M., 1999. *Proving in zero-knowledge that a number is the product of two safe primes*. In Advances in Cryptology—EUROCRYPT’99: International Conference on the Theory and Application of Cryptographic Techniques Prague, Czech Republic, May 2–6, 1999 Proceedings 18 (pp. 107-122). Springer Berlin Heidelberg.
+  </Reference>
+  <Reference reference='42'>
+    Brands, S., 1997, May. *Rapid demonstration of linear relations connected by boolean operators*. In International Conference on the Theory and Applications of Cryptographic Techniques (pp. 318-333). Berlin, Heidelberg: Springer Berlin Heidelberg.
   </Reference>
 </References>

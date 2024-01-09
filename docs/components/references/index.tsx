@@ -1,4 +1,5 @@
 import styles from './style.module.css'
+import type { ReactNode } from 'react'
 
 export function R({reference}: {reference: string}) {
   const anchor = `reference-${reference}`

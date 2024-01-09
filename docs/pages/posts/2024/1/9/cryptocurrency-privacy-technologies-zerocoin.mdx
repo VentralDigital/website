@@ -790,7 +790,7 @@ contract Zerocoin {
     ...
 ```
 
-This implementation of the Zerocoin Protocol was written by [Tadhg Riordan](github.com/riordant) in 2017, but before he was able to do so, he actually needed to create a [BigNumber library](https://github.com/firoorg/solidity-BigNumber) for Solidity. While an EVM's word can fit a 256-bit integer, an arguably enormous number, the modulus used for the RSA Accumulator is 2048 bits large, which requires 8 words to fit.
+This implementation of the Zerocoin Protocol was written by [Tadhg Riordan](https://github.com/riordant) in 2017, but before he was able to do so, he actually needed to create a [BigNumber library](https://github.com/firoorg/solidity-BigNumber) for Solidity. While an EVM's word can fit a 256-bit integer, an arguably enormous number, the modulus used for the RSA Accumulator is 2048 bits large, which requires 8 words to fit.
 
 ```solidity filename="BigNumbers.sol"
 struct BigNumber { 

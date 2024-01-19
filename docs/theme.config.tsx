@@ -17,7 +17,7 @@ const config: DocsThemeConfig = {
     </>
   ),
   /* Adding announcement banner to top: */
-  banner: {
+  /* banner: {
     dismissible: true,
     key: '2023-12-05-relaunch', // Storage key to remember dismissed state
     text: (
@@ -25,7 +25,7 @@ const config: DocsThemeConfig = {
         🎉 This website has just relaunched! Report any issues you find to get a Cantina Code! →
       </a>
     )
-  },
+  }, */
   head: function useHead() {
     const { title } = useConfig()
     return (

@@ -1,0 +1,88 @@
+<mxfile host="app.diagrams.net" modified="2024-01-17T20:28:48.656Z" agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" etag="bYuPH6weYbqF-fbQ1L_I" version="22.1.17" type="device">
+  <diagram name="Page-1" id="G36I1ciaqv593En-_ECq">
+    <mxGraphModel dx="2236" dy="826" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="DLTjrxGn0ioGPJwoFfjm-32" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="20" y="350" width="700" height="170" as="geometry" />
+        </mxCell>
+        <mxCell id="DLTjrxGn0ioGPJwoFfjm-1" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="20" y="50" width="230" height="250" as="geometry" />
+        </mxCell>
+        <mxCell id="DLTjrxGn0ioGPJwoFfjm-2" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="260" y="50" width="460" height="250" as="geometry" />
+        </mxCell>
+        <mxCell id="DLTjrxGn0ioGPJwoFfjm-3" value="Off-Chain" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="1">
+          <mxGeometry x="20" y="20" width="60" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="DLTjrxGn0ioGPJwoFfjm-4" value="On-Chain" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="1">
+          <mxGeometry x="260" y="20" width="60" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="DLTjrxGn0ioGPJwoFfjm-8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="DLTjrxGn0ioGPJwoFfjm-5" target="DLTjrxGn0ioGPJwoFfjm-7">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="DLTjrxGn0ioGPJwoFfjm-5" value="Attacker" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="30" y="80" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="DLTjrxGn0ioGPJwoFfjm-25" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="DLTjrxGn0ioGPJwoFfjm-6" target="DLTjrxGn0ioGPJwoFfjm-24">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="DLTjrxGn0ioGPJwoFfjm-6" value="Trusted Forwarder" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="410" y="180" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="DLTjrxGn0ioGPJwoFfjm-10" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="DLTjrxGn0ioGPJwoFfjm-7" target="DLTjrxGn0ioGPJwoFfjm-6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="DLTjrxGn0ioGPJwoFfjm-7" value="Gas Relay" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="210" y="130" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="DLTjrxGn0ioGPJwoFfjm-9" value="Signs &amp;amp; sends request" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="1">
+          <mxGeometry x="100" y="160" width="95" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="DLTjrxGn0ioGPJwoFfjm-11" value="sendAndVerify(request)" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="1">
+          <mxGeometry x="310" y="210" width="60" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="DLTjrxGn0ioGPJwoFfjm-24" value="Protocol Contract" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="590" y="230" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="DLTjrxGn0ioGPJwoFfjm-27" value="multicall([...])" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="1">
+          <mxGeometry x="500" y="260" width="60" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="DLTjrxGn0ioGPJwoFfjm-38" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="DLTjrxGn0ioGPJwoFfjm-28" target="DLTjrxGn0ioGPJwoFfjm-35">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="DLTjrxGn0ioGPJwoFfjm-28" value="&lt;font color=&quot;#7700ff&quot;&gt;multicall&lt;/font&gt;([&lt;br&gt;&amp;nbsp; &lt;font style=&quot;background-color: rgb(38, 255, 168);&quot; color=&quot;#157d6c&quot;&gt;withdrawAllTo(attackerAddress) + victimAddress&lt;/font&gt;&lt;br&gt;]) + &lt;font color=&quot;#ff0000&quot;&gt;attackerAddress&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;align=left;" vertex="1" parent="1">
+          <mxGeometry x="30" y="380" width="290" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="DLTjrxGn0ioGPJwoFfjm-29" value="&lt;font color=&quot;#ff0000&quot;&gt;_msgSender(): Attacker&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="30" y="470" width="290" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="DLTjrxGn0ioGPJwoFfjm-31" value="msg.sender: Trusted Forwarder" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="30" y="440" width="290" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="DLTjrxGn0ioGPJwoFfjm-33" value="Inside Protocol Contract" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="1">
+          <mxGeometry x="10" y="320" width="150" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="DLTjrxGn0ioGPJwoFfjm-34" value="" style="endArrow=classic;html=1;rounded=0;" edge="1" parent="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint y="400" as="sourcePoint" />
+            <mxPoint x="30" y="400" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="DLTjrxGn0ioGPJwoFfjm-35" value="&lt;font color=&quot;#7700ff&quot;&gt;withdrawAllTo&lt;/font&gt;(&lt;font color=&quot;#157d6c&quot;&gt;attackerAddress&lt;/font&gt;) + &lt;font color=&quot;#ff0000&quot;&gt;victimAddress&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;align=left;" vertex="1" parent="1">
+          <mxGeometry x="420" y="380" width="290" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="DLTjrxGn0ioGPJwoFfjm-36" value="&lt;font color=&quot;#ff0000&quot;&gt;_msgSender(): victimAddress&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#050505;" vertex="1" parent="1">
+          <mxGeometry x="420" y="470" width="290" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="DLTjrxGn0ioGPJwoFfjm-37" value="msg.sender: Trusted Forwarder" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="420" y="440" width="290" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="DLTjrxGn0ioGPJwoFfjm-39" value="multicall()" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" vertex="1" parent="1">
+          <mxGeometry x="330" y="390" width="60" height="30" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

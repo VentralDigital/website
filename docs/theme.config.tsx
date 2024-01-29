@@ -5,7 +5,7 @@ import Image from 'next/image';
 import logoImage from './public/logoflicker.svg'
 
 const config: DocsThemeConfig = {
-  docsRepositoryBase: 'https://github.com/VentralDigital/website/tree/main/',
+  docsRepositoryBase: 'https://github.com/VentralDigital/website/tree/main/docs/',
   useNextSeoProps() {
     return {
       titleTemplate: '%s • Ventral Digital'

@@ -1,0 +1,510 @@
+# RACE #26 Of The Secureum Bootcamp Epoch∞
+
+import { Callout } from 'nextra/components'
+
+This is a Write-Up of RACE-26, Quiz of the [Secureum Bootcamp](https://twitter.com/0xRajeev/status/1470910752085065731) for Ethereum Smart Contract Auditors. Secureum Mentor Luksgrin ([Bronicle](https://twitter.com/luksgrin)) tests our understanding of Vyper's intricacies. Solutions are based on the notes from both Lucas and [pcaversaccio](https://twitter.com/pcaversaccio).
+
+<Callout type="info">
+  Participants of this quiz had to **answer 8 questions within the strict time limit of 16 minutes**. If you’re reading this in preparation for participating yourself, it’s best to give it a try under the same time limit!
+
+  As usual, I waited for submissions to close before publishing it and, to stay true to the original, I omitted syntax highlighting. Feel free to copy it into your favorite editor, but do so after starting the timer!
+</Callout>
+
+<p className="text-xs text-right">January 30, 2024 by [patrickd](/about#patrickd)</p>
+
+<style jsx>{`
+  input[type=checkbox] {
+    width: 15px;
+    height: 15px;
+  }
+  li {
+    padding: 0.5em;
+  }
+`}</style>
+
+export function HiddenSolution({ children }) {
+  return (
+    <details closed className="last-of-type:mb-0 rounded-lg bg-neutral-50 dark:bg-neutral-800 p-2 mt-4">
+      <summary>
+        <strong className="text-lg">Solution</strong>
+      </summary>
+      <div className="nx-p-2">{children}</div>
+    </details>
+  )
+}
+
+---
+
+### Question 1 of 8
+
+Given the following Vyper contract, which of the following statements are true?
+
+```python
+# @version 0.3.0
+
+"""A simple vault contract
+
+This contract implements a simple vault where users can deposit and withdraw
+ether.
+"""
+
+userBalances: public(HashMap[address, uint256])
+
+event Deposit:
+    src: indexed(address)
+    amount: uint256
+
+event Transfer:
+    src: indexed(address)
+    dst: indexed(address)
+    amount: uint256
+
+event Withdrawal:
+    src: indexed(address)
+    amount: uint256
+
+@external
+@payable
+def deposit():
+    self.userBalances[msg.sender] += msg.value
+    log Deposit(msg.sender, msg.value)
+
+@external
+@nonreentrant("withdraw")
+def transfer(to: address, amount: uint256):
+    if self.userBalances[msg.sender] >= amount:
+        self.userBalances[msg.sender] -= amount
+        self.userBalances[to] += amount
+        log Transfer(msg.sender, to, amount)
+
+@external
+@nonreentrant("withdraw")
+def withdrawAll():
+    _balance: uint256 = self.userBalances[msg.sender]
+    assert _balance > 0, "Insufficient balance"
+
+    raw_call(msg.sender, b"", value=_balance)
+
+    self.userBalances[msg.sender] = 0
+    log Withdrawal(msg.sender, _balance)
+
+@external
+@view
+def getBalance() -> uint256:
+    return self.balance
+```
+
+<ul>
+  <li><input type="checkbox" /> A. The contract is vulnerable to reentrancy attacks </li>
+  <li><input type="checkbox" /> B. The contract is vulnerable to denial of service attacks </li>
+  <li><input type="checkbox" /> C. The contract is vulnerable to overflow attacks </li>
+  <li><input type="checkbox" /> D. None of the above </li>
+</ul>
+
+
+<HiddenSolution>
+**Correct is A.**
+
+* A: The [Vyper version used](https://hackmd.io/@vyperlang/HJUgNMhs2), [`0.3.0`](https://github.com/vyperlang/vyper/security/advisories/GHSA-5824-cm3x-3c38"), is affected by a [compiler bug](/posts/2024/1/19/ethereum-smart-contract-auditors-2023-rewind/#vypers-compiler-bug) that allows cross-function reentrancy between `transfer()` and `withdrawAll()` despite the fact that both are using a `nonreentrant` decorator with the same mutex key. Effectively, an attacker could make a call to `withdrawAll()` to initiate the withdrawal of the deposit, but before the user balance is reset to 0, a `raw_call` is made back to `msg.sender`. This triggers a malicious contract's fallback handler, allowing the attacker to reenter the contract through `transfer()` and move the balance to another address before it is reset to 0. This process can be repeated over and over again until the entire vault is drained. There are two other Vyper versions affected by this bug: `0.2.15`, `0.2.16`. You can see how this affects the storage layout using the following compiler command: `vyper -f layout vault.vy`.
+* B: Would mean that the contract can be brought into a state that denies service to users. In this contract's case, there isn't really any state that is shared between users that would allow a permanent denial of service.  
+* C: Vyper has native protection against arithmetic overflows: ["Bounds and overflow checking: On array accesses as well as on arithmetic level."](https://docs.vyperlang.org/en/latest/)
+</HiddenSolution>
+
+
+
+---
+
+### Question 2 of 8
+
+Given the following Vyper contract, which of the following statements are true?
+
+```python
+# @version 0.3.7
+
+"""A small vault implementation
+
+This contract implements a simple vault where users can deposit and withdraw
+ether, where the balances of each user are stored in a custom hashmap implementation to lower the number of users that can use the vault.
+"""
+
+MAX_USERS: constant(uint256) = max_value(uint64) + 2
+_balances: uint256[MAX_USERS]
+admin: public(address)
+
+event AdminSet:
+    admin: indexed(address)
+
+event Deposit:
+    src: indexed(address)
+    amount: uint256
+
+event Transfer:
+    src: indexed(address)
+    dst: indexed(address)
+    amount: uint256
+
+event Withdrawal:
+    src: indexed(address)
+    amount: uint256
+
+@external
+def __init__():
+    self._set_admin(msg.sender)
+
+@internal
+@pure
+def _indexer(_address: address) -> uint256:
+    return convert(sha256(convert(_address, bytes32)), uint256) % MAX_USERS
+
+@internal
+@view
+def _is_admin(_address: address) -> bool:
+    return _address == self.admin
+
+@internal
+def _set_admin(_admin: address):
+    self.admin = _admin
+    log AdminSet(_admin) 
+
+@external
+def setAdmin(_admin: address):
+    assert self._is_admin(msg.sender), "Only admin can set admin"
+    self._set_admin(_admin)
+
+@external
+def userBalances(_address: address) -> uint256:
+    return self._balances[self._indexer(msg.sender)]
+
+@external
+@payable
+def deposit():
+    self._balances[self._indexer(msg.sender)] = msg.value
+    log Deposit(msg.sender, msg.value)
+
+@external
+@nonreentrant("withdraw")
+def transfer(to: address, amount: uint256):
+    if self._balances[self._indexer(msg.sender)] >= amount:
+        self._balances[self._indexer(msg.sender)] -= amount
+        self._balances[self._indexer(to)] += amount
+        log Transfer(msg.sender, to, amount)
+
+@external
+@nonreentrant("withdraw")
+def withdrawAll():
+    _balance: uint256 = self._balances[self._indexer(msg.sender)]
+    assert _balance > 0, "Insufficient balance"
+
+    self._balances[self._indexer(msg.sender)] = 0
+    raw_call(msg.sender, b"", value=_balance)
+    
+    log Withdrawal(msg.sender, _balance)
+
+@external
+@view
+def getBalance() -> uint256:
+    return self.balance
+
+@external
+def kill():
+    assert self._is_admin(msg.sender), "Only admin can kill"
+    selfdestruct(msg.sender)
+```
+<ul>
+  <li><input type="checkbox" /> A. The reentrancy locks are not necessary </li>
+  <li><input type="checkbox" /> B. The reentrancy locks do not protect against cross-function reentrancy </li>
+  <li><input type="checkbox" /> C. Collisions in the `_balances` array can occur in theory, but are unlikely to occur in practice </li>
+  <li><input type="checkbox" /> D. Collisions in the `_balances` array can occur both in theory and in practice </li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, C.**
+
+* A: The functions correctly follow the Checks-Effects-Interactions pattern, therefore the reentrancy locks are indeed unnecessary.
+* B: The Vyper version used in this snippet has reentrancy locks that work as intended.
+* C/B: An address type consists of 20 bytes, which is 160 bits. The `_indexer()` function maps arbitrary addresses to a space that is around 64 bits - a much smaller than addresses. This theoretically allows finding two addresses that would map to the same index, but it would still be impractical to actually exploit this.
+</HiddenSolution>
+
+---
+
+### Question 3 of 8
+
+Given the same Vyper contract from previous Question, select the true statement(s):
+
+<ul>
+  <li><input type="checkbox" /> A. A malicious admin can steal all the funds in the contract </li>
+  <li><input type="checkbox" /> B. Anyone can hijack the admin in theory, but it is highly unlikely to happen in practice </li>
+  <li><input type="checkbox" /> C. Anyone can hijack the admin both in theory and in practice </li>
+  <li><input type="checkbox" /> D. None of the above </li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, B.**
+
+* A: A malicious administrator can call the `kill()` function which executes `SELFDESTRUCT`. This will destroy the contract and send all of its balance to the `msg.sender` (the admin calling the function).
+* B/C: While the probability of a collision is very low, in theory one could call the contract from an address whose index (as returned from `_indexer()`) is $`2^{64}`$. The balance being written to this storage slot would break the contract because Vyper versions `<= 0.3.7` are affected by [a compiler bug](https://github.com/vyperlang/vyper/security/advisories/GHSA-6m97-7527-mh74) that can cause storage clashes when large arrays are used.
+</HiddenSolution>
+
+---
+
+### Question 4 of 8
+
+Given the same Vyper contract from previous Question, what would be the Solidity equivalent of the `_indexer` function?
+
+<ul>
+  <li><input type="checkbox" /> A. `function _indexer(address _address) private pure returns (uint256) { return uint256(sha256(abi.encodePacked(_address))) % MAX_USERS; }` </li>
+  <li><input type="checkbox" /> B. `function _indexer(address _address) internal view returns (uint256) { return uint256(sha256(abi.encode(_address))) % MAX_USERS; }` </li>
+  <li><input type="checkbox" /> C. `function _indexer(address _address) internal pure returns (uint256) { return uint256(sha256(abi.encodePacked(_address))) % MAX_USERS; }` </li>
+  <li><input type="checkbox" /> D. `function _indexer(address _address) internal pure returns (uint256) { return uint256(sha256(abi.encode(_address))) % MAX_USERS; }` </li>
+</ul>
+
+<HiddenSolution>
+**Correct is D.**
+
+Like its Vyper equivalent, the function should be `internal` and `pure`, that leaves only options C and D. It cannot be C since the hash resulting from the input of `abi.encodePacked()` would not be equivalent to the `_indexer()` function due to its difference in encoding the address (it would not add zero-padding to the address to fill full 32 bytes).  
+</HiddenSolution>
+
+---
+
+### Question 5 of 8
+
+Which function would be more suitable to deploy a Gnosis Safe module?
+
+<ul>
+  <li><input type="checkbox" /> A. `create_minimal_proxy_to` </li>
+  <li><input type="checkbox" /> B. `create_copy_of` </li>
+  <li><input type="checkbox" /> C. `create_from_blueprint` </li>
+  <li><input type="checkbox" /> D. None of the above </li>
+</ul>
+
+<HiddenSolution>
+**Correct is A.**
+
+All of these functions are ["built-ins"](https://docs.vyperlang.org/en/stable/built-in-functions.html#chain-interaction) for contract creation: "All three contract creation built-ins rely on the code to deploy already being stored on-chain, but differ in call vs deploy overhead, and whether or not they invoke the constructor of the contract to be deployed."
+
+* `create_minimal_proxy_to(address, ...)` deploys an immutable proxy pointing to a specified implementation contract. Minimal proxies commonly are usually [EIP-1167 forwarder bytecode](https://www.rareskills.io/post/eip-1167-minimal-proxy-standard-with-initialization-clone-pattern) and use `DELEGATECALL`s, making them cheap to deploy but expensive to call. 
+* `create_copy_of(address, ...)` makes a copy of the runtime code at the specified address, making it expensive to deploy but cheaper to call than a proxy.
+* `create_from_blueprint(address, ...)` re-deploys the contract at the specified address by using its initialization code (ie. the constructor will be executed too). Being a copy instead of a contract makes it again expensive to deploy but cheaper to call.
+
+In Safe Wallets, [modules follow EIP-1167](https://github.com/gnosis/module-factory), which is what `create_minimal_proxy_to()` implements. In theory you could also use `create_from_blueprint()` to deploy a Gnosis Safe module, but it's much more complex to do so.
+</HiddenSolution>
+
+---
+
+### Question 6 of 8
+
+Given the functions below, which of the following statements are true?
+
+```python
+# @version 0.3.7
+
+@external
+@pure
+def unsafeSum(a: uint256, b: uint256) -> uint256:
+    return unsafe_add(a, b)
+
+@external
+def weird1(a: uint256, b: uint256) -> uint256:
+    return _abi_decode(
+        raw_call(
+            self,
+            _abi_encode(
+                (a, b),
+                method_id=method_id("unsafeSum(uint256,uint256)")
+            ),
+            max_outsize=32
+        ),
+        uint256
+    )
+
+@external
+def weird2(a: uint256, b: uint256) -> uint256:
+    return _abi_decode(
+        raw_call(
+            self,
+            _abi_encode((
+                keccak256("unsafeSum(uint256,uint256)"),
+                a,
+                b
+            )),
+            max_outsize=32
+        ),
+        uint256
+    )
+
+@external
+def weird3(a: uint256, b: uint256) -> uint256:
+    return _abi_decode(
+        raw_call(
+            self,
+            _abi_encode((
+                0x4f388eb1,
+                a,
+                b
+            )),
+            max_outsize=32
+        ),
+        uint256
+    )
+
+@external
+def weird4(a: uint256, b: uint256) -> uint256:
+    return _abi_decode(
+        raw_call(
+            self,
+            _abi_encode(
+                (a, b),
+                method_id=0x4f388eb1
+            ),
+            max_outsize=32
+        ),
+        uint256
+    )
+```
+
+<ul>
+  <li><input type="checkbox" /> A. This contract cannot be compiled as it calls an external function from another external function </li>
+  <li><input type="checkbox" /> B. `weird1` and `weird3` are equivalent </li>
+  <li><input type="checkbox" /> C. `weird2` and `weird3` will always revert </li>
+  <li><input type="checkbox" /> D. `weird1` and `weird4` are equivalent </li>
+</ul>
+
+<HiddenSolution>
+**Correct is D**
+
+* A: The contract compiles just fine and there's no general problem with an external function calling another external function in Vyper.
+* B: The `weird3()` function does not encode the function signature correctly. Signature should be added through `method_id` instead of being ABI encoded as a parameter with padding.
+* C: The `weird2()` function, similarly to `weird3()`, does not correctly prepend the signature to the ABI encoded calldata. Furthermore, the signature isn't even calculated correctly since the hash is not reduced to 4 bytes. But, despite all this, this doesn't necessarily mean that they'll always revert.
+* D: Both `weird1()` and `weird4()` correctly use `method_id` to specify the function signature. Also, the result of `method_id("unsafeSum(uint256,uint256)")` is equivalent to hashing and shortening the string's hash down to 4 bytes, resulting in the same signature `0x4f388eb1`.
+</HiddenSolution>
+
+---
+
+### Question 7 of 8
+
+Under which circumstance(s) does the following function return `True`?
+
+```python
+# @version 0.3.7
+
+@external
+def fun(a: uint256, b: uint256) -> bool:
+    return sqrt(a) == isqrt(b)
+```
+<ul>
+  <li><input type="checkbox" /> A. When `a == b` </li>
+  <li><input type="checkbox" /> B. When neither `a` nor `b` are perfect squares </li>
+  <li><input type="checkbox" /> C. When `a + b < 1 + 2*sqrt(a*b)` </li>
+  <li><input type="checkbox" /> D. None of the above </li>
+</ul>
+
+<HiddenSolution>
+**Correct is D.**
+
+Both `sqrt()` and `isqrt()` are built-in functions for calculating the square root of a specified number. The difference is that `isqrt()` works with integers (`uint256`) and rounds down, while `sqrt()` uses Vyper's `decimal` type which is able to store a decimal fixed point value. Due to this difference in expected input types the above snippet will actually error during compilation.
+</HiddenSolution>
+
+---
+
+### Question 8 of 8
+
+Given the following broken Vyper contract, what changes are necessary so that the source code can be successfully compiled?
+
+```python
+# @version 0.3.7
+
+from vyper.interfaces import ERC20
+
+implements: ERC20
+
+balances: public(HashMap[address, uint256])
+allowed: public(HashMap[address, HashMap[address, uint256]])
+total_supply: public(uint256)
+
+event Transfer:
+    from: indexed(address)
+    to: indexed(address)
+    value: uint256
+
+event Approval:
+    owner: indexed(address)
+    spender: indexed(address)
+    value: uint256
+
+@external
+def __init__(_initial_supply: uint256):
+    self.total_supply = _initial_supply
+
+@internal
+def _mint(to: address, value: uint256):
+    assert self.total_supply + value > self.total_supply
+    assert self.balances[to] + value > self.balances[to]
+
+    self.total_supply += value
+    self.balances[to] += value
+
+    log Transfer(empty(address), to, value)
+
+@external
+def allowance(owner: address, spender: address):
+    pass
+
+@external
+def approve(spender: address, value: uint256):
+    pass
+
+@external
+def balanceOf(owner: address) -> uint256:
+    return self.balances[owner]
+
+@external
+def transfer(to: address, value: uint256) -> bool:
+    assert self.balances[msg.sender] >= value
+    assert self.balances[_to] + value >= self.balances[to]
+
+    self.balances[msg.sender] -= value
+    self.balances[to] += value
+
+    log Transfer(msg.sender, to, value)
+
+    return True
+
+@external
+def transferFrom(from: address, to: address, value: uint256) -> bool:
+    assert self.balances[from] >= value
+    assert self.balances[to] + value >= self.balances[to]
+    assert self.allowed[from][msg.sender] >= value
+
+    self.balances[to] += value
+    self.balances[from] -= value
+    self.allowed[from][msg.sender] -= value
+
+    log Transfer(from, to, value)
+
+    return True
+
+@external
+@payable
+def __default__():
+    self._mint(msg.sender, msg.value)
+```
+
+<ul>
+  <li><input type="checkbox" /> A. Replacing all variable and parameter name instances of `value` and `from` because they are reserved keywords </li>
+  <li><input type="checkbox" /> B. Implementing the `allowance` and `approve` functions as this is required by the ERC20 interface </li>
+  <li><input type="checkbox" /> C. Implementing a `totalSupply` function as this is required by the ERC20 interface </li>
+  <li><input type="checkbox" /> D. None of the above </li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, C.**
+
+* A: In Vyper `from` is a keyword used in [relative imports](https://github.com/vyperlang/vyper/issues/1367). The `value` keyword is reserved and cannot be used as a variable name in a function input.
+* B: The ERC20 interface does not require the `allowance()` and `approve()` functions to be implemented (ie. have an actual function body), it just needs them to be declared.
+* C: The `totalSupply()` function is in the interface and it's missing in the contract.
+
+</HiddenSolution>
+
+
+
+

@@ -222,7 +222,7 @@ def kill():
 
 * A: The functions correctly follow the Checks-Effects-Interactions pattern, therefore the reentrancy locks are indeed unnecessary.
 * B: The Vyper version used in this snippet has reentrancy locks that work as intended.
-* C/B: An address type consists of 20 bytes, which is 160 bits. The `_indexer()` function maps arbitrary addresses to a space that is around 64 bits - a much smaller than addresses. This theoretically allows finding two addresses that would map to the same index, but it would still be impractical to actually exploit this.
+* C/D: An address type consists of 20 bytes, which is 160 bits. The `_indexer()` function maps arbitrary addresses to a space that is around 64 bits - a much smaller than addresses. This theoretically allows finding two addresses that would map to the same index, but it would still be impractical to actually exploit this.
 </HiddenSolution>
 
 ---

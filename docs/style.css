@@ -56,8 +56,3 @@ span[s="4"] code { /* Critical */
   color: white;
   background: red;
 }
-
-/* Hide "posts" folder from mobile menu */
-ul.nextra-menu-mobile li:last-child {
-  display: none;
-}

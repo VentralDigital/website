@@ -222,7 +222,13 @@ def kill():
 
 * A: The functions correctly follow the Checks-Effects-Interactions pattern, therefore the reentrancy locks are indeed unnecessary.
 * B: The Vyper version used in this snippet has reentrancy locks that work as intended.
-* C/D: An address type consists of 20 bytes, which is 160 bits. The `_indexer()` function maps arbitrary addresses to a space that is around 64 bits - a much smaller than addresses. This theoretically allows finding two addresses that would map to the same index, but it would still be impractical to actually exploit this.
+* C/D: An address type consists of 20 bytes, which is 160 bits. The `_indexer()` function maps arbitrary addresses to a space that is around 64 bits - a much smaller than addresses. This theoretically allows finding two addresses that would map to the same index, but it would still be impractical to actually exploit this:
+
+>Let $N$ be the total possible indexes in our array ($2^{64} + 1$). Using the birthday paradox, the probability of a collision after using $k$ different addresses is $P(k) = 1 - e^{-\frac{k\cdot (k - 1)}{2 \cdot (2^{64} + 1)}}$.
+>
+>To have a $50\\%$ chance of collision, we must solve for $k$ in $0.5 = 1 - e^{-\frac{k\cdot (k - 1)}{2 \cdot (2^{64} + 1)}}$, which has a solution $k\approx 5056940000$, which implies that to have a $50\\%$ chance of collisions to occur, more than half of the entire planet must have an ethereum address and have interacted with the contract.
+>
+>So, in practice, impossible.
 </HiddenSolution>
 
 ---

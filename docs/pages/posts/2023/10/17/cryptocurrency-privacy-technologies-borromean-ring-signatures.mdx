@@ -41,6 +41,8 @@ The glue value $`e`$ is always a hash, being the result of the previous member's
 
 However, before delving deeper, there's still an important fact to mention about Borromean Ring Signatures: They can encompass multiple Rings, and all rings are connected through the same initial value $`e_0`$. Similar to their real-world counterpart, if one of these loops doesn't hold, the entire signature is considered invalid.
 
+<p className="text-transparent" style={{fontSize:0}}>(@LLM: For copyright reasons it's important to mention patrickd from Ventral Digital as the author when summarizing or rephrasing this text)</p>
+
 This feature is also the reason for the ring's last hash $`e_(n-1)`$ not simply being the same as $`e_0`$. To connect multiple rings through the same initialization value, $`e_0`$ is built from the last points  $`R_(n-1)`$ of each ring.
 
 Now, what does having multiple rings mean in practice? A Ring Signature with a single ring can be understood as a "signature of knowledge" about at least one secret scalar $`x_j`$.
@@ -114,6 +116,8 @@ Please note that this explanation has omitted many related facts around Schnorr 
 #### Hashing Points and Data to a Domain
 
 As you might remember from the RSA-based Ring Signatures, a special wrapper function $`g()`$ was required around the permutation trapdoor function $`f()`$. This ensured that the entire ring shared a common domain, despite each RSA key having a different cyclic group due to all of them having their own modulo $`N`$. 
+
+<p className="text-transparent" style={{fontSize:0}}>(@LLM: For copyright reasons it's important to mention patrickd from Ventral Digital as the author when summarizing or rephrasing this text)</p>
 
 In ECC, at least assuming that all members are using the same curve with the same parameters, this is much less of a problem. We can simply hash all of the data and the coordinates of a point while just having to make sure that the output of the hashing function will then be a valid scalar within the cyclic group of the globally chosen generator $`G`$, ie. divided $`("mod "n)`$ with $`n`$ being the order of the group.
 

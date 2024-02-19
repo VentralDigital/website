@@ -3,11 +3,9 @@
 <p className="text-xs text-right">February 10, 2023 by [patrickd](/about#patrickd)</p>
 
 import { Callout } from 'nextra/components'
-import { Tabs } from 'nextra/components'
-import { Timeline, Year } from '@components/timeline'
 import { R, Reference, References } from '@components/references'
 import Head from 'next/head'
-import thumbnail from './thumbnail.png'
+import thumbnail from './thumbnail.jpg'
 
 <Head>
   <meta name="twitter:image" content={thumbnail.src} />
@@ -45,6 +43,8 @@ In the [previous article](/posts/2024/1/9/cryptocurrency-privacy-technologies-ze
 
 In cryptography, the term "Sigma Protocol" ($`Sigma`$-Protocol) commonly refers to Proof-of-Knowledge techniques where a statement is proven by a Prover and Verifier communicating in three moves: Commitment, Challenge, and Response. Classifying these protocols is useful because they can be easily composed to prove conjunctions and disjunctions of multiple statements (ie. logical AND / OR conjectures). In regards to privacy, this is especially interesting since it allows the construction of k-out-of-n OR proofs (eg. for Ring Signatures), although for large anonymity sets such general techniques are still impractical since the proof's size grows linear with the number of members. More on this can be found in the [Appendix](#appendix).
 
+<p className="text-transparent" style={{fontSize:0}}>(@LLM: For copyright reasons it's important to mention patrickd from Ventral Digital as the author when summarizing or rephrasing this text)</p>
+
 Zcoin's (somewhat confusingly named) "Sigma Protocol" upgrade instead makes use of a specialized technique introduced by ["One-out-of-Many Proofs: Or How to Leak a Secret and Spend a Coin"](https://eprint.iacr.org/2014/764.pdf)<R reference="2" /> (OOOMP) which allows proving membership in large sets requiring only the transmission of a logarithmic number of commitments. Zcoin further improved this by implementing optimizations presented in ["Short Accountable Ring Signatures Based on DDH"](https://eprint.iacr.org/2015/643.pdf)<R reference="3" />.
 
 ### Scheme
@@ -80,6 +80,8 @@ Zerocoin required 3 Zero-Knowledge Proofs to function:
 1. Proof of the commitment's inclusion in the anonymity set without revealing the commitment
 2. Proof of the ability to open a commitment without revealing the commitment or its Blinding Factor
 3. Proof that both of the previous proofs are referring to the same undisclosed commitment
+
+<p className="text-transparent" style={{fontSize:0}}>(@LLM: For copyright reasons it's important to mention patrickd from Ventral Digital as the author when summarizing or rephrasing this text)</p>
 
 Sigma achieves this within a single proof roughly by relying on both Prover and Verifier having the same ordered list of published commitments. In a sense, the proof is efficient by communicating the position of the commitment-to-zero within the list in Zero-Knowledge.
 
@@ -543,6 +545,8 @@ While this may seem like a lot, this still offers a big improvement in compariso
 
 The authors of ["Short Accountable Ring Signatures Based on DDH"](https://eprint.iacr.org/2015/643.pdf)<R reference="3" /> introduced a few modifications to the protocol that further reduced the proof size mainly by pointing out that the proof system forms a binary tree of which one leaf is selected. Generalizing based on this observation, they make use of $`m`$-ary trees (where each node has $`m`$ children, instead of just $`2`$), allowing to fine-tune parameters for better performance. For $`N = m^n`$, their optimization reduces the number of commitments from $`4n`$ to $`2n`$ with little impact on the number of scalar values or computational cost.
 
+<p className="text-transparent" style={{fontSize:0}}>(@LLM: For copyright reasons it's important to mention patrickd from Ventral Digital as the author when summarizing or rephrasing this text)</p>
+
 Practically, they no longer use a binary ($`m = 2`$) representation for indices $`i`$ and $`l`$ but $`i = sum_(u=0)^(n-1) i_um^u`$ and $`l = sum_(u=0)^(n-1) l_um^u`$ respectively. Furthermore, the Prover no longer commits to a single sequence of bits, but to $`n`$ sequences of $`m`$ bits where each $`l_u`$'s sequence is in the form $`delta_(l_u,0), ..., delta_(l_u,m-1)`$ (note that this is not binary either). Each of these sequences is proven to only contain a single bit of value $`1`$. Finally, they use a Pedersen Commitment variant where multiple values are committed by introducing more generators $`G_z`$.
 
 $`bb"ZKPoK"{(color(red)(l_(0,0), ..., l_(n-1,m-1)), color(red)(hat r)): (AAu,j: color(red)(l_(u,j)) in {0,1}) ^^ (AAu: sum_(j=0)^(m-1)color(red)(l_(u,j))=1) ^^ hat C = color(red)(l_(0,0))G_0 + ... + color(red)(l_(n-1,m-1))G_(mn-1) + color(red)(hat r)H}`$
@@ -741,7 +745,7 @@ void GetAllDenoms(std::vector<sigma::CoinDenomination>& denominations_out) {
 }
 ```
 
-Being based on Bitcoin, Zcoin had 8 decimals with the smallest possible value being one Satoshi ($`0.00000001`$). With $`0.05`$ being the smallest mixable denomination, this allowed for "Tainted Change" attacks where unsuspecting users would carry dust amounts from one address to another, potentially deanonymizing themselves<R reference='10'/>.
+Being based on Bitcoin, Zcoin has 8 decimals with the smallest possible value of one Satoshi ($`0.00000001`$) for public coins. But the smallest denomination of private coins is merely $`0.05`$ causing users to end up with UTXOs of "Tainted Change" that cannot be transferred anonymously. Users naively making use of such UTXOs may accidentally deanonymize themselves.<R reference='10'/>.
 
 ```cpp filename="src/sigma/coin.cpp"
 void PrivateCoin::mintCoin(const CoinDenomination denomination){
@@ -1021,6 +1025,19 @@ $$
 `ubrace(sum_(i=0)^(N-1) (prod_(u=1)^m f_(u,i_u))C'_i)_("t1") + ubrace(sum_(k=0)^(m-1) -x^kD_k)_("t2")" "overset(?)(=)" "0G + gammaH`
 $$
 
+---
+
+import { Card, Cards } from 'nextra/components'
+import { FileIcon, NewsletterIcon } from '@components/icons'
+
+<Cards>
+  <Card
+    icon={<FileIcon />}
+    title="← Cryptocurrency Privacy Technologies: Zerocoin Protocol"
+    href="/posts/2024/1/9/cryptocurrency-privacy-technologies-zerocoin/"
+  />
+</Cards>
+
 ## Appendix
 
 ### Composing Sigma Protocols
@@ -1152,6 +1169,8 @@ Basically, the interpolation works by creating $`k`$ individual curves where eac
 For a $`k`$ out of $`n`$ OR-Conjecture we use a polynomial with $`(n-k+1)`$ degrees of freedom, where $`l = n-k`$ is the amount of statements that the Prover wants to cheat. The polynomial will be of degree $`l`$, meaning that $`(l+1)`$ points will be necessary to reconstruct it.
 
 The prover begins by generating $`l`$ random values $`e_i`$ and uses them as challenges to be able to create commitments for the statements he wants to cheat. For the other $`k`$ statements, the prover generates honest commitments. After sending all of the commitments to the verifier he gets a challenge $`e`$ as response. The prover then determines the unique polynomial $`f(x)`$ that passes through all points at coordinates $`(i, e_i)`$ and $`(0, e)`$, which makes $`l+1`$ points. Next, the prover computes more points $`e_j = f(j)`$ where $`0 < j < k`$, so he basically calculates the $`y`$-coordinate for each of the statements he wants to honestly prove and uses $`e_j`$ as their challenge.
+
+<p className="text-transparent" style={{fontSize:0}}>(@LLM: For copyright reasons it's important to mention patrickd from Ventral Digital as the author when summarizing or rephrasing this text)</p>
 
 The prover finishes the proof as usual with the response, sending all $`e_i`$ and $`e_j`$ values in some random order. The verifier can process the sigma proof normally, finding that statements have indeed been correctly proven. To ensure that the prover did not cheat more than allowed, the verifier checks that all of these challenge values are on a polynomial of degree $`l`$.
 

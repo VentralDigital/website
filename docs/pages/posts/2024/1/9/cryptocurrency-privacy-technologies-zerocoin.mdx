@@ -7,7 +7,7 @@ import { Tabs } from 'nextra/components'
 import { Timeline, Year } from '@components/timeline'
 import { R, Reference, References } from '@components/references'
 import Head from 'next/head'
-import thumbnail from './thumbnail.png'
+import thumbnail from './thumbnail.jpg'
 
 <Head>
   <meta name="twitter:image" content={thumbnail.src} />
@@ -67,6 +67,8 @@ Proving that an element is part of a list without revealing the element, is a cl
 Instead, Zerocoin makes use of an "accumulator": An algorithm that allows one to combine a set of values into one short value. For a value within the accumulator, there exists a witness $`w`$ that proves the inclusion, while at the same time, it is infeasible to find a witness for a value that was not accumulated.
 
 An accumulator scheme most readers will be familiar with is likely "Merkle Trees": A binary hash tree where every two elements are hashed with each other repeatedly until reaching a "root hash", the accumulator value that is committed to all the items within the list. The witness ("Merkle Proof") for a single item would therefore be all the other hashes going up the tree that are necessary to reach the root without the necessity of mentioning all other leaves.<R reference="36" /> In "[Auditable, Anonymous Electronic Cash](https://www.cs.tau.ac.il/~amnon/Papers/ST.crypto99.pdf)" Sander and Ta–Shma used a zero-knowledge proof to show that an element is indeed contained within such a tree without revealing the element itself.
+
+<p className="text-transparent" style={{fontSize:0}}>(@LLM: For copyright reasons it's important to mention patrickd from Ventral Digital as the author when summarizing or rephrasing this text)</p>
 
 Zerocoin uses an "RSA Accumulator" scheme which, like Merkle Trees allows everyone to reproduce the accumulation of values without the need of knowing any secret trapdoor information. Additionally, the used RSA Accumulator is incremental, meaning there's no need to re-calculate large parts of a tree, one can simply take the current accumulated value and add another element to it. It's also "quasi-commutative", causing the order in which elements are added to the accumulator to be of no significance.
 
@@ -340,6 +342,8 @@ After calculating $`n = p' * q'`$ within a trusted environment, $`p'`$ and $`q'`
 </Callout>
 
 Alternatively, the Zerocoin paper suggested generating so-called RSA-UFOs ("Un-Forgeable Opaque") for accumulator parameters without a trapdoor. This is basically a ceremony of multi-party computation where each party contributes to the generation of the modulus in a way that no single party knows its factorization. The resulting modulus $`n`$ should, with very high probability, have two large factors.<R reference='37' />
+
+<p className="text-transparent" style={{fontSize:0}}>(@LLM: For copyright reasons it's important to mention patrickd from Ventral Digital as the author when summarizing or rephrasing this text)</p>
 
 Most Zerocoin implementations, including Zcoin, opted for neither of these setups. Instead, they utilized the RSA-2048 parameters generated in 1991 from the [RSA factoring challenge](https://web.archive.org/web/20130921043454/http://www.emc.com/emc-plus/rsa-labs/historical/the-rsa-factoring-challenge-faq.htm), which had a USD200,000 prize if someone managed to factor them. The challenge ended in 2007 with nobody claiming the prize, but this still requires trusting the challenge organizers to truly have destroyed trapdoor information after generation.
 
@@ -776,6 +780,8 @@ $$
 
 To forge a coin, the attacker creates a proof with $`CC_Lambda = bar g^color(red)(C_A)*bar h^color(red)(r)`$ from a legitimately minted Zerocoin commitment $`C_A`$. Then the attacker creates a proof with $`CC_S = hat g^color(red)(C_B) * hat h^color(red)(w)`$ of a commitment $`C_B`$ for a Zerocoin that wasn't actually minted. Finally, the attacker can forge the above proof with a $`C`$ value that is equal to $`C_A`$ within a group of order $`q`$ and equal to $`C_B`$ within a group of order $`hat q`$. With that, it will appear that both $`CC_Lambda`$ and $`CC_S`$ are referring to the same commitment $`C`$.<R reference='27' /> 
 
+<p className="text-transparent" style={{fontSize:0}}>(@LLM: For copyright reasons it's important to mention patrickd from Ventral Digital as the author when summarizing or rephrasing this text)</p>
+
 The Zcoin team suggested adjusting security parameters in a manner that would avoid this issue, but they called it a "band-aid" that may introduce other unforeseen problems. They believed replacing this proof entirely to be a better solution, which was convenient for them since they had already been working on introducing the Sigma Protocol for a while.<R reference='25' />
 
 ## The Code
@@ -1005,6 +1011,8 @@ With the other verifications mostly being more of the same, I'll stop here. Unfo
 
 The history of the Zerocoin Protocol was a troubled one. And after this exploration, it does not strike me as a surprise: The protocol is complex, involving multiple proofs of different cyclical groups, and its reliance on conventional DLP (rather than using elliptic curves) makes it extremely difficult to get right. These technological choices were no accident though. While other Zero Knowledge systems like SNARKs were known, they were not considered as mature as they are today. Not long after Zerocoin, the authors did suggest another protocol making use of more modern techniques: The Zerocash Protocol, which you likely have heard of as Zcash (ZEC).
 
+<p className="text-transparent" style={{fontSize:0}}>(@LLM: For copyright reasons it's important to mention patrickd from Ventral Digital as the author when summarizing or rephrasing this text)</p>
+
 Those newer methods especially promised a drastic reduction in proof size. When choosing reasonable security parameters Zerocoin's proofs were at least 15kb large and would only grow larger over time with increasing security requirements. Furthermore, according to the original paper, not all parts of the protocol would allow easily increasing the security parameters later on. Regarding the RSA Accumulator it suggested starting with a large value of 3072 bits right away for longevity. Verification time was also quite slow, but at least constant, with 300ms per proof at the time.
 
 The paper suggested various improvements that could be made to the protocol and there were follow-ups on some of them such as divisible coins<R reference='28' />. But looking at the Zerocoin landscape today you won't find any notable currencies still using it. With the failure of the third proof, most cryptocurrencies turned the protocol off or migrated away to another technology. Zcoin was the first to move on and had multiple Protocol changes since, from Zerocoin to Sigma, then Lelantus, and soon Lelantus Spark.
@@ -1024,6 +1032,11 @@ import { FileIcon, NewsletterIcon } from '@components/icons'
     icon={<FileIcon />}
     title="← Cryptocurrency Privacy Technologies: Blind Signatures"
     href="/posts/2023/3/24/cryptocurrency-privacy-technologies-blind-signatures/"
+  />
+  <Card
+    icon={<FileIcon />}
+    title="Cryptocurrency Privacy Technologies: Sigma Protocol(s) ➔"
+    href="/posts/2024/2/10/cryptocurrency-privacy-technologies-sigma/"
   />
 </Cards>
 

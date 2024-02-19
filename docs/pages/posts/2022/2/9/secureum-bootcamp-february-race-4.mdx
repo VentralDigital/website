@@ -261,7 +261,7 @@ Neither function make use of the `unchecked` block which would allow integer ove
 <HiddenSolution>
 **Correct is D.**
 
-All of the addresses `_transfer()` uses are checked to make sure they're not zero-addresses. Neither integer overflows nor underflows are possible with this solidity version without the use of `unchecked{}`.
+All of the addresses `_transfer()` uses are checked to make sure they're not zero-addresses. The `_transfer()` function is making use of an `unchecked{}` block, which could allow integer wrapping in this Solidity version. But it cannot be susceptible to overflows since there's no addition happening within the block. It contains a subtraction that could potentially underflow, but for that to happen `amount` would need to be larger than `senderBalance` which is not possible due to the preceding `require()` statement.
 </HiddenSolution>
 
 ---

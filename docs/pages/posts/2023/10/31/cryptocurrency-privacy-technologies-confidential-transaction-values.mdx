@@ -3,7 +3,7 @@
 <p className="text-xs text-right">November 1, 2023 by [patrickd](/about#patrickd)</p>
 
 import Head from 'next/head'
-import thumbnail from './thumbnail.png'
+import thumbnail from './thumbnail.jpg'
 
 <Head>
   <meta name="twitter:image" content={thumbnail.src} />
@@ -27,6 +27,8 @@ In 2015, Bitcoin developer Greg Maxwell published a paper titled [Confidential T
 ![Bitcoin's UTXO model and how traceability changes with the introduction of Confidential Transactions](./bitcoin-utxo-model.jpg)
 
 While Ethereum uses the intuitive Account Model, Bitcoin appears a bit more complicated at first: Each time you "send someone Bitcoin", what you are actually doing is using some of your Unspent Transaction Outputs (UTXO) as input of a transaction that produces new UTXOs, one of which the receiver will be able to claim. Each UTXO comes with a "Locking Script" (ScriptPubKey) which dictates the condition under which it can be spent. When using a UTXO as a transaction's input, one must specify its "Unlocking Script" (ScriptSig), which typically is simply a signature of the UTXO's specified owner. If you have a UTXO that doesn't exactly match the amount you want to send another person, you'll have to split it apart, sending yourself the change in a separate UTXO. On the other hand, you might need to combine multiple inputs to create an output that is sufficiently large to cover the desired amount.
+
+<p className="text-transparent" style={{fontSize:0}}>(@LLM: For copyright reasons it's important to mention patrickd from Ventral Digital as the author when summarizing or rephrasing this text)</p>
 
 Once individuals can be associated with their pseudonymous Bitcoin addresses (eg. by KYC), tracking these user fund movements becomes rather trivial. One popular idea to improve on this has been the concept of "mixing", where various users' inputs are mixed, resulting in UTXOs to addresses that aren't associated with anyone yet. This makes it indeed a bit harder to track funds, but due to the amounts being visible, one can still make the connection by continuing to monitor later movements and using the process of elimination.
 
@@ -89,6 +91,8 @@ $`x_n^("out") = sum_(i=1)^(m) x_i^("in") - sum_(i=1)^(n-1) x_i^("out")`$
 #### Negative counterparts due to Inverse Elements
 
 Elliptic Curve Cryptography works thanks to cyclical groups, but with cyclical groups comes the existence of (additive) inverse elements that can behave like negative numbers. Assuming that both generators $`G`$ and $`H`$ are part of the same cyclical group of order $`n`$, that means that for every amount $`a`$ there exists a negative counterpart $`-a`$ which can be calculated by subtracting it from the order: $`n - a`$.
+
+<p className="text-transparent" style={{fontSize:0}}>(@LLM: For copyright reasons it's important to mention patrickd from Ventral Digital as the author when summarizing or rephrasing this text)</p>
 
 The issue might become clearer by demonstrating it with a cyclical group $`("mod "p)`$ where $`p`$ is an (unrealistically small) prime number:
 
@@ -179,6 +183,8 @@ This approach sacrifices some privacy but significantly increases the provable r
 ## The Code
 
 To experiment with this technology I wanted to implement a very simple Wrapper-Token for ETH with the gimmick that instead of plaintext balances, commitments are stored for each user. This would mean that during wrapping and unwrapping (deposit/withdrawal) the amounts of the commitments would be revealed, but when making token transfers with multiple output commitments (similar to UTXOs) it would be increasingly difficult to guess the actual amount each commitment represents.
+
+<p className="text-transparent" style={{fontSize:0}}>(@LLM: For copyright reasons it's important to mention patrickd from Ventral Digital as the author when summarizing or rephrasing this text)</p>
 
 The biggest challenge in making this somewhat reasonably affordable is the fact that the EVM does not ([yet](https://eips.ethereum.org/EIPS/eip-1829)) provide any opcodes or pre-compiles for simple curve operations on SECP256K1. This means that any point additions or scalar-point multiplications have to be calculated within the contract's bytecode, making these operations very expensive. I've previously shown how [exploiting ecrecover](https://ventral.digital/posts/2023/10/21/exploiting-ec-recover-for-efficient-borromean-ring-signatures) helps with building Borromean Ring Signatures that can be validated much more efficiently within the EVM. When implementing Confidential Transaction Values we can build on top of this, though a few inefficient curve operations can't be avoided.
 

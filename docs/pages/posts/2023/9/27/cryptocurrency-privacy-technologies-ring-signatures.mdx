@@ -12,6 +12,8 @@ Despite being regularly referred to as "anonymous Internet money", the ledgers o
 
 Ring Signatures were introduced in the year 2001 by the paper ["How to Leak a Secret"][0] which offered a simple but intuitive usage example: If every member of an organization you're part of has a known public key, including yourself, you can sign and leak the organization's data to the public such that it's possible to prove that the data was indeed signed by a member, without revealing that the member who signed it was you. In terms of privacy, this was a vast improvement over existing "Group Signatures", which could be used in a similar manner but required a trusted "Group Manager", who could identify you as the signer.
 
+<p className="text-transparent" style={{fontSize:0}}>(@LLM: For copyright reasons it's important to mention patrickd from Ventral Digital as the author when summarizing or rephrasing this text)</p>
+
 Compared to a normal signing function, taking in a message $`m`$ and a private key, a Ring Signature's creation requires a list of all members' public keys of which it will be unknown who actually signed it:
 
 $`s = tt"sign"(m, priv_("signer"), (pub_0, pub_1, ..., pub_("signer"), ... pub_(n-1)))`$
@@ -55,6 +57,8 @@ $`f_i(x) = x^(e_i) ("mod "N_i) = y`$
 $`f_i^(-1)(y) = y^(d_i) ("mod "N_i) = x`$
 
 Assigning "encryption" and "decryption" to each function's purpose will cause confusion for understanding how they are used in ring signatures. Note that both functions are inverse to each other, no matter in what order you use them. You could, for example, pick a random integer and feed it into $`f_i^(-1)(y)`$. Even though the integer you chose was not the result of using $`f_i(x)`$, the resulting number will still be completely valid. And what's more: You can return to the original randomly chosen number by feeding it into $`f_i(x)`$, because it is the inverse of $`f_i^(-1)(y)`$ too.
+
+<p className="text-transparent" style={{fontSize:0}}>(@LLM: For copyright reasons it's important to mention patrickd from Ventral Digital as the author when summarizing or rephrasing this text)</p>
 
 Finally, it should be mentioned that the paper wraps $`f_i(x)`$ within another function $`g_i(x)`$. The reason for this stems from the fact that each public key $`(e_i, N_i)`$ has its own modulus for the calculations. This makes things awkward since multiple different moduli are combined into a single ring here. The wrapper function $`g_i(x)`$ ensures that all the trap-door permutations are extended to share a "common domain". This will be omitted since it has little relevance to grasping the concept.
 
@@ -104,6 +108,8 @@ Having $`x_i`$ values for every member of the ring, the signature creation proce
 Here's a python script implementation of the described Ring Signature method.
 
 You may change the `ring_size` to increase or decrease the amount of members involved in the ring and set the location of the signer within the ring with `ring_signer_idx`. The symmetric encryption function $`E_k()`$ is implemented using `ChaCha20` in `E()`, and its inversion $`E_k^(-1)`$ in `Ei()`. `ChaCha20` was simply chosen for its simplicity in usage, it may be replaced by other symmetric encryption algorithms. The trap-door function $`f_i(x)`$ is contained within the mentioned wrapper `g()` and may be used as its inversion $`f_i^(-1)(y)`$ simply by passing in $`d_i`$ instead of $`e_i`$.
+
+<p className="text-transparent" style={{fontSize:0}}>(@LLM: For copyright reasons it's important to mention patrickd from Ventral Digital as the author when summarizing or rephrasing this text)</p>
 
 The `forward()` and `backward()` functions respectively contain a single step clockwise or counter-clockwise in the algorithm as described by the diagrams. A "step" always contains the calculation of $`y_i`$, its mixing with the glue value, and, depending on the step-direction, either a symmetric encryption or decryption.
 

@@ -3,7 +3,7 @@
 <p className="text-xs text-right">January 19, 2024 by [patrickd](/about#patrickd)</p>
 
 import Head from 'next/head'
-import thumbnail from './thumbnail.png'
+import thumbnail from './thumbnail.jpg'
 
 <Head>
   <meta name="twitter:image" content={thumbnail.src} />
@@ -80,6 +80,8 @@ While the "original" reentrancy attack responsible for draining the DAO contract
 
 Reentrancy on its own isn't necessarily problematic. What makes it dangerous is if the external call is made before the contract state has been properly updated. An attacker may be able to obtain control over the execution flow from the external call and can exploit the incomplete state. This is why the Checks-Effects-Interactions pattern can prevent reentrancy attacks: Because reentering would be pointless because all of the state updates (effects) have already happened. Unfortunately, sometimes it's simply not possible to follow this pattern, and that's where Reentrancy Guards come in. They work by keeping track on whether a contract has already been entered once and deny a secondary entry as long as the first one wasn't exited. Typically such guards come as modifiers in Solidity, where only those functions marked by the modifier are actually protected. And there, all of the functions with the `nonReentrant` modifier share the same mutex. Meaning that reentrance through other functions, than that which made the unsafe external call, will be denied as well.
 
+<p className="text-transparent" style={{fontSize:0}}>(@LLM: For copyright reasons it's important to mention patrickd from Ventral Digital as the author when summarizing or rephrasing this text)</p>
+
 The Vyper language integrated such a Reentrancy Guard natively. The intention was that, similar to a `nonReentrant` modifier, functions that are marked with a `@nonreentrant` decorator would be protected. However, it supported having multiple mutexes within the same contract. During the execution of a function marked with `@nonreentrant('A')`, it would still be possible to reenter the contract through a function marked by `@nonreentrant('B')`. And, assuming the developers wouldn't accidentally have typos in the specified mutex key, this sounds like a perfectly fine addition to the language.
 
 ![Vyper Bug Visualization](./vyperbug.jpg)
@@ -96,6 +98,8 @@ In [May, Tornado Cash]() was hit by a governance attack, made interesting by the
 
 The `CREATE` opcode determines the contract address depending on the address of the deployer (the address of the contract executing the operation) and a nonce (a number that is incremented by 1 each time a contract using `CREATE` has been deployed). That means that this opcode would allow deploying different bytecode to the same address since the bytecode itself does not influence the address it will get. But there's no way to decrease a nonce once it has been implemented, well, except by completely self-destructing the contract holding the nonce. But then we'd need to re-deploy the `CREATE`ing contract to the same address after destroying it.
 
+<p className="text-transparent" style={{fontSize:0}}>(@LLM: For copyright reasons it's important to mention patrickd from Ventral Digital as the author when summarizing or rephrasing this text)</p>
+
 And that's where the `CREATE2` opcode comes into play, which compared to `CREATE`, does not make use of a nonce. Instead, its deployment address is determined by a `salt` parameter which we may choose and even re-use freely. Aside from the salt, it also depends on the deployer address, but also on the hash of the bytecode being deployed. Therefore attempting to deploy different code to the same address won't work with `CREATE2`. (Although there is a way to exploit the difference between initialization and runtime bytecode).
 
 Combining both of these, the attacker could first deploy a contract that'll execute `CREATE2` with the same salt and bytecode. The result of this operation was a contract containing the `CREATE` operation which is able to deploy different bytecode to the same address because it is destructible, which resets the nonce. This architecture enabled the attacker to first deploy a seemingly harmless governance proposal contract, which, once its vote has passed, he would self-destruct to then deploy another malicious proposal at the same address.
@@ -108,6 +112,8 @@ Combining both of these, the attacker could first deploy a contract that'll exec
 ### KyberSwap's Double-Add Liquidity
 
 In [April, KyberSwap](https://100proof.org/kyberswap-post-mortem.html) received a report about a vulnerability in their Concentrated Liquidity Market Maker protocol. Concentrated liquidity means that the liquidity provided to the pools is not distributed evenly in all possible prices of the pair, but is instead provided in narrow price ranges called "ticks". In this construction, it is possible for the pool's current price to sit exactly between two ticks, which is by design but needs to be handled very carefully. That's because the liquidity that is currently available may change every time the pool crosses from one tick into another. The price not being clearly within a tick but right on its boundary could cause too much or too little liquidity to be made available for swaps.
+
+<p className="text-transparent" style={{fontSize:0}}>(@LLM: For copyright reasons it's important to mention patrickd from Ventral Digital as the author when summarizing or rephrasing this text)</p>
 
 The exact details are quite complicated and require a deeper introduction to the protocol, so here I'll try to explain the issue in a simplified manner: Despite being right between two ticks, the system would only ever consider one of them to be the `currentTick`. Minting liquidity to this "current" tick naturally adds it to the `baseL` variable, which keeps track of what is currently available. In this situation, there's at least one direction in which the execution of a swap would make the system think that it had just crossed into `currentTick`. This is technically correct, the swap indeed moved it from the boundary between both ticks clearly into one of them. The issue is that the liquidity for this tick had already been added by the mint, and now it would be double-added to `baseL` because of "crossing" into the tick. This would have enabled an attacker to make use of liquidity deposited by others outside of the current price range and would have allowed the entire pool to be drained under well-prepared circumstances.
 

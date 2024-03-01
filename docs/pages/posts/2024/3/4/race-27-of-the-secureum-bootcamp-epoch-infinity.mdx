@@ -1,0 +1,449 @@
+# RACE #27 Of The Secureum Bootcamp Epoch∞
+
+import { Callout } from 'nextra/components'
+
+This is a Write-Up of RACE-27, Quiz of the [Secureum Bootcamp](https://twitter.com/0xRajeev/status/1470910752085065731) for Ethereum Smart Contract Auditors. It was designed by the Secureum Mentor [Alex The Entreprenerd](https://twitter.com/GalloDaSballo), Security Researcher at Spearbit, Judge at Code4rena and former Smart Contract Developer at BadgerDAO.
+
+<Callout type="info">
+  Participants of this quiz had to **answer 8 questions within the strict time limit of 16 minutes**. If you’re reading this in preparation for participating yourself, it’s best to give it a try under the same time limit!
+
+  As usual, I waited for submissions to close before publishing it and, to stay true to the original, I omitted syntax highlighting. Feel free to copy it into your favorite editor, but do so after starting the timer!
+</Callout>
+
+<p className="text-xs text-right">March 4, 2024 by [patrickd](/about#patrickd)</p>
+
+<style jsx>{`
+  input[type=checkbox] {
+    width: 15px;
+    height: 15px;
+  }
+  li {
+    padding: 0.5em;
+  }
+`}</style>
+
+export function HiddenSolution({ children }) {
+  return (
+    <details closed className="last-of-type:mb-0 rounded-lg bg-neutral-50 dark:bg-neutral-800 p-2 mt-4">
+      <summary>
+        <strong className="text-lg">Solution</strong>
+      </summary>
+      <div className="nx-p-2">{children}</div>
+    </details>
+  )
+}
+
+---
+
+### Code
+
+<Callout type="info">
+All 8 questions in this RACE are based on the code snippet below, which was shown for all questions.
+</Callout>
+
+```plaintext showLineNumbers
+// SPDX-License-Identifier: GPL-2.0
+pragma solidity 0.8.20;
+
+import "@openzeppelin@4.8.3/contracts/utils/Multicall.sol";
+import "@openzeppelin@4.8.3/contracts/metatx/ERC2771Context.sol";
+import "@openzeppelin@4.8.3/contracts/security/ReentrancyGuard.sol";
+
+
+interface IToken {
+   function transfer(address, uint256) external returns (bool);
+   function approve(address, uint256) external;
+
+   function balanceOf(address) external view returns (uint256);
+}
+
+
+interface ISwapper {
+   function swap(address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOutMin) external;
+}
+interface IStrategy {
+   function want() external view returns (address);
+   function reward() external view returns (address);
+}
+
+
+contract Controller is Multicall, ERC2771Context {
+   address immutable OWNER;
+
+   mapping(address => bool) isStrategy;
+   mapping(address => bool) isDivested;
+   mapping(address => mapping(address => bool)) allowedSwap;
+   mapping(address => uint256) lastSafeBalanceOfWant;
+
+   constructor(address owner, address trustedForwarder_) ERC2771Context(trustedForwarder_) public {
+       OWNER = owner;
+   }
+
+   modifier onlyOwner() {
+       require(_msgSender() == OWNER, "onlyOwner");
+       _;
+   }
+
+   function registerStrategy(address strategy) external onlyOwner returns (uint256) {
+       address want = IStrategy(strategy).want();
+       address reward = IStrategy(strategy).reward();
+       require(!allowedSwap[reward][want], "Cannot add same swap route");
+
+
+       allowedSwap[reward][want] = true;
+       isStrategy[strategy] = true;
+   }
+
+   /** Multicallable Operations */
+   function divest(address strategy, uint256 amt, uint256 minOut) external onlyOwner returns (uint256) {
+       require(isStrategy[strategy], "Must be registered");
+       require(!isDivested[strategy], "Must be Invested!");
+       isDivested[strategy] = true;
+       bool healthCheck = Strategy(strategy).shouldDivest();
+       require(healthCheck, "Must be in emergency");
+       Strategy(strategy).divest(amt, minOut);
+
+       lastSafeBalanceOfWant[strategy] = IToken(Strategy(strategy).want()).balanceOf(strategy);
+   }
+
+   function invest(address strategy, uint256 minOut) external onlyOwner returns (uint256) {
+       require(isDivested[strategy]);
+       require(isStrategy[strategy], "Must be registered");
+       IToken token = IToken(address(IStrategy(strategy).want()));
+       uint256 amt = token.balanceOf(address(this));
+       require(amt >= lastSafeBalanceOfWant[strategy]); // Ensure we didn't lose value on divest
+       token.transfer(strategy, amt);
+       Strategy(strategy).invest(amt, minOut);
+
+       isDivested[strategy] = false;
+   }
+
+   function harvestSwap(ISwapper swapper, address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOutMin, address strategy)
+       external
+       onlyOwner
+       returns (uint256)
+   {
+       require(allowedSwap[tokenIn][tokenOut], "Must be allowed");
+       IToken reward = IToken(address(IStrategy(strategy).reward()));
+       IToken want = IToken(address(IStrategy(strategy).want()));
+
+       require(address(reward) == tokenIn);
+       require(address(want) == tokenOut);
+
+       IToken(address(tokenIn)).approve(address(swapper), 0);
+       IToken(address(tokenIn)).approve(address(swapper), amountIn);
+
+       swapper.swap(tokenIn, tokenOut, amountIn, amountOutMin);
+       want.transfer(strategy, want.balanceOf(address(this)));       
+   }
+}
+
+
+interface ICurvePool {
+   // Add with WETH
+   function add_liquidity(uint256[] memory amounts, uint256 min_mint_amount) external;
+   function remove_liquidity(uint256 _amount, uint256[] memory _min_amounts) external;
+   function remove_liquidity_one_coin(uint256 token_amount, uint256 i, uint256 min_amount) external;
+   function exchange(uint256 i, uint256 j, uint256 dx, uint256 min_dy, bool useETh) external;
+   function balances(uint256) external view returns (uint256);
+
+   function D() external returns (uint256);
+   function virtual_price() external returns (uint256);
+   function get_virtual_price() external returns (uint256);
+  
+   function totalSupply() external view returns (uint256);
+}
+
+
+interface IGauge {   
+   function balanceOf(address) external view returns (uint256);
+   function deposit(uint256) external;
+   function withdraw(uint256) external;
+
+   function claim_rewards() external;
+}
+
+
+contract Strategy is ReentrancyGuard {
+   address public immutable CONTROLLER;
+   address public immutable want;
+   address public immutable reward;
+
+   uint256 constant PRECISION = 1e18; // 50%
+   uint256 constant IDLE_AMOUNT = 5; // 5%
+   uint256 constant IDLE_PRECISION = 100; // 5%
+  
+   // https://arbiscan.io/address/0x82aF49447D8a07e3bd95BD0d56f35241523fBab1
+   uint256 constant WETH_INDEX = 2;
+
+
+   // https://arbiscan.io/address/0x960ea3e3C7FB317332d990873d354E18d7645590
+   ICurvePool pool = ICurvePool(0x960ea3e3C7FB317332d990873d354E18d7645590);
+   IGauge gauge = IGauge(0x555766f3da968ecBefa690Ffd49A2Ac02f47aa5f);
+
+   constructor(address controller, address _want, address _reward) public {
+       CONTROLLER = controller;
+       want = _want;
+       reward = _reward;
+
+       IToken(_want).approve(address(pool), type(uint256).max);
+       IToken(address(pool)).approve(address(gauge), type(uint256).max);
+   }
+
+   modifier onlyController() {
+       require(msg.sender == CONTROLLER);
+       _;
+   }
+
+   function idleBalance() public view returns (uint256) {
+       return IToken(want).balanceOf(address(this));
+   }
+
+   function balanceInPool() public view returns (uint256) {
+       return IToken(address(gauge)).balanceOf(address(this));
+   }
+   function balanceOfRewards() public view returns (uint256) {
+       return IToken(reward).balanceOf(address(this));
+   }
+
+   // Get Total Value we would have if we withdrew WETH
+   function investedBalance() external view returns (uint256) {
+       uint128 bal_1 = uint128(pool.balances(WETH_INDEX));
+       uint256 calculatedBalance = bal_1 * PRECISION * balanceInPool() / pool.totalSupply() / PRECISION;
+
+       return calculatedBalance;
+   }
+
+   // We should divest when something goes wrong, avoids bricking the pool
+   function shouldDivest() external view returns (bool) {
+       try this.investedBalance() {
+           return false;
+       } catch {
+           return true; // Divest if something goes wrong
+       }
+      
+       return false;
+   }
+
+   function invest(uint256 amt, uint256 minMint) external nonReentrant onlyController returns (uint256) {
+       uint256 toKeep = idleBalance() * IDLE_AMOUNT / IDLE_PRECISION;
+       uint256 toDeposit = idleBalance() - toKeep;
+
+       uint256[] memory amounts = new uint256[](3);
+       amounts[WETH_INDEX] = toDeposit;
+
+       uint256 initialBal = balanceInPool();
+       pool.add_liquidity(amounts, minMint);
+       uint256 afterBal = balanceInPool();
+       gauge.deposit(afterBal - initialBal);
+   }
+
+   function divest(uint256 amt, uint256 minOut) external nonReentrant onlyController returns (uint256) {
+       gauge.withdraw(amt);
+       uint256 initialBal = idleBalance();
+       pool.remove_liquidity_one_coin(amt, WETH_INDEX, minOut);
+       uint256 afterBal = idleBalance();
+       IToken(reward).transfer(address(CONTROLLER), afterBal - initialBal);
+   }
+
+   function harvest() external nonReentrant {
+       // Increases
+       uint256 prevBalRewards = balanceOfRewards();
+       gauge.claim_rewards();
+       uint256 afterBalReward = balanceOfRewards();
+       IToken(reward).transfer(address(CONTROLLER), afterBalReward - prevBalRewards);
+   }
+}
+
+```
+
+---
+
+### Question 1 of 8
+
+Functions depositing and withdrawing from the Gauge:
+
+<ul>
+  <li><input type="checkbox" /> A. Should use a reentrancy guard </li>
+  <li><input type="checkbox" /> B. Should have a `minOut` parameter </li>
+  <li><input type="checkbox" /> C. Should verify that we have sufficient balance before making the call </li>
+  <li><input type="checkbox" /> D. Are perfectly safe because it's an official Curve gauge </li>
+</ul>
+
+<HiddenSolution>
+**Correct is D.**
+
+A: The `invest()` and `divest()` functions, which are the only ones depositing or withdrawing from the gauge, are already using a reentrancy guard thanks to the `nonReentrant` modifier. This option implies that such a guard was missing, which is incorrect and makes this option false.
+
+B: The `divest()` function already has such a parameter, for the `invest()` function its called `minMint` instead. Again both already have it, while the option implies that its missing. It can furthermore be noted that gauge contracts have no slippage, so these parameters aren't actually related to the fact that the gauge is being called.
+
+C: Since the gauge does not want to get scammed, it'll check whether we have sufficient balance for us and there's no need to check this before making the call. If we had insufficient balance it would revert.
+
+D: The gauge used is hardcoded and is indeed an official Curve gauge which will behave as expected by this code.
+</HiddenSolution>
+
+---
+
+### Question 2 of 8
+
+The function `shouldDivest`:
+
+<ul>
+  <li><input type="checkbox" /> A. Can never return `true` as the `investedBalance` function will not revert </li>
+  <li><input type="checkbox" /> B. Can revert because `this` may be `selfdestructed` when we `delegatecall` to a `proxy` </li>
+  <li><input type="checkbox" /> C. Can never return `true` because the catch clause doesn't catch `Bytes Error` </li>
+  <li><input type="checkbox" /> D. None of the above </li>
+</ul>
+
+<HiddenSolution>
+**Correct is D.**
+
+A: The `investedBalance()` function will revert when the `uint256` value returned by `balanceInPool()` is too large to fit into `uint128` when multiplied in `bal_1 * PRECISION * balanceInPool()`. This is because the expression is casted to `uint128` because of `bal_1`, the fact that it is back-cast to `uint256` in the end does not matter.
+
+B: Random gibberish option.
+
+C: The `} catch {` will catch all errors, even if it is  some "`Bytes Error`", because it's not specifying anything specific that it is trying to catch.
+
+</HiddenSolution>
+
+---
+
+### Question 3 of 8
+
+The owner can:
+
+<ul>
+  <li><input type="checkbox" /> A. Steal all funds by withdrawing them to a malicious strategy </li>
+  <li><input type="checkbox" /> B. Lose their private key </li>
+  <li><input type="checkbox" /> C. Be impersonated due to Multicall and Meta Transactions support </li>
+  <li><input type="checkbox" /> D. Set only one strategy per `reward` and `want` combination </li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, B, C.**
+
+A: The owner is capable of arbitrarily adding new strategies, and using `invest()` and `divest()` to move funds between them. A malicious owner could indeed simply add a strategy that allows stealing all of the funds after moving them there.
+
+B: Protocol owners can indeed lose their private key, a simple and true statement. Sadly it happens all the time, or is used to cover up a rug pull. Since this is off-chain operational security, it's hard to tell and often not much thought is put into preventing it.
+
+C: Account Impersonation is indeed possible through combining ERC-2771 and Multicall with the used version of OpenZeppelin which does not contain the appropriate fix yet. If you're unfamiliar with this bug, take a look at the detailed [write-up about it](https://ventral.digital/posts/2024/1/19/ethereum-smart-contract-auditors-2023-rewind/#erc-2771--multicall--account-impersonation) in the Ethereum Smart Contract Auditor's 2023 Rewind.
+
+D: While there's code that prevents adding the same swap route in `allowedSwap`, this check is directional. Even if `[reward][want]` has already been set, there's always a second combination involving both of these values that is still allowed (basically `[want][reward]`).
+</HiddenSolution>
+
+---
+
+### Question 4 of 8
+
+The System is:
+
+<ul>
+  <li><input type="checkbox" /> A. Using a swapper to allow custom swaps in the future </li>
+  <li><input type="checkbox" /> B. A Template system for generating NFTs </li>
+  <li><input type="checkbox" /> C. Using a Controller and a Strategy where the Controller can work with only one strategy </li>
+  <li><input type="checkbox" /> D. None of the above </li>
+</ul>
+
+<HiddenSolution>
+**Correct is A.**
+
+A: It indeed appears to be using a "swapper".
+
+B: Just random gibberish again.
+
+C: The controller appears to work with many Strategies.
+</HiddenSolution>
+
+---
+
+### Question 5 of 8
+
+The Strategy:
+
+<ul>
+  <li><input type="checkbox" /> A. Cannot be forced to invest and divest due to ownership checks in the `Controller` </li>
+  <li><input type="checkbox" /> B. Can be made to lose all of its rewards by claiming on behalf of the strategy </li>
+  <li><input type="checkbox" /> C. Can be made to lose all of its rewards because the reward token is Fee-on-Transfer </li>
+  <li><input type="checkbox" /> D. Can send tokens to the wrong address </li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, B.**
+
+A: These operations are indeed permissioned by an ownership check.
+
+B: Is true when exploiting a gauge [loss-of-yield attack](https://github.com/code-423n4/2023-07-tapioca-findings/issues/1429).
+
+C/D: More gibberish.
+</HiddenSolution>
+
+---
+
+### Question 6 of 8
+
+Harvest for the Strategy:
+
+<ul>
+  <li><input type="checkbox" /> A. Will claim reward tokens and send them to the Controller </li>
+  <li><input type="checkbox" /> B. Doesn't use `safeTransfer` and so it will revert </li>
+  <li><input type="checkbox" /> C. `transfer` will not revert because the reward token is known </li>
+  <li><input type="checkbox" /> D. Can overflow via a donation during gauge execution that requires no changes in the external contracts </li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, C.**
+
+A: That's indeed what the code appears to do.
+
+B/C: The token we're calling `transfer()` on is a hardcoded Curve token that is known to work as expected by this code. A `safeTransfer` wrapper would only be necessary if it's unknown how the used token handles errors.
+
+D: You guessed it, gibberish it is.
+</HiddenSolution>
+
+---
+
+### Question 7 of 8
+
+The mapping `lastSafeBalanceOfWant[strategy]`:
+
+<ul>
+  <li><input type="checkbox" /> A. Is always zero</li>
+  <li><input type="checkbox" /> B. Should be zero if no direct donation has happened</li>
+  <li><input type="checkbox" /> C. Will track the balance of `want` of the controller</li>
+  <li><input type="checkbox" /> D. Will prevent sweep exploits in invest</li>
+</ul>
+
+<HiddenSolution>
+**Correct is B.**
+
+As you can tell from the code comment, the way that `lastSafeBalanceOfWant[strategy]` is currently used is incorrect and should be swapped. 
+
+A/B: Although it is most likely to be zero indeed, it can't be said that it's always zero because there's the possibility that a "direct donation" (ie. a injection of funds) happened.
+
+C: It's not tracking as intended since setting the mapping's value and checking it are swapped.
+
+D: Incorrect, this offers no protection.
+</HiddenSolution>
+
+---
+
+### Question 8 of 8
+
+The function `invest`:
+
+<ul>
+  <li><input type="checkbox" /> A. Allows the owner to deposit want, convert it into Tricrypto LP and stake in the gauge </li>
+  <li><input type="checkbox" /> B. Allows an attacker to deposit in the wrong strategy </li>
+  <li><input type="checkbox" /> C. Allows an attacker to cause loss of  value because `lastSafeBalanceOfWant[strategy]` is ineffective </li>
+  <li><input type="checkbox" /> D. None of the above </li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, B, C.**
+
+A: That's factually what it does. You can see that it's indeed "Tricrypto LP" by checking the gauge's token tracker in [arbiscan](https://arbiscan.io/address/0x555766f3da968ecBefa690Ffd49A2Ac02f47aa5f).
+
+B/C: Both are possible thanks to the ERC-2771 + Multicall bug mentioned in [Question 3](#question-3-of-8)
+</HiddenSolution>
+
+---

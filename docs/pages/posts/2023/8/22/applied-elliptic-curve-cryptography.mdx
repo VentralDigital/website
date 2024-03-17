@@ -34,11 +34,17 @@ The pretty "elliptical curve" plots, as seen in the top row, are created over an
     * Existence of an "Identity" element $`cc"O"`$ within the group for which the following is true: $`cc"O" + P_1 = P_1`$. No such Identity Point naturally occurs on an elliptic curve, therefore this too is "made up" as a "point at infinity".
     * Invertibility: For every element such as $`P_1`$ there's an inverse $`-P_1`$ such that $`P_1 - P_1 = cc"O"`$.
 
-In RSA, numbers become cyclical thanks to modular arithmetic and the use of prime numbers. Similarly, when the order (ie. the number of existing points) of the elliptic curve is prime, almost any non-identity point on the curve can serve as a generator point $`G`$ (also referred to as "primitive element", or "base point"). A generator, when "added" to itself over and over again, will cycle through all elements of the group ($`G, 2G, 3G, ..., (n-1)G, cc"O", G, 2G, ...`$). However, not all curves have a prime order. For those that have a composite order, it's common to choose a large prime-order subgroup and a generator that is part of this sub-group is then determined. These generators won't iterate through all points on the curve, only through points in their subgroup. If the subgroup's order is a large prime, it will have a number of elements comparable to the entire curve.
+When the order $`n`$ (ie. the number of existing points) of an elliptic curve is prime, almost any non-identity point on the curve can serve as a generator point $`G`$ (also referred to as "primitive element", or "base point"). A generator, when "added" to itself over and over again, will cycle through all elements of the group ($`G, 2G, 3G, ..., (n-1)G,`$ $`cc"O", G, 2G, ...`$). However, not all curves have a prime order. For those that have a composite order, it's common to choose a large prime-order subgroup and a generator that is part of this sub-group is then determined. These generators won't iterate through all points on the curve, only through points in their subgroup. If the subgroup's order is a large prime, it will have a number of elements comparable to the entire curve.
 
-In RSA, the "trapdoor function" relied on the mathematical property that once two large random prime factors are multiplied, it is difficult to factorize the product in order to recover them. The discrete logarithmic problem in ECC (ECDLP) instead relies on the fact that it's easier to determine a point $`P`$ by multiplying a scalar with a generator ($`P = sG`$) than it is by determining the scalar that was used from knowing both $`P`$ and $`G`$. This operation can be efficiently executed forward thanks to methods such as the Double-And-Add algorithm, while the reverse requires a much more brute force approach.
+The fact that an exponentiation with a modulus ($`g^s" (mod "p")"`$) is hard to reverse is referred to as the discrete logarithmic problem (DLP). Similarly, it's easier to determine a point $`P`$ by multiplying a scalar with a generator ($`P = sG`$) than it is determining the scalar that was used from knowing both $`P`$ and $`G`$, which is referred to as the discrete logarithmic problem in ECC (ECDLP). This operation can be efficiently executed forward thanks to methods such as the Double-And-Add algorithm, while the reverse requires a much more brute force approach.
 
-One of the greatest advantages of ECC compared to RSA is that the secret scalar in ECDLP may be much smaller than the prime factors chosen in RSA without a sacrifice in security, making it a more space-saving and efficient scheme. It can also be argued that ECC has fewer footguns, which doesn't mean that choosing the right curve and a good generator point isn't important for the scheme's security.
+Note that most scientific paper will not make use of the ECDLP scalar-point notation. Instead they typically use the conventional discrete logarithm notation where the base is the generator and the field element (scalar) is the exponent: 
+
+$$
+`C = aG + bG = (a+b)G iff c = g^a * g^b = g^(a+b)" (mod "n")"`
+$$
+
+Using ECC instead of relying on the conventional DLP or the prime factorization problem (RSA) comes with benefits: In ECC the numbers used can be much smaller while offering stronger security guarantees. It can also be argued that ECC has much fewer footguns.
 
 ## ECDH
 
@@ -160,7 +166,7 @@ As before, we assume that protocol participants have agreed upon a curve, its pa
 
 1. Generate a reliably random, one-time-use, key-pair $`R = kG`$. To prevent leakage of the user's private key, it's essential that $`k`$ is never leaked or shared, but rather discarded immediately after the signing process.
 2. Calculate  
-$`s = k - hash(m, R)*a`$.  
+$`s = k - "hash"(m, R)*a`$.  
 With the message $`m`$ and the public one-time key $`R`$ being concatenated and hashed resulting in a scalar value. Little $`a`$ is the private-key part of the user's personal key-pair $`A = aG`$. This process requires no elliptic curve operations and is very efficient thanks to that.
 3. Share $`s`$ and $`R`$ (both values make up a complete Schnorr Signature) with a person that wants to verify that the message was truly signed by the owner of $`A`$.
 
@@ -168,17 +174,17 @@ With the message $`m`$ and the public one-time key $`R`$ being concatenated and 
 
 The receiver merely has to verify that, with the known values $`R, s, G, m, A`$, the following holds true:
 
-$`R = sG + hash(m, R)*A`$
+$`R = sG + "hash"(m, R)*A`$
 
 But why does that work? To show that, we take the formula used during the signing process and multiply both sides with $`G`$:
 
-$`s = k - hash(m, R)*a`$
+$`s = k - "hash"(m, R)*a`$
 
-$`Gs = G* (k - hash(m, R)*a)`$
+$`Gs = G* (k - "hash"(m, R)*a)`$
 
-$`Gs = Gk - hash(m, R)*aG`$
+$`Gs = Gk - "hash"(m, R)*aG`$
 
-$`Gs = R - hash(m, R)*A`$
+$`Gs = R - "hash"(m, R)*A`$
 
 Basically, by multiplying both sides with the known parameter $`G`$ we are able to substitute all unknown parameters ($`k`$ and $`a`$) with known ones ($`R`$ and $`A`$), while keeping the formula itself equivalent to the one used during signing.
 
@@ -186,23 +192,23 @@ Basically, by multiplying both sides with the known parameter $`G`$ we are able 
 
 But if the formula still works with all parameters being public, doesn't that mean that someone would be able to generate a signature using only known public parameters?
 
-Assuming $`G`$ is generally known, and we want to forge a signature for the public key $`A`$, making it look like they have signed an attacker-chosen message $`m`$. The attacker would need to determine $`R`$ and $`s`$, but the problem here is that the relationship of $`R - hash(m, R)`$ is impossible to resolve. With the hash being a deterministically random one-way-street, how do you determine an $`R`$ that when hashed with the message ($`h = hash(m, R)`$) yields a scalar that works for $`R - h`$. This is a mathematically unresolvable circular dependency. The only feasible method is guesswork – and the number of possible guesses is astronomically high, making it impractical.
+Assuming $`G`$ is generally known, and we want to forge a signature for the public key $`A`$, making it look like they have signed an attacker-chosen message $`m`$. The attacker would need to determine $`R`$ and $`s`$, but the problem here is that the relationship of $`R - "hash"(m, R)`$ is impossible to resolve. With the hash being a deterministically random one-way-street, how do you determine an $`R`$ that when hashed with the message ($`h = "hash"(m, R)`$) yields a scalar that works for $`R - h`$. This is a mathematically unresolvable circular dependency. The only feasible method is guesswork – and the number of possible guesses is astronomically high, making it impractical.
 
 #### Nonce Reuse
 
 One of the well-known vulnerabilities of ECC based signatures happens by reusing the same random factor for signing multiple messages. Meaning that, at some point, someone published two signatures $`(R, s_1)`$ and $`(R, s_2)`$ with both having the same $`R`$, which implies that the same random $`k`$ was reused for signing two different messages $`m_1`$ and $`m_2`$. This issue is so detrimental because by subtracting the signatures from each other we can actually determine the private key:
 
-$`(s_1 = k - h(m_1, R)*a)`$ minus $`(s_2 = k - h(m_2, R)*a ) ->`$
+$`(s_1 = k - "hash"(m_1, R)*a)`$ minus $`(s_2 = k - "hash"(m_2, R)*a ) ->`$
 
-$`s_1 - s_2 = (k - h(m_1, R)*a) - (k - h(m_2, R)*a)`$
+$`s_1 - s_2 = (k - "hash"(m_1, R)*a) - (k - "hash"(m_2, R)*a)`$
 
-$`s_1 - s_2 = k - h(m_1, R)*a - k + h(m_2, R)*a`$
+$`s_1 - s_2 = k - "hash"(m_1, R)*a - k + "hash"(m_2, R)*a`$
 
-$`s_1 - s_2 = cancel((k - k)) + (h(m_2, R)*a - h(m_1, R)*a)`$
+$`s_1 - s_2 = cancel((k - k)) + ("hash"(m_2, R)*a - "hash"(m_1, R)*a)`$
 
-$`s_1 - s_2 = a*(h(m_2, R) - h(m_1, R))`$
+$`s_1 - s_2 = a*("hash"(m_2, R) - "hash"(m_1, R))`$
 
-$`(s_1 - s_2) / (h(m_2, R) - h(m_1, R)) = a`$
+$`(s_1 - s_2) / ("hash"(m_2, R) - "hash"(m_1, R)) = a`$
 
 As you can see, $`k`$ was cancelled out, leaving only the need for publicly known parameters to determine the private key $`a`$.
 
@@ -212,15 +218,15 @@ This is why it's very important to ensure a reliable source of randomness is use
 
 One of Blockchain's real-world applications is "Proof of Inclusion", meaning a proof that someone (signer) knew about something (hashed) at a certain point in time. In Bitcoin this was typically done using the `OP_RETURN` operation which allowed storing random data, but at the same time, wasted costly blockspace. A neat way to optimize this is by exploiting $`k`$ to, additionally to being a random factor, also proof some data. This can be done without influencing the normal verification process and without increasing the signature size.
 
-We'll still use the same formula for signing ($`s = k - hash(m, R)*a`$) with the difference that a new parameter $`j`$ will be random within $`k`$ instead of $`k`$ itself:
+We'll still use the same formula for signing ($`s = k - "hash"(m, R)*a`$) with the difference that a new parameter $`j`$ will be random within $`k`$ instead of $`k`$ itself:
 
-$`k = j + hash(data, jG)`$
+$`k = j + "hash"(data, jG)`$
 
 The $`R`$ value will be calculated as usual based on the resulting $`k`$ and someone who merely wants to check the signature's validity can do so normally. But once the signer wants to proof the inclusion of the specified $`data`$, they publish it plus $`J`$ (from $`J = jG`$). Those interested in validating the proof of inclusion can then additionally verify the following:
 
-$`R = J + hash(data, J)*G`$
+$`R = J + "hash"(data, J)*G`$
 
-This equation is the result of multiplying both sides with $`G`$: $`k*G = (j + hash(data, jG))*G`$
+This equation is the result of multiplying both sides with $`G`$: $`k*G = (j + "hash"(data, jG))*G`$
 
 This technique is being made use of by various concepts in Bitcoin, such as P2CH ("Pay to Contract Hash"), "Taproot" and "Graftroot" (never question bitcoin naming, it doesn't make sense most of the time). But most interestingly: It shows how vast the possibilities of ECC still are and the potential of playfully finding new schemes.
 
@@ -261,7 +267,7 @@ e2 = int.from_bytes(hashlib.sha256(R_bytes + m2).digest(), 'big') % n
 s2 = (k - e2 * a) % n
 print(f"Created signature ({R.x()}, {R.y()}, {s2}) for message ({m2})")
 
-# Key recovery: a = (s1 - s2) / (h(m2, R) - h(m1, R))
+# Key recovery: a = (s1 - s2) / (hash(m2, R) - hash(m1, R))
 assert a == ((s - s2) * numbertheory.inverse_mod((e2 - e), n)) % n
 ```
 
@@ -281,29 +287,29 @@ This is a "Digital Signature Algorithm" typically used with the Edwards-curve, w
 
 A EdDSA signature too consists of two components $`(R, s)`$:
 
-$`R = rG lArr r = hash(hash(a), m)`$
+$`R = rG lArr r = "hash"("hash"(a), m)`$
 
-$`s = r + hash(R, A, m) * a`$
+$`s = r + "hash"(R, A, m) * a`$
 
-As before, all inputs of $`hash()`$ functions are concatenated with each other and return a scalar value. Above, the message $`m`$ is signed by the owner of the key-pair $`A = aG`$.
+As before, all inputs of $`"hash"()`$ functions are concatenated with each other and return a scalar value. Above, the message $`m`$ is signed by the owner of the key-pair $`A = aG`$.
 
 #### Verification
 
 Using the publicly known variables $`G, R, A, m`$ it's now possible to validate the signature by checking if the following equation holds true:
 
-$`sG = R + hash(R, A, m)*A`$
+$`sG = R + "hash"(R, A, m)*A`$
 
 That this indeed works, can be proven by substituting $`s`$ and showing that both sides of the equation should indeed be equal:
 
-$`(r + hash(R, A, m) * a)*G = R + hash(R, A, m)*A`$
+$`(r + "hash"(R, A, m) * a)*G = R + "hash"(R, A, m)*A`$
 
-$`r*G + hash(R, A, m) * a * G = R + hash(R, A, m)*A`$
+$`r*G + "hash"(R, A, m) * a * G = R + "hash"(R, A, m)*A`$
 
-$`R + hash(R, A, m) * A = R + hash(R, A, m) * A`$
+$`R + "hash"(R, A, m) * A = R + "hash"(R, A, m) * A`$
 
 #### Forging
 
-As we did in Schnorr's signature scheme, here too we have a paradoxical relationship that cannot be resolved: $`R + hash(R)`$. In order to forge a signature one would have to pick an $`R`$, that when hashed, returns a result that satisfies the outside $`R`$ value. This cannot be resolved neither in a mathematical or logical manner nor using brute force - at least not in a reasonable manner.
+As we did in Schnorr's signature scheme, here too we have a paradoxical relationship that cannot be resolved: $`R + "hash"(R)`$. In order to forge a signature one would have to pick an $`R`$, that when hashed, returns a result that satisfies the outside $`R`$ value. This cannot be resolved neither in a mathematical or logical manner nor using brute force - at least not in a reasonable manner.
 
 
 ## ECDSA
@@ -320,23 +326,23 @@ $`r = R_x`$
 
 The $`s`$ value is the scalar returned by hashing the message $`m`$, which is added to the product of $`R`$'s x-coordinate and the private key $`a`$. This is then multiplied with the inverse of $`k`$, which is a reminder that these equations are using modular arithmetic over $`("mod "n)`$, with $`n`$ being the order of the curve (number of elements in the group).
 
-$`s = k^(-1)*(hash(m)+r*a)`$
+$`s = k^(-1)*("hash"(m)+r*a)`$
 
 #### Verification
 
 If the following equation holds true for known public values $`m, r, s, G, A`$, the message $`m`$ was indeed signed by $`A`$:
 
-$`R = (hash(m)*s^(-1))G + (r*s^(-1))A`$
+$`R = ("hash"(m)*s^(-1))G + (r*s^(-1))A`$
 
 That this indeed works can be shown by factoring out $`s`$ and $`G`$ and then substituting $`s`$ with the equation used during signing:
 
-$`R = (hash(m)*G + raG) * s^(-1)`$
+$`R = ("hash"(m)*G + raG) * s^(-1)`$
 
-$`R = ((hash(m) + ra) * G) / s`$
+$`R = (("hash"(m) + ra) * G) / s`$
 
-$`R = ((hash(m) + ra) * G) / (k^(-1)*(hash(m)+r*a))`$
+$`R = (("hash"(m) + ra) * G) / (k^(-1)*("hash"(m)+r*a))`$
 
-$`R = (cancel(hash(m) + ra) * G * k) / cancel((hash(m)+r*a))`$
+$`R = (cancel("hash"(m) + ra) * G * k) / cancel(("hash"(m)+r*a))`$
 
 $`R = kG`$
 
@@ -348,15 +354,15 @@ The use of such a "recovery-id" introduces malleability: This id can be flipped,
 
 Since $`r = R_x`$ is the same for the point $`-R`$, it only leaves the value of $`s`$ to temper with. Furthermore, for $`R = sG`$ to invert, we have to invert both sides, and with $`G`$ being a constant, we're left with having to invert $`s`$: $`-R = (-s)G`$.
 
-$`-R = (hash(m)*(-s)^(-1))G + (r*(-s)^(-1))A`$
+$`-R = ("hash"(m)*(-s)^(-1))G + (r*(-s)^(-1))A`$
 
-$`-R = (hash(m)*G + raG) * (-s)^(-1)`$
+$`-R = ("hash"(m)*G + raG) * (-s)^(-1)`$
 
-$`-R = ((hash(m) + ra) * G) / (-s)`$
+$`-R = (("hash"(m) + ra) * G) / (-s)`$
 
-$`-R = ((hash(m) + ra) * G) / -(k^(-1)*(hash(m)+r*a))`$
+$`-R = (("hash"(m) + ra) * G) / -(k^(-1)*("hash"(m)+r*a))`$
 
-$`-R = (cancel(hash(m) + ra) * G * (-k)) / cancel((hash(m)+r*a))`$
+$`-R = (cancel("hash"(m) + ra) * G * (-k)) / cancel(("hash"(m)+r*a))`$
 
 $`-R = (-k)G`$
 
@@ -368,25 +374,25 @@ With this, it's possible to find a perfectly valid second signature for each ori
 
 Like Schnorr, ECDSA is vulnerable to Nonce Reuse. Someone who noticed that two signatures with different $`s`$ make use of the same $`r`$ is first able to determine $`k`$:
 
-$`s_1 - s_2 = (k^(-1)*(hash(m_1)+r*a)) - (k^(-1)*(hash(m_2)+r*a))`$
+$`s_1 - s_2 = (k^(-1)*("hash"(m_1)+r*a)) - (k^(-1)*("hash"(m_2)+r*a))`$
 
-$`s_1 - s_2 = k^(-1)*(hash(m_1)+r*a) - k^(-1)*(hash(m_2) + r*a)`$
+$`s_1 - s_2 = k^(-1)*("hash"(m_1)+r*a) - k^(-1)*("hash"(m_2) + r*a)`$
 
-$`s_1 - s_2 = k^(-1)*((hash(m_1)+r*a) - (hash(m_2) + r*a))`$
+$`s_1 - s_2 = k^(-1)*(("hash"(m_1)+r*a) - ("hash"(m_2) + r*a))`$
 
-$`s_1 - s_2 = k^(-1)*(hash(m_1)cancel(+r*a) - hash(m_2) cancel(- r*a))`$
+$`s_1 - s_2 = k^(-1)*("hash"(m_1)cancel(+r*a) - "hash"(m_2) cancel(- r*a))`$
 
-$`(s_1 - s_2)/(hash(m_1) - hash(m_2)) = k^(-1)`$
+$`(s_1 - s_2)/("hash"(m_1) - "hash"(m_2)) = k^(-1)`$
 
 And then, knowing $`k`$ they're able to determine the private key used for signing:
 
-$`s_1 = k^(-1)*(hash(m_1)+r*a)`$
+$`s_1 = k^(-1)*("hash"(m_1)+r*a)`$
 
-$`s_1/(k^(-1)) = hash(m_1)+r*a`$
+$`s_1/(k^(-1)) = "hash"(m_1)+r*a`$
 
-$`s_1*k - hash(m_1)= r*a`$
+$`s_1*k - "hash"(m_1)= r*a`$
 
-$`(s_(1)k - hash(m_1))/r= a`$
+$`(s_(1)k - "hash"(m_1))/r= a`$
 
 An important reminder to ensure that $`k`$ must be uniquely chosen for each signature and that even after that it must never leak. Best dispose of it immediately. 
 

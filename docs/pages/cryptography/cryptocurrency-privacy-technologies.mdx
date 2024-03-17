@@ -64,8 +64,8 @@ import { NewsletterIcon, GlobeIcon } from '@components/icons'
   <ArticleCard image title="Sigma Protocol(s), One-Out-Of-Many-Proofs" subtitle="February 10, 2024 by patrickd" href="/posts/2024/2/10/cryptocurrency-privacy-technologies-sigma/">
     <>![Thumbnail](../posts/2024/2/10/thumbnail.jpg)</>
   </ArticleCard>
-  <ArticleCard image title="Bulletproofs" subtitle="Soon" href="#from-zerocoin-to-firo">
-    <>![Thumbnail](./thumbnail-bulletproofs.jpg)</>
+  <ArticleCard image title="Bulletproof Range Proofs" subtitle="March 18, 2024 by patrick" href="/posts/2024/3/18/cryptocurrency-privacy-technologies-bulletproof-range-proofs/">
+    <>![Thumbnail](../posts/2024/3/18/thumbnail.jpg)</>
   </ArticleCard>
   <ArticleCard image title="Lelantus" subtitle="Soon" href="#from-zerocoin-to-firo">
     <>![Thumbnail](./thumbnail-lelantus.jpg)</>
@@ -74,8 +74,6 @@ import { NewsletterIcon, GlobeIcon } from '@components/icons'
     <>![Thumbnail](./thumbnail-spark.jpg)</>
   </ArticleCard>
 </ArticleCards>
-
-## Comparison
 
 import { Callout } from 'nextra/components'
 import { R, Reference, References } from '@components/references'
@@ -94,20 +92,15 @@ import { R, Reference, References } from '@components/references'
 | <R reference='Trusted Setup'/>   |$`color(red)("Yes")`$<R reference='C91'/>|$`-`$|$`-`$|$`-`$|
 | <R reference='Known Attacks'/>   |$`color(red)("Crit")`$<R reference='FRG'/><R reference='TA'/>|$`"Low"`$<R reference='TA'/>|$`"Low"`$<R reference='TA'/>|$`"Low"`$<R reference='TA'/>|
 
+<p className="text-xs text-center">© Ventral Digital</p>
+
 [0]: https://github.com/firoorg/firo/releases/tag/v0.13.7.7
 [1]: https://github.com/firoorg/firo/releases/tag/v0.14.0.5
 [2]: https://github.com/firoorg/firo/releases/tag/v0.14.12.1
 [3]: https://github.com/firoorg/firo/releases/tag/v0.14.13.2
 
 <Callout type="warning">
-  The comparison table is a work-in-progress.
-
-  **TODO**
-  * Performance measurements on standardized hardware?
-  * Measuring auditability? Under what assumptions?
-  * Actual usage of protocol? Effective anonymity set sizes/growth?
-  * Light wallet support? Trusting full nodes? Info leakage?
-  * ...
+  The comparison table is a work-in-progress and may be inaccurate. Further information should be added for fair cross-project comparisons, such as: performance measurements on standardized hardware, judging supply auditability and necessary assumptions, effective anonymity set size and what it depends on, light wallet information leakage, cryptographic assumptions, quantum Resistance, ...
 </Callout>
 
 <References>

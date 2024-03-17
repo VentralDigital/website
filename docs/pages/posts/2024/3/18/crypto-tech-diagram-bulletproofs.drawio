@@ -1,0 +1,85 @@
+<mxfile host="app.diagrams.net" modified="2024-03-17T13:31:47.140Z" agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36" etag="Vl4lY8UAIJNiJtc8Cgw5" version="24.0.4" type="device">
+  <diagram name="Page-1" id="_Gakuy9Rwmy7J1l9Ox4a">
+    <mxGraphModel dx="1644" dy="3383" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="65K4XnvOwFQsAaX6m_DC-1" value="Bulletproofs" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="-230" y="-1390" width="240" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="65K4XnvOwFQsAaX6m_DC-2" value="2017 &quot;Bulletproofs: Short Proofs for Confidential Transactions and More&quot;" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontStyle=2" vertex="1" parent="1">
+          <mxGeometry x="-230" y="-1370" width="240" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="65K4XnvOwFQsAaX6m_DC-20" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;endArrow=none;endFill=0;" edge="1" parent="1" source="65K4XnvOwFQsAaX6m_DC-3">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="-110" y="-1340" as="targetPoint" />
+            <Array as="points">
+              <mxPoint x="50" y="-1320" />
+              <mxPoint x="-109" y="-1320" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="65K4XnvOwFQsAaX6m_DC-3" value="Confidential Transaction Values" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="-70" y="-1260" width="240" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="65K4XnvOwFQsAaX6m_DC-4" value="2015 &quot;Confidential Transactions&quot;" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontStyle=2" vertex="1" parent="1">
+          <mxGeometry x="-70" y="-1240" width="240" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="65K4XnvOwFQsAaX6m_DC-21" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;endArrow=none;endFill=0;" edge="1" parent="1" source="65K4XnvOwFQsAaX6m_DC-5" target="65K4XnvOwFQsAaX6m_DC-4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="65K4XnvOwFQsAaX6m_DC-5" value="Borromean Ring Signatures" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="-70" y="-1180" width="240" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="65K4XnvOwFQsAaX6m_DC-6" value="2015 &quot;Borromean Ring Signatures&quot;" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontStyle=2" vertex="1" parent="1">
+          <mxGeometry x="-70" y="-1160" width="240" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="65K4XnvOwFQsAaX6m_DC-22" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;endArrow=none;endFill=0;" edge="1" parent="1" source="65K4XnvOwFQsAaX6m_DC-7" target="65K4XnvOwFQsAaX6m_DC-6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="65K4XnvOwFQsAaX6m_DC-7" value="1-out-of-n Signatures" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="-70" y="-1020" width="240" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="65K4XnvOwFQsAaX6m_DC-8" value="&lt;div style=&quot;font-size: 10px;&quot;&gt;&lt;/div&gt;&lt;i&gt;2002 &quot;1-out-of-n Signatures from a Variety of Keys&quot;&lt;br&gt;&lt;/i&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="-70" y="-1000" width="240" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="65K4XnvOwFQsAaX6m_DC-23" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;endArrow=none;endFill=0;" edge="1" parent="1" source="65K4XnvOwFQsAaX6m_DC-9" target="65K4XnvOwFQsAaX6m_DC-8">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="65K4XnvOwFQsAaX6m_DC-9" value="Ring Signatures" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="-70" y="-940" width="240" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="65K4XnvOwFQsAaX6m_DC-10" value="2001&lt;span style=&quot;background-color: initial;&quot;&gt;&amp;nbsp;&quot;How to Leak a Secret&quot;&lt;/span&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontStyle=2" vertex="1" parent="1">
+          <mxGeometry x="-52.5" y="-920" width="205" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="65K4XnvOwFQsAaX6m_DC-24" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;endArrow=none;endFill=0;" edge="1" parent="1" source="65K4XnvOwFQsAaX6m_DC-11" target="65K4XnvOwFQsAaX6m_DC-10">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="65K4XnvOwFQsAaX6m_DC-11" value="Witness Indistinguishable Signatures" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="-70" y="-860" width="240" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="65K4XnvOwFQsAaX6m_DC-12" value="&lt;div style=&quot;font-size: 10px;&quot;&gt;&lt;/div&gt;&lt;i&gt;1994 &quot;Proofs of Partial Knowledge and Simplified&lt;div&gt;Design of Witness Hiding Protocols&quot;&lt;/div&gt;&lt;/i&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="-70" y="-840" width="240" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="65K4XnvOwFQsAaX6m_DC-19" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;endArrow=none;endFill=0;" edge="1" parent="1" source="65K4XnvOwFQsAaX6m_DC-13" target="65K4XnvOwFQsAaX6m_DC-2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="65K4XnvOwFQsAaX6m_DC-13" value="Logarithmic Inner Product Argument" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="-360" y="-1300" width="240" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="65K4XnvOwFQsAaX6m_DC-14" value="2016 &quot;&lt;span style=&quot;background-color: initial;&quot;&gt;Efficient Zero-Knowledge Arguments for&lt;br&gt;&lt;/span&gt;&lt;span style=&quot;background-color: initial;&quot;&gt;Arithmetic Circuits in the Discrete Log Setting&lt;/span&gt;&quot;" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontStyle=2" vertex="1" parent="1">
+          <mxGeometry x="-360" y="-1280" width="240" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="65K4XnvOwFQsAaX6m_DC-25" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;endArrow=none;endFill=0;" edge="1" parent="1" source="65K4XnvOwFQsAaX6m_DC-17" target="65K4XnvOwFQsAaX6m_DC-14">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="65K4XnvOwFQsAaX6m_DC-17" value="Square Root Argument" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="-360" y="-1110" width="240" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="65K4XnvOwFQsAaX6m_DC-18" value="2009 &quot;Linear algebra with sub-linear zero-knowledge arguments&quot;" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontStyle=2" vertex="1" parent="1">
+          <mxGeometry x="-360" y="-1090" width="240" height="30" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -663,7 +663,7 @@ The complication here is that $`C`$ is a secret value and also an exponent of th
   The original Zerocoin paper does not provide much information on the construction of this proof, referring the reader to a future "full version". I assume that to be Miers' dissertation<R reference="22" />, which seems to be mostly a copy containing both the Zerocoin and Zerocash papers. Based on other works<R reference="23" /> I assume that the abelian group of this proof is constructed in the same manner as that of the commitment $`C`$.
 </Callout>
 
-In this protocol, the verifier responds with a boolean challenge value $`e`$, which is often referred to as a "coin flip", while the technique is called "cut-and-choose". We mentioned before that correctly guessing the challenge $`e`$ is fatal to the Zero Knowledge Proof since it would allow the prover to fake knowledge of the secret values. In case of a coin flip challenge, the prover has a 50/50 chance of guessing correctly. This danger is reduced by choosing a security parameter $`lambda`$ that determines how many rounds of the proving game are played. Note that each round $`i in [1; lambda]`$ can be played in parallel with the other rounds for efficiency.
+In this protocol, the verifier responds with a boolean challenge value $`e`$ which is like a "coin flip" used for a technique called "cut-and-choose". We mentioned before that correctly guessing the challenge $`e`$ is fatal to the Zero Knowledge Proof since it would allow the prover to fake knowledge of the secret values. In case of a "coin flip"-like challenge, the prover has a 50/50 chance of guessing correctly. This danger is reduced by choosing a security parameter $`lambda`$ that determines how many rounds of the proving game are played. Note that each round $`i in [1; lambda]`$ can be played in parallel with the other rounds for efficiency.
 
 <details className="last-of-type:mb-0 rounded-lg bg-neutral-50 dark:bg-neutral-800 p-2 mt-4">
   <summary>
@@ -1006,6 +1006,19 @@ $$
 $$
 
 With the other verifications mostly being more of the same, I'll stop here. Unfortunately, I wasn't able to find the client that was intended to be used with these contracts, so I'm unable to present the code that was intended to build the ZK Proofs that are being verified here. But if you're curious, the original [C++ code of libzerocoin](https://github.com/Zerocoin/libzerocoin/blob/master/Commitment.cpp) is still available on github and not too bad in terms of readability.
+
+<Callout>
+So far you might have the impression that the accumulator is providing a global anonymity set, but looking at the actual Zcoin source code from that time we find the following constants within [zerocoin_params.h](https://github.com/firoorg/firo/blob/8bb954f8bd1511650e2c99681f9ffc5d8c6e667d/src/zerocoin_params.h):
+
+```cpp
+// Number of coins per id in spend v1/v1.5
+#define ZC_SPEND_V1_COINSPERID			10
+// Number of coins per id in spend v2.0
+#define ZC_SPEND_V2_COINSPERID			10000
+```
+
+As you can see, the number of commitments that could be added to an accumulator was actually restricted to only 10 in the beginning and later increased to 10k. Once an accumulator was "full", it would simply start from the beginning with an empty one. Each accumulator had a unique identifier that needed to be passed together with the serial number of the Zerocoin you wanted to redeem. These restrictions were put into place because forging an inclusion proof becomes easier with more and more commitments accumulated.
+</Callout>
 
 ## Conclusion
 

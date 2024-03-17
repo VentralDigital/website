@@ -1,6 +1,6 @@
 # Cryptocurrency Privacy Technologies: Sigma Protocol(s)
 
-<p className="text-xs text-right">February 10, 2023 by [patrickd](/about#patrickd)</p>
+<p className="text-xs text-right">February 10, 2024 by [patrickd](/about#patrickd)</p>
 
 import { Callout } from 'nextra/components'
 import { R, Reference, References } from '@components/references'
@@ -1025,6 +1025,23 @@ $$
 `ubrace(sum_(i=0)^(N-1) (prod_(u=1)^m f_(u,i_u))C'_i)_("t1") + ubrace(sum_(k=0)^(m-1) -x^kD_k)_("t2")" "overset(?)(=)" "0G + gammaH`
 $$
 
+<Callout>
+
+When Zcoin was still using accumulators, the maximum number of commitments that it would allow adding to one was first restricted to only 10 coin commitments and later increased to 10k. This limit was defined within the [zerocoin_params.h](https://github.com/firoorg/firo/blob/8bb954f8bd1511650e2c99681f9ffc5d8c6e667d/src/zerocoin_params.h) file and was put in place because forging an inclusion proof becomes easier with an increasing amount of accumulated commitments.
+
+```cpp
+// Number of coins per id in spend v1/v1.5
+#define ZC_SPEND_V1_COINSPERID			10
+// Number of coins per id in spend v2.0
+#define ZC_SPEND_V2_COINSPERID			10000
+// limit of coins number per id in spend v3.0
+#define ZC_SPEND_V3_COINSPERID_LIMIT    16000
+```
+
+Starting with the Sigma Upgrade, Zcoin stopped using accumulators but commitments were still separated into pools with different identifiers. The new limit "per bucket" was increased to 16k, but this time not for security reasons but because the complexity of verifying a One-Out-Of-Many Proof increases linearly with the number of commitments in the anonymity set. If this anonymity set were global and without limit instead, the effort to verify Zcoin transactions would grow linearly over time and increasingly slow down the entire blockchain.
+
+</Callout>
+
 ---
 
 import { Card, Cards } from 'nextra/components'
@@ -1035,6 +1052,11 @@ import { FileIcon, NewsletterIcon } from '@components/icons'
     icon={<FileIcon />}
     title="← Cryptocurrency Privacy Technologies: Zerocoin Protocol"
     href="/posts/2024/1/9/cryptocurrency-privacy-technologies-zerocoin/"
+  />
+  <Card
+    icon={<FileIcon />}
+    title="Cryptocurrency Privacy Technologies: Bulletproof Range Proofs →"
+    href="/posts/2024/3/18/cryptocurrency-privacy-technologies-bulletproof-range-proofs/"
   />
 </Cards>
 

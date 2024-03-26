@@ -64,14 +64,14 @@ import { NewsletterIcon, GlobeIcon } from '@components/icons'
   <ArticleCard image title="Sigma Protocol(s), One-Out-Of-Many-Proofs" subtitle="February 10, 2024 by patrickd" href="/posts/2024/2/10/cryptocurrency-privacy-technologies-sigma/">
     <>![Thumbnail](../posts/2024/2/10/thumbnail.jpg)</>
   </ArticleCard>
-  <ArticleCard image title="Bulletproof Range Proofs" subtitle="March 18, 2024 by patrick" href="/posts/2024/3/18/cryptocurrency-privacy-technologies-bulletproof-range-proofs/">
+  <ArticleCard image title="Bulletproof Range Proofs" subtitle="March 18, 2024 by patrickd" href="/posts/2024/3/18/cryptocurrency-privacy-technologies-bulletproof-range-proofs/">
     <>![Thumbnail](../posts/2024/3/18/thumbnail.jpg)</>
   </ArticleCard>
-  <ArticleCard image title="Lelantus" subtitle="Soon" href="#from-zerocoin-to-firo">
-    <>![Thumbnail](./thumbnail-lelantus.jpg)</>
+  <ArticleCard image title="Lelantus" subtitle="Match 25, 2023 by patrickd" href="/posts/2024/3/25/cryptocurrency-privacy-technologies-lelantus/">
+    <>![Thumbnail](../posts/2024/3/25/thumbnail.jpg)</>
   </ArticleCard>
   <ArticleCard image title="Lelantus Spark" subtitle="Soon" href="#from-zerocoin-to-firo">
-    <>![Thumbnail](./thumbnail-spark.jpg)</>
+    <>![Thumbnail](../thumbnail-spark.jpg)</>
   </ArticleCard>
 </ArticleCards>
 
@@ -85,7 +85,7 @@ import { R, Reference, References } from '@components/references'
 | <R reference='Released'/>        | Jan, 2019            | Aug, 2020            | Mar, 2023             | Feb, 2024             |
 | <R reference='Untraceability'/>  |$`color(green)("Yes")`$<R reference='ZCN'/>|$`color(green)("Yes")`$<R reference='SIG'/>|$`color(green)("Yes")`$<R reference='LEL'/>|$`color(green)("Yes")`$<R reference='SPA'/>|
 | <R reference='Confidentiality'/> |$`-`$<R reference='ZCN'/>|$`-`$<R reference='SIG'/>|$`color(green)("Yes")`$<R reference='LEL'/>|$`color(green)("Yes")`$<R reference='SPA'/>|
-| <R reference='Anonymity'/>       |$`-`$<R reference='ZCN'/>|$`-`$<R reference='SIG'/>|$`-`$<R reference='LEL'/>|$`color(green)("Yes")`$<R reference='SPA'/>|
+| <R reference='Anonymity'/>       |$`-`$<R reference='ZCN'/>|$`-`$<R reference='SIG'/>|$`Y`$<R reference='LEL'/>|$`color(green)("Yes")`$<R reference='SPA'/>|
 | <R reference='IP Obfuscation'/>  |$`color(green)("Yes")`$<R reference='D++'/>|$`color(green)("Yes")`$<R reference='D++'/>|$`color(green)("Yes")`$<R reference='D++'/>|$`color(green)("Yes")`$<R reference='D++'/>|
 | <R reference='Default Privacy'/> |$`"Opt-In"`$<R reference='ZCN'/><R reference='W'/>|$`"Opt-In"`$<R reference='W'/>|$`color(green)("Opt-Out")`$<R reference='W'/>|$`color(green)("Opt-Out")`$<R reference='W'/>|
 | <R reference='Anonymity Set'/>   |$`"0 - 10k"`$<R reference='SB'/>|$`"0 - 16k"`$<R reference='SB'/>|$`"16k - 65k"`$<R reference='OB'/>|$`"16k - 65k"`$<R reference='OB'/>|
@@ -151,7 +151,7 @@ import { R, Reference, References } from '@components/references'
     The [Sigma Protocol](/posts/2024/2/10/cryptocurrency-privacy-technologies-sigma/) works by the same burn-redeem scheme as Zerocoin<R reference='ZCN'/> but replaces the under-the-hood cryptography used to achieve it. Sigma comes with two major improvements: There no longer is a need for a <R reference='Trusted Setup'/> and the efficency of proofs was significantly improved. It still required a separate <R reference='Anonymity Set'/> for each fixed denomination though.
   </Reference>
   <Reference reference='LEL'>
-    The Lelantus Protocol extends the One-Out-Of-Many Proofs used by the Sigma Protocol<R reference='SIG'/> to hide transaction amounts. With this, the protocol gains confidentiality with a minimal impact on its efficiency and no longer suffers from the impacts of fixed denominations and fragmented anonymity sets.
+    The Lelantus Protocol extends the One-Out-Of-Many Proofs used by the Sigma Protocol<R reference='SIG'/> to hide transaction amounts. With this, the protocol gains confidentiality with a minimal impact on its efficiency and no longer suffers from the impacts of fixed denominations and fragmented anonymity sets. Although Receiver Address Privacy was implemented in a later release, these function on the transparent ledger, independently from Lelantus.
   </Reference>
   <Reference reference='SPA'>
     The Lelantus Spark Protocol introduced many capabilities, most significantly, the addition of "Spark Addresses" (ie. stealth addresses) that do not cause a leak of the address owner's information, achieving anonymity.

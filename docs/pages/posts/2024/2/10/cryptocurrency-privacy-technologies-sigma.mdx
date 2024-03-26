@@ -597,7 +597,7 @@ The described $`Sigma`$-Protocol then serves as the new basis for the optimized 
 |                                                        | $`AAu: f_(u,0) = x-sum_(j=1)^(n-1) f_(u,j)`$|
 |                                                        | $`xhat C+tilde A" "overset(?)(=)" "f_(0,0)G_0 + ... + f_(n-1,m-1)G_(mn-1) + alphaH`$|
 |                                                        | $`xdot A+bar A" "overset(?)(=)" "f_(0,0)*(x-f_(0,0))G_0 + ... + f_(n-1,m-1)*(x-f_(n-1,m-1))G_(mn-1) + betaH`$|
-|                                                        | $`sum_(i=0)^(N-1) (prod_(u=1)^m f_(u,i_u))C'_i + sum_(k=0)^(m-1) -x^kD_k" "overset(?)(=)" "gammaH`$ |
+|                                                        | $`sum_(i=0)^(N-1) (prod_(u=1)^m f_(u,i_u))C'_i + sum_(k=0)^(n-1) -x^kD_k" "overset(?)(=)" "gammaH`$ |
 
 <details className="last-of-type:mb-0 rounded-lg bg-neutral-50 dark:bg-neutral-800 p-2 mt-4">
   <summary>
@@ -1022,7 +1022,7 @@ $$
 Verification finishes with calculations of `t1` and `t2` that should result in a `left` value that is a commitment to zero which we are able to open.
 
 $$
-`ubrace(sum_(i=0)^(N-1) (prod_(u=1)^m f_(u,i_u))C'_i)_("t1") + ubrace(sum_(k=0)^(m-1) -x^kD_k)_("t2")" "overset(?)(=)" "0G + gammaH`
+`ubrace(sum_(i=0)^(N-1) (prod_(u=1)^m f_(u,i_u))C'_i)_("t1") + ubrace(sum_(k=0)^(n-1) -x^kD_k)_("t2")" "overset(?)(=)" "0G + gammaH`
 $$
 
 <Callout>
@@ -1057,6 +1057,11 @@ import { FileIcon, NewsletterIcon } from '@components/icons'
     icon={<FileIcon />}
     title="Cryptocurrency Privacy Technologies: Bulletproof Range Proofs →"
     href="/posts/2024/3/18/cryptocurrency-privacy-technologies-bulletproof-range-proofs/"
+  />
+  <Card
+    icon={<FileIcon />}
+    title="Cryptocurrency Privacy Technologies: Lelantus Protocol →"
+    href="/posts/2024/3/25/cryptocurrency-privacy-technologies-lelantus/"
   />
 </Cards>
 

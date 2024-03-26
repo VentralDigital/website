@@ -1,0 +1,216 @@
+<mxfile host="app.diagrams.net" modified="2024-03-21T13:22:17.607Z" agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36" etag="0At0O4x6KTsIvk3txOmc" version="24.0.7" type="device">
+  <diagram name="Page-1" id="_Gakuy9Rwmy7J1l9Ox4a">
+    <mxGraphModel dx="2868" dy="2286" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="s5rz5R7kNPWqgCDR-JUC-4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;endArrow=none;endFill=0;" parent="1" source="KyD_eOTLhy94dCNybC4f-1" target="s5rz5R7kNPWqgCDR-JUC-3" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="KyD_eOTLhy94dCNybC4f-1" value="Zerocoin" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1" parent="1" vertex="1">
+          <mxGeometry x="-120" y="190" width="240" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="KyD_eOTLhy94dCNybC4f-2" value="&lt;div style=&quot;font-size: 10px;&quot;&gt;&lt;/div&gt;&lt;i&gt;2013 &quot;Zerocoin: Anonymous Distributed E-Cash from Bitcoin&quot;&lt;br&gt;&lt;/i&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;" parent="1" vertex="1">
+          <mxGeometry x="-120" y="210" width="240" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="KyD_eOTLhy94dCNybC4f-7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;endArrow=none;endFill=0;" parent="1" source="KyD_eOTLhy94dCNybC4f-3" target="KyD_eOTLhy94dCNybC4f-6" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="KyD_eOTLhy94dCNybC4f-3" value="Blind Signatures" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1" parent="1" vertex="1">
+          <mxGeometry x="150" y="800" width="240" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="KyD_eOTLhy94dCNybC4f-4" value="&lt;div style=&quot;font-size: 10px;&quot;&gt;&lt;i&gt;1982 &quot;Blind signatures for untraceable payments&quot;&lt;/i&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;" parent="1" vertex="1">
+          <mxGeometry x="167.5" y="820" width="205" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="KyD_eOTLhy94dCNybC4f-19" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;endArrow=none;endFill=0;" parent="1" source="KyD_eOTLhy94dCNybC4f-5" target="KyD_eOTLhy94dCNybC4f-18" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="KyD_eOTLhy94dCNybC4f-5" value="Digicash" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1" parent="1" vertex="1">
+          <mxGeometry x="150" y="690" width="240" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="KyD_eOTLhy94dCNybC4f-6" value="&lt;div style=&quot;font-size: 10px;&quot;&gt;&lt;i&gt;1988 &quot;Untraceable Electronic Cash&quot;&lt;/i&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;" parent="1" vertex="1">
+          <mxGeometry x="167.5" y="710" width="205" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="PVdPPHzCQSvvqk6dLM3M-4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;endArrow=none;endFill=0;" parent="1" source="KyD_eOTLhy94dCNybC4f-17" target="PVdPPHzCQSvvqk6dLM3M-2" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="KyD_eOTLhy94dCNybC4f-17" value="Signature-free e-Cash" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1" parent="1" vertex="1">
+          <mxGeometry x="150" y="440" width="240" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="KyD_eOTLhy94dCNybC4f-18" value="&lt;div style=&quot;&quot;&gt;1999 &quot;Auditable, Anonymous Electronic Cash&quot;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontStyle=2" parent="1" vertex="1">
+          <mxGeometry x="150" y="460" width="240" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="nzbw7blMAr6pjb6i6NWN-12" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;endArrow=none;endFill=0;" parent="1" source="nzbw7blMAr6pjb6i6NWN-3" target="KyD_eOTLhy94dCNybC4f-2" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="nzbw7blMAr6pjb6i6NWN-3" value="Dynamic Accumulators with ZKP" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1" parent="1" vertex="1">
+          <mxGeometry x="-120" y="390" width="240" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="nzbw7blMAr6pjb6i6NWN-4" value="&lt;div style=&quot;font-size: 10px;&quot;&gt;&lt;span&gt;2002 &quot;&lt;/span&gt;Dynamic accumulators&amp;nbsp;&lt;span style=&quot;background-color: initial;&quot;&gt;and application to efficient revocation of anonymous credentials&quot;&lt;/span&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontStyle=2" parent="1" vertex="1">
+          <mxGeometry x="-120" y="410" width="240" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="nzbw7blMAr6pjb6i6NWN-10" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;endArrow=none;endFill=0;" parent="1" source="nzbw7blMAr6pjb6i6NWN-5" target="nzbw7blMAr6pjb6i6NWN-4" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="nzbw7blMAr6pjb6i6NWN-5" value="Collision-free Accumulators" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1" parent="1" vertex="1">
+          <mxGeometry x="-120" y="490" width="240" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="nzbw7blMAr6pjb6i6NWN-6" value="&lt;div style=&quot;font-size: 10px;&quot;&gt;&lt;span&gt;1997 &quot;&lt;/span&gt;Collision-free accumulators and ´&lt;/div&gt;&lt;div&gt;fail-stop signature schemes without trees&quot;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontStyle=2" parent="1" vertex="1">
+          <mxGeometry x="-102.5" y="510" width="205" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="nzbw7blMAr6pjb6i6NWN-9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;endArrow=none;endFill=0;" parent="1" source="nzbw7blMAr6pjb6i6NWN-7" target="nzbw7blMAr6pjb6i6NWN-6" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="nzbw7blMAr6pjb6i6NWN-7" value="One-Way Accumulators" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1" parent="1" vertex="1">
+          <mxGeometry x="-120" y="580" width="240" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="nzbw7blMAr6pjb6i6NWN-8" value="&lt;div style=&quot;font-size: 10px;&quot;&gt;&lt;span&gt;1993 &quot;&lt;/span&gt;One-way accumulators: a&lt;/div&gt;&lt;div&gt;decentralized alternative to digital signatures&quot;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontStyle=2" parent="1" vertex="1">
+          <mxGeometry x="-102.5" y="600" width="205" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="PVdPPHzCQSvvqk6dLM3M-5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;endArrow=none;endFill=0;" parent="1" source="PVdPPHzCQSvvqk6dLM3M-1" target="KyD_eOTLhy94dCNybC4f-2" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="QgGeLsX1wwHTZIF9CUIL-28" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;endArrow=none;endFill=0;" edge="1" parent="1" source="PVdPPHzCQSvvqk6dLM3M-1" target="QgGeLsX1wwHTZIF9CUIL-8">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="PVdPPHzCQSvvqk6dLM3M-1" value="Bitcoin" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1" parent="1" vertex="1">
+          <mxGeometry x="150" y="320" width="240" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="PVdPPHzCQSvvqk6dLM3M-2" value="&lt;div style=&quot;font-size: 10px;&quot;&gt;&lt;/div&gt;&lt;i&gt;2008 &quot;Bitcoin: A Peer-to-Peer Electronic Cash System&quot;&lt;br&gt;&lt;/i&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;" parent="1" vertex="1">
+          <mxGeometry x="150" y="340" width="240" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="s5rz5R7kNPWqgCDR-JUC-8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;endArrow=none;endFill=0;" parent="1" source="s5rz5R7kNPWqgCDR-JUC-2" target="s5rz5R7kNPWqgCDR-JUC-6" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s5rz5R7kNPWqgCDR-JUC-2" value="Binary OOOMP" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1" parent="1" vertex="1">
+          <mxGeometry x="-120" y="100" width="240" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="s5rz5R7kNPWqgCDR-JUC-3" value="&lt;div style=&quot;font-size: 10px;&quot;&gt;&lt;/div&gt;&lt;i&gt;2015 &quot;&lt;/i&gt;One-out-of-many proofs: Or how to leak a secret and spend a coin&lt;i style=&quot;background-color: initial;&quot;&gt;&quot;&lt;/i&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;" parent="1" vertex="1">
+          <mxGeometry x="-120" y="120" width="240" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="s5rz5R7kNPWqgCDR-JUC-11" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;endArrow=none;endFill=0;" parent="1" source="s5rz5R7kNPWqgCDR-JUC-5" target="s5rz5R7kNPWqgCDR-JUC-9" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s5rz5R7kNPWqgCDR-JUC-5" value="N-ary OOOMP" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1" parent="1" vertex="1">
+          <mxGeometry x="-120" y="30" width="240" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="s5rz5R7kNPWqgCDR-JUC-6" value="&lt;div style=&quot;font-size: 10px;&quot;&gt;&lt;/div&gt;&lt;i&gt;2015 &quot;&lt;/i&gt;Short accountable ring signatures based on DDH&lt;i style=&quot;background-color: initial;&quot;&gt;&quot;&lt;/i&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;" parent="1" vertex="1">
+          <mxGeometry x="-120" y="50" width="240" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="QgGeLsX1wwHTZIF9CUIL-26" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;endArrow=none;endFill=0;" edge="1" parent="1" source="s5rz5R7kNPWqgCDR-JUC-9" target="QgGeLsX1wwHTZIF9CUIL-25">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint y="-60" />
+              <mxPoint x="240" y="-60" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="s5rz5R7kNPWqgCDR-JUC-9" value="Sigma" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1" parent="1" vertex="1">
+          <mxGeometry x="-120" y="-30" width="240" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="s5rz5R7kNPWqgCDR-JUC-17" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;endArrow=none;endFill=0;" parent="1" source="s5rz5R7kNPWqgCDR-JUC-14" target="s5rz5R7kNPWqgCDR-JUC-3" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s5rz5R7kNPWqgCDR-JUC-14" value="Logarithmic Membership Proof" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1" parent="1" vertex="1">
+          <mxGeometry x="-390" y="190" width="240" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="s5rz5R7kNPWqgCDR-JUC-15" value="&lt;div style=&quot;font-size: 10px;&quot;&gt;&lt;/div&gt;&lt;i&gt;2013 &quot;&lt;/i&gt;&lt;i&gt;Zero-knowledge argument for polynomial&lt;/i&gt;&lt;div&gt;&lt;i&gt;evaluation with application to blacklists&quot;&lt;/i&gt;&lt;/div&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;" parent="1" vertex="1">
+          <mxGeometry x="-390" y="210" width="240" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="QgGeLsX1wwHTZIF9CUIL-27" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;endArrow=none;endFill=0;" edge="1" parent="1" source="QgGeLsX1wwHTZIF9CUIL-1" target="QgGeLsX1wwHTZIF9CUIL-25">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="370" y="-60" />
+              <mxPoint x="240" y="-60" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="QgGeLsX1wwHTZIF9CUIL-1" value="Bulletproofs" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="250" y="-20" width="240" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="QgGeLsX1wwHTZIF9CUIL-2" value="2017 &quot;Bulletproofs: Short Proofs for Confidential Transactions and More&quot;" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontStyle=2" vertex="1" parent="1">
+          <mxGeometry x="250" width="240" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="QgGeLsX1wwHTZIF9CUIL-29" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;endArrow=none;endFill=0;" edge="1" parent="1" source="QgGeLsX1wwHTZIF9CUIL-4" target="QgGeLsX1wwHTZIF9CUIL-2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="QgGeLsX1wwHTZIF9CUIL-4" value="Confidential Transaction Values" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="150" y="70" width="240" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="QgGeLsX1wwHTZIF9CUIL-5" value="2015 &quot;Confidential Transactions&quot;" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontStyle=2" vertex="1" parent="1">
+          <mxGeometry x="150" y="90" width="240" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="QgGeLsX1wwHTZIF9CUIL-6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;endArrow=none;endFill=0;" edge="1" parent="1" source="QgGeLsX1wwHTZIF9CUIL-7" target="QgGeLsX1wwHTZIF9CUIL-5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="QgGeLsX1wwHTZIF9CUIL-7" value="Borromean Ring Signatures" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="150" y="150" width="240" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="QgGeLsX1wwHTZIF9CUIL-8" value="2015 &quot;Borromean Ring Signatures&quot;" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontStyle=2" vertex="1" parent="1">
+          <mxGeometry x="150" y="170" width="240" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="QgGeLsX1wwHTZIF9CUIL-30" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;endArrow=none;endFill=0;" edge="1" parent="1" source="QgGeLsX1wwHTZIF9CUIL-10" target="QgGeLsX1wwHTZIF9CUIL-8">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="530" y="280" />
+              <mxPoint x="270" y="280" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="QgGeLsX1wwHTZIF9CUIL-10" value="1-out-of-n Signatures" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="410" y="350" width="240" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="QgGeLsX1wwHTZIF9CUIL-11" value="&lt;div style=&quot;font-size: 10px;&quot;&gt;&lt;/div&gt;&lt;i&gt;2002 &quot;1-out-of-n Signatures from a Variety of Keys&quot;&lt;br&gt;&lt;/i&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="410" y="370" width="240" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="QgGeLsX1wwHTZIF9CUIL-12" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;endArrow=none;endFill=0;" edge="1" parent="1" source="QgGeLsX1wwHTZIF9CUIL-13" target="QgGeLsX1wwHTZIF9CUIL-11">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="QgGeLsX1wwHTZIF9CUIL-13" value="Ring Signatures" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="410" y="430" width="240" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="QgGeLsX1wwHTZIF9CUIL-14" value="2001&lt;span style=&quot;background-color: initial;&quot;&gt;&amp;nbsp;&quot;How to Leak a Secret&quot;&lt;/span&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontStyle=2" vertex="1" parent="1">
+          <mxGeometry x="427.5" y="450" width="205" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="QgGeLsX1wwHTZIF9CUIL-15" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;endArrow=none;endFill=0;" edge="1" parent="1" source="QgGeLsX1wwHTZIF9CUIL-16" target="QgGeLsX1wwHTZIF9CUIL-14">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="QgGeLsX1wwHTZIF9CUIL-16" value="Witness Indistinguishable Signatures" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="410" y="540" width="240" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="QgGeLsX1wwHTZIF9CUIL-17" value="&lt;div style=&quot;font-size: 10px;&quot;&gt;&lt;/div&gt;&lt;i&gt;1994 &quot;Proofs of Partial Knowledge and Simplified&lt;div&gt;Design of Witness Hiding Protocols&quot;&lt;/div&gt;&lt;/i&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="410" y="560" width="240" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="QgGeLsX1wwHTZIF9CUIL-31" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;endArrow=none;endFill=0;" edge="1" parent="1" source="QgGeLsX1wwHTZIF9CUIL-19" target="QgGeLsX1wwHTZIF9CUIL-2">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="530" y="50" />
+              <mxPoint x="370" y="50" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="QgGeLsX1wwHTZIF9CUIL-19" value="Logarithmic Inner Product Argument" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="410" y="65" width="240" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="QgGeLsX1wwHTZIF9CUIL-20" value="2016 &quot;&lt;span style=&quot;background-color: initial;&quot;&gt;Efficient Zero-Knowledge Arguments for&lt;br&gt;&lt;/span&gt;&lt;span style=&quot;background-color: initial;&quot;&gt;Arithmetic Circuits in the Discrete Log Setting&lt;/span&gt;&quot;" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontStyle=2" vertex="1" parent="1">
+          <mxGeometry x="410" y="85" width="240" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="QgGeLsX1wwHTZIF9CUIL-21" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;endArrow=none;endFill=0;" edge="1" parent="1" source="QgGeLsX1wwHTZIF9CUIL-22" target="QgGeLsX1wwHTZIF9CUIL-20">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="QgGeLsX1wwHTZIF9CUIL-22" value="Square Root Argument" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="410" y="210" width="240" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="QgGeLsX1wwHTZIF9CUIL-23" value="2009 &quot;Linear algebra with sub-linear zero-knowledge arguments&quot;" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontStyle=2" vertex="1" parent="1">
+          <mxGeometry x="410" y="230" width="240" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="QgGeLsX1wwHTZIF9CUIL-24" value="Lelantus" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="120" y="-150" width="240" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="QgGeLsX1wwHTZIF9CUIL-25" value="2019 &quot;Lelantus: A new design for anonymous and confidential cryptocurrencies&quot;" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontStyle=2" vertex="1" parent="1">
+          <mxGeometry x="120" y="-130" width="240" height="30" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

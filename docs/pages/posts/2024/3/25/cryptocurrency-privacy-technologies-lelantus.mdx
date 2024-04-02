@@ -279,6 +279,10 @@ $$
 
 ### Balance Proof
 
+<Callout>
+  It should be noted that the formal proof of soundness for the following balance proof provided by the paper turned out to be incorrect. So far, nobody had been able to solve the issue with the proof, though nobody was able to find a way to actually exploit that either. This was also the reason why Firo went with the Spark segregated approach.
+</Callout>
+
 #### For Transparent Output
 
 A yet unresolved problem is verifying the sum of coin amounts that each commitment being spent as transaction input is carrying - while not having the actual commitment but only an inclusion proof demonstrating that said commitment was indeed minted and added to the pool of valid vouchers.
@@ -528,6 +532,18 @@ $$
 In [February 2021](https://forum.firo.org/t/lelantus-disabled-temporarily/1486) an attacker managed to forge Lelantus proofs. The Firo team noticed abnormal chain activity and emergency-disabled Lelantus with the power of a killswitch that had been temporarily added with the Lelantus Upgrade to handle exact cases like this. A blacklist was implemented to lock the attacker's illicitly created funds.
 
 The exploited issue was described as an implementation error that allowed forging a coin spend, but no technical description was published and the details have mostly been forgotten at this point. The update resolving the issue ([PR1012](https://github.com/firoorg/firo/pull/1012/commits)) was large and came with many changes that intended to additionally harden the protocol. I wasn't able to tell which of these changes specifically ended up fixing the issue that was exploited, though roughly discussing what has changed may be helpful either way.
+
+<Callout>
+  Levon Petrosyan, one of Firo's core developers clarified that the attack was actually possible due to weak Fiat-Shamir: Anonymity state was not included in challenge generation, and this allowed to do a time travel attack.
+
+  1. Attacker creates tx#1 spending a non-existend coin, keeps it
+  2. Attacker creates a coin based on tx#1, which could be spent in it
+  3. Attacker creates tx#2, in which he spends his existing coin, and as output he puts the coin generated in step 2
+  4. Attacker populates the tx#2
+  5. Attacker populates tx#1 and it passes 
+
+  So including the anonymity set hash in the OOOMP transcript prevents creating a proof without having the actual spending coin in the set.
+</Callout>
 
 Most of the changes are related to Fiat-Shamir challenge generation of the Zero-Knowledge proofs. The challenges (ie. a hash based on committed data) are now based on more data (eg. the anonymity set contents now influence the OOOMP's challenge value). In fact, it looks like everything that could possibly be committed to now is. Also, simple `domain_separator`s (ie. string prefixes to comitted data) were added to ensure transcript information can't be reused across proofs or versions.
 

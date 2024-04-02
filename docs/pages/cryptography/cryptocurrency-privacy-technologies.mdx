@@ -67,7 +67,7 @@ import { NewsletterIcon, GlobeIcon } from '@components/icons'
   <ArticleCard image title="Bulletproof Range Proofs" subtitle="March 18, 2024 by patrickd" href="/posts/2024/3/18/cryptocurrency-privacy-technologies-bulletproof-range-proofs/">
     <>![Thumbnail](../posts/2024/3/18/thumbnail.jpg)</>
   </ArticleCard>
-  <ArticleCard image title="Lelantus" subtitle="Match 25, 2023 by patrickd" href="/posts/2024/3/25/cryptocurrency-privacy-technologies-lelantus/">
+  <ArticleCard image title="Lelantus" subtitle="March 25, 2023 by patrickd" href="/posts/2024/3/25/cryptocurrency-privacy-technologies-lelantus/">
     <>![Thumbnail](../posts/2024/3/25/thumbnail.jpg)</>
   </ArticleCard>
   <ArticleCard image title="Lelantus Spark" subtitle="Soon" href="#from-zerocoin-to-firo">
@@ -85,7 +85,7 @@ import { R, Reference, References } from '@components/references'
 | <R reference='Released'/>        | Jan, 2019            | Aug, 2020            | Mar, 2023             | Feb, 2024             |
 | <R reference='Untraceability'/>  |$`color(green)("Yes")`$<R reference='ZCN'/>|$`color(green)("Yes")`$<R reference='SIG'/>|$`color(green)("Yes")`$<R reference='LEL'/>|$`color(green)("Yes")`$<R reference='SPA'/>|
 | <R reference='Confidentiality'/> |$`-`$<R reference='ZCN'/>|$`-`$<R reference='SIG'/>|$`color(green)("Yes")`$<R reference='LEL'/>|$`color(green)("Yes")`$<R reference='SPA'/>|
-| <R reference='Anonymity'/>       |$`-`$<R reference='ZCN'/>|$`-`$<R reference='SIG'/>|$`Y`$<R reference='LEL'/>|$`color(green)("Yes")`$<R reference='SPA'/>|
+| <R reference='Anonymity'/>       |$`-`$<R reference='ZCN'/>|$`-`$<R reference='SIG'/>|$`-`$<R reference='LEL'/>|$`color(green)("Yes")`$<R reference='SPA'/>|
 | <R reference='IP Obfuscation'/>  |$`color(green)("Yes")`$<R reference='D++'/>|$`color(green)("Yes")`$<R reference='D++'/>|$`color(green)("Yes")`$<R reference='D++'/>|$`color(green)("Yes")`$<R reference='D++'/>|
 | <R reference='Default Privacy'/> |$`"Opt-In"`$<R reference='ZCN'/><R reference='W'/>|$`"Opt-In"`$<R reference='W'/>|$`color(green)("Opt-Out")`$<R reference='W'/>|$`color(green)("Opt-Out")`$<R reference='W'/>|
 | <R reference='Anonymity Set'/>   |$`"0 - 10k"`$<R reference='SB'/>|$`"0 - 16k"`$<R reference='SB'/>|$`"16k - 65k"`$<R reference='OB'/>|$`"16k - 65k"`$<R reference='OB'/>|
@@ -117,7 +117,7 @@ import { R, Reference, References } from '@components/references'
     Ability to hide transaction details, such as the amount transferred, from anyone other than the involved parties. Note that this represents confidentiality under the assumption that everything is working as expected, best practices are followed, and there's nobody actively attempting to attack the user's privacy (See <R reference='Known Attacks'/> for possible exceptions).
   </Reference>
   <Reference reference='Anonymity'>
-    Ability to prevent linking identities (of users participating) to transactions or accounts (ie. obtaining an address yields no information on the user's on-chain activity). Note that this represents anonymity under the assumption that everything is working as expected, best practices are followed, and there's nobody actively attempting to attack the user's privacy (See <R reference='Known Attacks'/> for possible exceptions).
+    Ability to prevent linking identities (of users participating) to transactions or accounts (ie. obtaining an address yields no information on the user's on-chain activity). Typically achieved by "stealth addresses" which can be used to transfer funds to someone where even the sender is unable to observe their later use by the recipient. Note that this represents anonymity under the assumption that everything is working as expected, best practices are followed, and there's nobody actively attempting to attack the user's privacy (See <R reference='Known Attacks'/> for possible exceptions).
   </Reference>
   <Reference reference='IP Obfuscation'>
     Ability to obfuscate the IP Address of the transaction sender which does not require separate usage of Tor, VPN, or proxies (ie. it must be an integrated solution of the network or official wallets). Note that this is under the assumption that everything is working as expected, best practices are followed, and there's nobody actively attempting to attack the user's privacy (See <R reference='Known Attacks'/> for possible exceptions).

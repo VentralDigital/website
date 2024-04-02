@@ -1,0 +1,307 @@
+# RACE #28 Of The Secureum Bootcamp Epoch∞
+
+import { Callout } from 'nextra/components'
+
+This is a Write-Up of RACE-28, Quiz of the [Secureum Bootcamp](https://twitter.com/0xRajeev/status/1470910752085065731) for Ethereum Smart Contract Auditors. It was designed by our recently joined Secureum Mentor [Palina](https://twitter.com/palinatolmach), Research and Verification Engineer at [Runtime Verification Inc](https://twitter.com/rv_inc).
+
+<Callout type="info">
+  Participants of this quiz had to **answer 8 questions within the strict time limit of 16 minutes**. If you’re reading this in preparation for participating yourself, it’s best to give it a try under the same time limit!
+
+  As usual, I waited for submissions to close before publishing it and, to stay true to the original, I omitted syntax highlighting. Feel free to copy it into your favorite editor, but do so after starting the timer!
+</Callout>
+
+<p className="text-xs text-right">April 2, 2024 by [patrickd](/about#patrickd)</p>
+
+<style jsx>{`
+  input[type=checkbox] {
+    width: 15px;
+    height: 15px;
+  }
+  li {
+    padding: 0.5em;
+  }
+`}</style>
+
+export function HiddenSolution({ children }) {
+  return (
+    <details closed className="last-of-type:mb-0 rounded-lg bg-neutral-50 dark:bg-neutral-800 p-2 mt-4">
+      <summary>
+        <strong className="text-lg">Solution</strong>
+      </summary>
+      <div className="nx-p-2">{children}</div>
+    </details>
+  )
+}
+
+---
+
+### Code
+
+<Callout type="info">
+Note: All 8 questions in this quiz are based on the ERC4626Vault contract snippet. This is the same contract snippet you will see for all the 8 questions in this quiz.
+
+ERC4626Vault code snippet illustrates an implementation of an [ERC4626](https://eips.ethereum.org/EIPS/eip-4626)-based tokenized yield-bearing vault that represents shares of a single underlying ERC-20 token. Assume that all strictly required ERC4626 functions and events that are not shown are implemented correctly. Assume that the underlying (asset) token contract can be any token following an ERC-20 compatible standard.
+</Callout>
+
+```plaintext showLineNumbers
+pragma solidity ^0.8.13;
+
+
+import {ERC20} from "https://github.com/transmissions11/solmate/blob/main/src/tokens/ERC20.sol";
+import {SafeTransferLib} from "https://github.com/transmissions11/solmate/blob/main/src/utils/SafeTransferLib.sol";
+import {FixedPointMathLib} from "https://github.com/transmissions11/solmate/blob/main/src/utils/FixedPointMathLib.sol";
+
+
+contract ERC4626Vault is ERC20 {
+    using SafeTransferLib for ERC20;
+    using FixedPointMathLib for uint256;
+
+    ERC20 public immutable asset;
+
+    constructor(
+        ERC20 _asset,
+        string memory _name,
+        string memory _symbol
+    ) ERC20(_name, _symbol, 18) {
+        asset = _asset;
+    }
+
+    function deposit(uint256 assets, address receiver) public virtual returns (uint256 shares) {
+        require((shares = previewDeposit(assets)) != 0, "ZERO_SHARES");
+        asset.safeTransferFrom(msg.sender, address(this), assets);
+        _mint(receiver, assets);
+        emit Deposit(msg.sender, receiver, assets, shares);
+    }
+
+    function mint(uint256 shares, address receiver) public virtual returns (uint256 assets) {
+        assets = previewMint(shares);
+        _mint(receiver, shares);
+        asset.safeTransferFrom(msg.sender, address(this), assets);
+        emit Deposit(msg.sender, receiver, assets, shares);
+    }
+
+    function withdraw(
+        uint256 assets,
+        address receiver,
+        address owner
+    ) public virtual returns (uint256 shares) {
+        shares = previewWithdraw(assets);
+        if (msg.sender != owner) {
+            uint256 allowed = allowance[owner][msg.sender];
+            if (allowed != type(uint256).max) allowance[owner][msg.sender] = allowed - shares;
+        }
+        _burn(owner, shares);
+        emit Withdraw(msg.sender, receiver, owner, assets, shares);
+        asset.safeTransfer(receiver, assets);
+    }
+
+    function redeem(
+        uint256 shares,
+        address receiver,
+        address owner
+    ) public virtual returns (uint256 assets) {
+        if (msg.sender != owner) {
+            uint256 allowed = allowance[owner][msg.sender];
+            if (allowed != type(uint256).max) allowance[owner][msg.sender] = allowed - shares;
+        }
+        require((assets = previewRedeem(shares)) != 0, "ZERO_ASSETS");
+        _burn(owner, shares);
+        emit Withdraw(msg.sender, receiver, owner, assets, shares);
+        asset.safeTransfer(receiver, assets);
+    }
+
+    function totalAssets() public view virtual returns (uint256) {
+        return asset.balanceOf(address(this));
+    }
+
+    function convertToShares(uint256 assets) public view virtual returns (uint256) {
+        return totalSupply == 0 ? assets : assets.mulDivDown(totalSupply, totalAssets());
+    }
+
+    function convertToAssets(uint256 shares) public view virtual returns (uint256) {
+        return totalSupply == 0 ? shares : shares.mulDivDown(totalAssets(), totalSupply);
+    }
+
+    function previewDeposit(uint256 assets) public view virtual returns (uint256) {
+        return convertToShares(assets);
+    }
+
+    function previewMint(uint256 shares) public view virtual returns (uint256) {
+        return totalSupply == 0 ? shares : shares.mulDivUp(totalAssets(), totalSupply);
+    }
+
+    function previewWithdraw(uint256 assets) public view virtual returns (uint256) {
+        return totalSupply == 0 ? assets : assets.mulDivDown(totalSupply, totalAssets());
+    }
+
+    function previewRedeem(uint256 shares) public view virtual returns (uint256) {
+        return convertToAssets(shares);
+    }
+
+}
+```
+
+---
+
+### Question 1 of 8
+
+Is it possible for an attacker to drain this vault contract?
+
+<ul>
+  <li><input type="checkbox" /> A. Yes, due to integer underflow in `withdrawal`</li>
+  <li><input type="checkbox" /> B. Yes, because `mint` function is reentrant</li>
+  <li><input type="checkbox" /> C. Yes, due to the wrong rounding direction</li>
+  <li><input type="checkbox" /> D. No, it is not possible</li>
+</ul>
+
+<HiddenSolution>
+**Correct is B, C.**
+
+*Palina's answer: There’s no integer overflow in the `withdrawal()` function since the contract is written in Solidity 0.8. There is reentrancy in `mint()` if the underlying asset is an ERC777 token as the Check-Effects-Interactions pattern is not followed. `previewWithdraw()`, which calculates the number of shares a user has to supply to receive a given number of the underlying tokens, rounds down instead of rounding up which might lead to the loss of funds.*
+
+I'd add that even a contract written with Solidity 0.8.x can have integer overflows, but that would require the use of `unchecked` or `assembly` blocks - neither of which are used in the `withdrawal()` function.
+
+As the info-box above the code mentioned, we are to "assume that the underlying (asset) token contract can be any token following an ERC-20 compatible standard". [ERC777](https://eips.ethereum.org/EIPS/eip-777) tokens are an ERC-20 backward-compatible standard that implements "hooks" which are functions that get called when tokens are sent (`tokensToSend`) or received (`tokensReceived`). That means that the sender (ie. owner of tokens being sent) or recipient can take over the execution flow and exploit contract state that hasn't been fully updated yet (representing an exploitable reentrancy vector).
+
+Rounding should always happen in favor of the protocol to prevent profitable attacks. That means that, when withdrawing a specified amount of assets, the shares to redeem in exchange should be rounded up. When redeeming a specific amount of shares, the amount of returned assets should be rounded down. When depositing a certain amount of assets, the number of shares should be rounded down. When minting a specified amount of shares, the number of assets to be deposited should be rounded up.
+
+The `previewWithdraw()` function returns the number of shares that need to be burned in order to return the specified amount of assets. As such, the number of shares should be rounded up instead of down.
+</HiddenSolution>
+
+---
+
+### Question 2 of 8
+
+Which is true about the rounding directions according to the standard?
+
+<ul>
+  <li><input type="checkbox" /> A. `withdraw` should round up, `redeem` should round down </li>
+  <li><input type="checkbox" /> B. `withdraw` should round down, `redeem` should round up </li>
+  <li><input type="checkbox" /> C. `withdraw` and `redeem` should round down </li>
+  <li><input type="checkbox" /> D. None of the above, all computations must be exact </li>
+</ul>
+
+<HiddenSolution>
+**Correct is A.**
+
+*Palina's answer: According to the EIP (https://eips.ethereum.org/EIPS/eip-4626), `withdraw` should round up, while `redeem` should round down, thereby ensuring that rounding favors the protocol rather than the user.*
+
+Also see Question 1 solution.
+</HiddenSolution>
+
+---
+
+
+### Question 3 of 8
+
+What is the EIP conformant slippage protection for minting shares in ERC4626Vault?
+
+<ul>
+  <li><input type="checkbox" /> A. ERC4626Vault is not vulnerable to slippage by design</li>
+  <li><input type="checkbox" /> B. Make `mint` internal</li>
+  <li><input type="checkbox" /> C. `mint` should have an extra parameter `minShares` to be compared with the actual amount of minted shares, e.g., `require(assets > minShares);`</li>
+  <li><input type="checkbox" /> D. Slippage protection could be added to a router-like contract that is interacting with ERC4626Vault instead</li>
+</ul>
+
+<HiddenSolution>
+**Correct is D.**
+
+*Palina's answer: Slippage is one of the major security concerns related to the ERC4626 standard. Making `mint` internal would prevent users from calling it, thereby restricting them from using basic ERC4626 functionality, instead of addressing the slippage issue. According to the EIP (https://eips.ethereum.org/EIPS/eip-4626), `mint` function should have an interface that does not include the additional `minShares` parameter, making option C non-compliant to the standard. The correct answer is, therefore, D, as implemented in the ERC4626Router (https://github.com/ERC4626-Alliance/ERC4626-Contracts/blob/main/README.md#erc4626router-and-base).*
+</HiddenSolution>
+
+---
+
+### Question 4 of 8
+
+According to the standard, `deposit(uint256 assets, address receiver)` mints -Vault `shares` to `receiver` by depositing exactly `assets` of underlying tokens. Assume that the exchange rate between the underlying ERC20 asset and a Vault share, as returned by `previewDeposit` and `convertToShares`, is 2:1. How many Vault shares will the user get when calling `deposit(64, msg.sender)` in ERC4626Vault?
+
+<ul>
+  <li><input type="checkbox" /> A. 32 </li>
+  <li><input type="checkbox" /> B. 64 </li>
+  <li><input type="checkbox" /> C. 128 </li>
+  <li><input type="checkbox" /> D. 160 </li>
+</ul>
+
+<HiddenSolution>
+**Correct is B.**
+
+*Palina's answer: Even though the asset and share should be trading 2:1, there is a typo, which causes `_mint` function in `deposit` to mint `assets` instead of `shares`. The user depositing 64 assets will therefore get 64 shares in return.*
+</HiddenSolution>
+
+---
+
+### Question 5 of 8
+
+Which of the following invariants hold in the ERC4626Vault contract?
+
+<ul>
+  <li><input type="checkbox" /> A. The amount of user shares does not decrease unless the user calls `withdraw` or `redeem`</li>
+  <li><input type="checkbox" /> B. Sum of all user shares is equal to the underlying token balance of the vault</li>
+  <li><input type="checkbox" /> C. Number of shares in circulation equals the total of shares minted minus the total of shares burned</li>
+  <li><input type="checkbox" /> D. Sum of all user shares is equal to the total supply of shares</li>
+</ul>
+
+<HiddenSolution>
+**Correct is C, D.**
+
+*Palina's answer: A is incorrect because the user can transfer shares to another account using the `transfer` function that is also present in ERC4626 contracts. Sum of all user shares is equal to the total number of shares minted, i.e., total supply of shares, so D is correct and B isn’t. The number of shares that is in circulation is the difference between the number of shares that got minted minus the number of shares that were redeemed.*
+</HiddenSolution>
+
+---
+
+### Question 6 of 8
+
+Which statements are true about `redeem` and `withdraw` functions in the ERC4626Vault contract?
+
+<ul>
+  <li><input type="checkbox" /> A. `redeem` and `withdraw` differ in rounding direction</li>
+  <li><input type="checkbox" /> B. `withdraw` sends the exact amount of assets to `receiver`</li>
+  <li><input type="checkbox" /> C. `withdraw` and `redeem` only differ in visibility</li>
+  <li><input type="checkbox" /> D. `redeem` burns the exact amount of shares from `owner`</li>
+</ul>
+
+<HiddenSolution>
+**Correct is B, D.**
+
+*Palina's answer: `redeem` and `withdraw` are supposed to differ in rounding direction, since `redeem` should round down and `withdraw` should round up, however, due to a bug in this contract, they both round down. `withdraw` does send the exact amount of assets to `receiver` and `redeem` burns the exact number of shares from `owner` according to both the standard and this implementation, hence, B and D are correct. `withdraw` and `redeem` don’t differ in visibility, but do differ in functionality, making C incorrect.*
+</HiddenSolution>
+
+---
+
+### Question 7 of 8
+
+When there are no virtual shares and assets, inflation attacks on ERC4626 vaults are possible because of:
+
+<ul>
+  <li><input type="checkbox" /> A. Rounding up when converting shares to assets</li>
+  <li><input type="checkbox" /> B. Rounding down when converting assets to shares</li>
+  <li><input type="checkbox" /> C. Share tokens of the vault increasing in price</li>
+  <li><input type="checkbox" /> D. Donation of assets to the vault to manipulate the exchange rate between assets and shares</li>
+</ul>
+
+<HiddenSolution>
+**Correct is B, D.**
+
+*Palina's answer: Inflation attack allows an exploiter to profit at the expense of other users. It is possible since the calculation of users' shares being minted are rounded down, so the attacker can dilute other users' shares by manipulating the exchange rate between assets and shares. One of the ways to skew the exchange rate in the attacker's favor is by donating (not depositing) a large amount of assets into the vault: this increases the total assets in the vault without affecting the amount of shares in circulation, leading to a much smaller amount of shares being minted for the next user. Source: https://blog.openzeppelin.com/a-novel-defense-against-erc4626-inflation-attacks*
+</HiddenSolution>
+
+---
+
+### Question 8 of 8
+
+What are the issues with the underlying ERC20 token integration in the ERC4626Vault contract?
+
+<ul>
+  <li><input type="checkbox" /> A. If ERC4626Vault uses fewer than or the same number of decimals as the underlying ERC20 asset token, precision loss can occur during conversions between assets and shares</li>
+  <li><input type="checkbox" /> B. In `withdraw`, `transfer` should be used instead of `safeTransfer` to transfer assets to the `receiver`</li>
+  <li><input type="checkbox" /> C. Tokens taking fee on transfer might break accounting</li>
+  <li><input type="checkbox" /> D. None of the above, there are no issues with the integration</li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, C.**
+
+*Palina's answer: in the constructor, ERC4626Vault invokes parent’s ERC20 constructor providing `18` as the value of decimals, which allows for discrepancy between the underlying asset’s decimals and those of ERC4626Vault. Precision loss during conversions between assets and shares can occur due to rounding and is more pronounced if the Vault has fewer decimals than the underlying ERC20. `safeTransfer` is a safer alternative to `transfer` that checks the possible Boolean return value of a call, so it is used correctly in the contract. `deposit` and `mint` functions do not account for the possibility that assets might change a fee on transfer — in this case, (`assets - fee`) would get deposited in the contract, while the shares calculation accounts for `assets` being deposited. A safer alternative is to use the actual difference between the contract’s balance before and after the transfer in the calculation of shares the user is entitled to.*
+</HiddenSolution>
+
+---

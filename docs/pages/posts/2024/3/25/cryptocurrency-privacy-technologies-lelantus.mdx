@@ -197,7 +197,7 @@ $$
 To prevent revealing the actual $`C'_l`$, the commitments $`D_k`$ would additionally have blinding factors $`r'_k`$ known only to the Prover.
 
 $$
-`C'_l + r'H = 0G + (r+r')H" with "r' = sum_(k=0)^(n-1)r'_k`
+`C'_l + r'H = 0G + (r+r')H" with "r' = sum_(k=0)^(n-1)x^kr'_k`
 $$
 
 With that, the Prover is able to demonstrate knowledge of blinding factors $`r`$ and $`r'`$ without revealing them, and therefore proving his ability to open the commitment $`C'_l`$, and ultimately $`C_l`$.
@@ -256,7 +256,7 @@ with $`D_k = sum_(i=0)^(N-1)p_(i,k)C'_i+color(red)(rho_k)H`$ and $`gamma = color
 As explained in the review, $`"(1)"`$ and $`"(2)"`$ mostly cancel each other out. Specifically, $`"(1)"`$ will leave behind the commitment $`color(red)(C'_l) = 0G + color(red)(r)H`$ that we were proving inclusion within the anonymity set of, while $`"(2)"`$ leaves the blinding factors $`color(red)(rho_k)H`$.
 
 $$
-`obrace(x^n*color(red)(r)H)^("(1)") - obrace(sum_(k=0)^(n-1) color(red)(rho_k)H)^("(2)")" "overset(✓)(=)" "obrace((color(red)(r)x^n - sum_(k=0)^(n-1)color(red)(rho_k)x^k))^(gamma)H`
+`obrace(x^n*color(red)(r)H)^("(1)") - obrace(sum_(k=0)^(n-1) x^kcolor(red)(rho_k)H)^("(2)")" "overset(✓)(=)" "obrace((color(red)(r)x^n - sum_(k=0)^(n-1)color(red)(rho_k)x^k))^(gamma)H`
 $$
 
 The same principle still applies for the generalized protocol for double-blinded commitments where $`color(red)(C'_l) = 0G_1 + color(red)(v)G_2 + color(red)(r)H`$:
@@ -274,7 +274,7 @@ $$
 Therefore, we can see that thanks to these changes the protocol indeed works for double-blinded commitments:
 
 $$
-`obrace(x^n*(color(red)(v)G_2 + color(red)(r)H))^("(1)") - obrace(sum_(k=0)^(n-1) hat color(red)(rho_k)G_2 + dot color(red)(rho_k)H)^("(2)")" "overset(✓)(=)" "obrace((color(red)(v)x^n - sum_(k=0)^(n-1)hat color(red)(rho_k)x^k))^(varepsilon)G_2 + obrace((color(red)(r)x^n - sum_(k=0)^(n-1)color(red)(dot rho_k)x^k))^(gamma)H`
+`obrace(x^n*(color(red)(v)G_2 + color(red)(r)H))^("(1)") - obrace(sum_(k=0)^(n-1) x^k( hat color(red)(rho_k)G_2 + dot color(red)(rho_k)H))^("(2)")" "overset(✓)(=)" "obrace((color(red)(v)x^n - sum_(k=0)^(n-1)hat color(red)(rho_k)x^k))^(varepsilon)G_2 + obrace((color(red)(r)x^n - sum_(k=0)^(n-1)color(red)(dot rho_k)x^k))^(gamma)H`
 $$
 
 ### Balance Proof

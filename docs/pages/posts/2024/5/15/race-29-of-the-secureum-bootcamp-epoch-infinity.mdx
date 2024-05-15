@@ -1,0 +1,429 @@
+# RACE #29 Of The Secureum Bootcamp Epoch∞
+
+import { Callout } from 'nextra/components'
+
+<Callout type="info">
+  This is a mirror of a Write-Up on RACE-29, Quiz of the [Secureum Bootcamp](https://twitter.com/0xRajeev/status/1470910752085065731) for Ethereum Smart Contract Auditors. It was designed by Secureum Mentor [Dimitri Kamenski (aka kamensec)](https://twitter.com/kamensec), from [Sigma Prime](https://twitter.com/sigp_io).
+
+  The original version of this document can be found at https://twitter.com/kamensec/status/1786970628387389781
+
+  Participants of this quiz had to **answer 8 questions within the strict time limit of _16 minutes_**. If you’re reading this in preparation for participating yourself, it’s best to give it a try under the same time limit!
+</Callout>
+
+<style jsx>{`
+  input[type=checkbox] {
+    width: 15px;
+    height: 15px;
+  }
+  li {
+    padding: 0.5em;
+  }
+`}</style>
+
+export function HiddenSolution({ children }) {
+  return (
+    <details closed className="last-of-type:mb-0 rounded-lg bg-neutral-50 dark:bg-neutral-800 p-2 mt-4">
+      <summary>
+        <strong className="text-lg">Solution</strong>
+      </summary>
+      <div className="nx-p-2">{children}</div>
+    </details>
+  )
+}
+
+---
+
+## Code
+
+```plaintext showLineNumbers copy
+// SPDX-License-Identifier: UNLICENSED
+pragma solidity ^0.8.19;
+
+import "@openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin-contracts/contracts/interfaces/IERC4626.sol";
+
+interface IOracle {
+   function getCollateralPrice(address borrower, address _asset) external returns(uint256); // Returns collateral price in the specific feed's pair decimal value
+   function getCollateralWeight(address _asset) external returns(uint256); // per collateral weight 1e5 == 100% of the collateral value is considered as valid collateral, this scales depending on the strength of the collateral.
+}
+
+interface IBigMoneyVault is IERC4626 {
+   function lend(uint256 amount) external;
+   function repay(uint256 amount) external;
+   function getToken() external view returns(address);
+}
+
+contract InSecureumLender is ReentrancyGuard {
+   using SafeERC20 for ERC20;
+   // Data Structures
+   struct Borrower {
+       uint256 debt;
+       uint256 previousInterestTimestamp;
+       mapping(address  => uint256) collateralValues; // maps collateral tokens to value deposited
+       address[] activeCollaterals;
+   }
+
+   mapping(address => Borrower) public borrowers;
+   mapping(address => bool) public approvedCollaterals;
+
+   address token;
+   uint256 DECIMALS = 1e18;
+
+   // Access Control
+   address public owner;
+
+   // Network Contracts;
+   IBigMoneyVault public bigMoneyVault;
+   IOracle public priceOracle;
+   address public liquidator;
+
+   // Modifiers
+   modifier onlyBigMoney {
+       require(msg.sender == address(bigMoneyVault));
+       _;
+   }
+
+   modifier onlyOwner {
+       require(msg.sender == owner);
+       _;
+   }
+
+   // Finance Metrics
+   uint256[] public collateralisationMinimumValue;
+   uint256 public constant INTEREST_RATE = 333; // 1.05 (ie 5%) annualised converted to per second
+   uint256 public constant RATE_PRECISION = 1e10;
+   constructor(address _bigMoneyVault, address _liquidator, address _priceOracle) {
+       owner = msg.sender;
+       bigMoneyVault = IBigMoneyVault(_bigMoneyVault);
+       priceOracle = IOracle(_priceOracle);
+       token = bigMoneyVault.getToken();
+       liquidator = _liquidator; // separate ERC4626 contract where liquidations could be divided based on shares, any bad debt absorbance is handled, this is mainly an abstraction to simplify Liquidations for the Secureum Race.
+   }
+
+   function borrow(uint256 amount) public {
+       Borrower storage account = borrowers[msg.sender];
+      
+       // health check and interest recalculation
+       require(healthCheck(msg.sender), "Account below liquidation threshold");
+       applyInterest(msg.sender);
+      
+       // Increment Debt, transfer funds
+       account.debt += amount;
+       bigMoneyVault.lend(amount);
+   }
+
+   // Assumes allowed transfer amount
+   function repay(address _borrower, uint256 _amount) public {
+       Borrower storage borrowerAccount = borrowers[_borrower];
+       applyInterest(_borrower);
+
+
+       ERC20(token).safeTransferFrom(msg.sender, address(this), _amount);
+       borrowerAccount.debt -= _amount;
+   }
+
+   function depositCollateral(address collateralToken, uint256 amount) nonReentrant public {
+       require(approvedCollaterals[collateralToken], "Collateral not approved");
+      
+       ERC20(collateralToken).safeTransferFrom(msg.sender, address(this), amount);
+       Borrower storage account = borrowers[msg.sender];
+
+
+       if (account.collateralValues[collateralToken] == 0) {
+           account.activeCollaterals.push(collateralToken);
+       }
+      
+       account.collateralValues[collateralToken] += amount;
+   }
+
+   function batchDepositCollaterals(address[] calldata collateralTokens, address[] calldata users, uint256[] calldata amounts) nonReentrant public {
+       for(uint256 i=0; i < amounts.length;) {
+           if(approvedCollaterals[collateralTokens[i]]) {
+               borrowers[users[i]].collateralValues[collateralTokens[i]] += amounts[i];
+               ERC20(collateralTokens[i]).safeTransferFrom(users[i], address(this), amounts[i]);
+              
+           }           
+
+           unchecked {
+               ++i;
+           }
+       }
+   }
+
+   // User can only withdraw collateral once all debt has been repayed
+   function withdrawCollateral(address[] calldata collateralTokens) public {
+       Borrower storage account = borrowers[msg.sender];
+
+       require(account.debt == 0, "Account still in debt");
+
+       for(uint256 i=0; i<collateralTokens.length;) {
+           ERC20(collateralTokens[i]).safeTransfer(msg.sender, account.collateralValues[collateralTokens[i]]);
+       }
+
+       // Since debt == 0 now and collateral has been transferred lets delete the account struct
+       delete borrowers[msg.sender];
+   }
+
+   function liquidate(address borrower) public {
+       Borrower storage account = borrowers[borrower];
+       if(!healthCheck(borrower))
+           for(uint256 i=0; i<account.activeCollaterals.length; i++) {
+               ERC20(account.activeCollaterals[i]).safeTransfer(liquidator, account.collateralValues[account.activeCollaterals[i]]);
+           }
+
+           account.debt = 0;
+   }
+
+   function applyInterest(address BorrowerAddress) public {
+       Borrower storage account = borrowers[BorrowerAddress];
+      
+       uint256 deltaTimestamp = (block.timestamp - account.previousInterestTimestamp);
+       uint256 newDebt = ( account.debt * INTEREST_RATE * deltaTimestamp ) / RATE_PRECISION;
+      
+       account.debt = newDebt;
+       account.previousInterestTimestamp = block.timestamp;
+   }
+
+   function healthCheck(address borrower) public returns(bool) {
+       Borrower storage account = borrowers[borrower];
+       uint256 cumulativeCollateralScore = 0;
+
+       for(uint256 index = 0; index < account.activeCollaterals.length; ++index) {
+           if(approvedCollaterals[account.activeCollaterals[index]]) {
+
+               uint256 quotePrice = priceOracle.getCollateralPrice(borrower, account.activeCollaterals[index]);
+               uint256 scaledPrice = quotePrice / DECIMALS;
+               uint256 collateralWeight = priceOracle.getCollateralWeight(account.activeCollaterals[index]);
+              
+               cumulativeCollateralScore += scaledPrice * collateralWeight;
+           }
+       }
+
+       return cumulativeCollateralScore / account.activeCollaterals.length >= 5e4;
+   }
+
+   function approveCollaterals(address _collateral, bool _approve) onlyOwner external {
+       approvedCollaterals[_collateral] = _approve;
+   }
+
+   function getBorrowerActiveCollateral(address _borrower) external view returns(address[] memory) {
+       Borrower storage borrower = borrowers[_borrower];
+       address[] memory activeCollaterals = borrower.activeCollaterals;
+
+       return activeCollaterals;
+   }
+
+   function getAccountDebt(address _borrower) external view returns(uint256) {
+       Borrower storage borrower = borrowers[_borrower];
+
+       return borrower.debt;
+   }
+}
+```
+
+---
+
+### Question 1 of 8
+
+Contract complexity can increase the difficulty of line by line analysis. When dealing with specific, repeatable contract types (such as a lending platform), high level strategies help us focus on where low level tactical or technical issues might occur. Without looking at the contract, valid high level strategies for attacking lending contracts might include:
+
+<ul>
+  <li><input type="checkbox" /> A. Liquidation Parameter Manipulation: When liquidation configuration parameters are changed suddenly to cause users to be instantly liquidated </li>
+  <li><input type="checkbox" /> B. Health Check Manipulation: When factors determining account health can be manipulated, to either show better health ratings and avoid liquidation, or worsen health and cause unexpected liquidation </li>
+  <li><input type="checkbox" /> C. Interest Rate Calculation Errors: Avoid or increase interest payments on users with debt </li>
+  <li><input type="checkbox" /> D. Insecure Collateral Accounting: Where collateral can be accessed by a user without repaying debt, or collateral representation does not accurately reflect deposited collateral </li>
+</ul>
+
+<HiddenSolution>
+**Correct Answers: A, B, C, D.**
+
+>This was a bit of a warm up question... I was basically giving you 4 different strategies that would help you focus on different areas of the code.
+
+</HiddenSolution>
+
+---
+
+### Question 2 of 8
+
+What low level ‘tactics or technical issues’ might an attacker lean-on to compromise the `borrow()` function?
+
+<ul>
+  <li><input type="checkbox" /> A. Griefing or Denial-of-Service Attack </li>
+  <li><input type="checkbox" /> B. Re-entrancy Attack from unsafe external call </li>
+  <li><input type="checkbox" /> C. Invalid/inadequate or missing invariant checks </li>
+  <li><input type="checkbox" /> D. None of the above </li>
+</ul>
+
+<HiddenSolution>
+**Correct Answers: C.**
+
+Health checks should always be performed after any state changes, in the code example provided a borrower could pass health check then take debt that places them well beyond recoverable liquidation. This would lead to bad debt accrual for the protocol.
+
+</HiddenSolution>
+
+---
+
+### Question 3 of 8
+
+Considering the `withdrawCollateral()` function, what tactic/technical issue might an attacker use to cause loss of funds?
+
+<ul>
+  <li><input type="checkbox" /> A. Unsafe External Call: Return value of external calls in withdraw collateral isn’t validated, therefore transfer function may fail without triggering any reverts </li>
+  <li><input type="checkbox" /> B. Incorrect/Inadequate/missing invariant: Protocol team can potentially cause interest calculations on an account with non-zero debt. While the user is attempting to repay all debt, interest is added to the debt. This could maintain debt, preventing users from completing withdrawal of collateral. </li>
+  <li><input type="checkbox" /> C. Unsafe use of delete: Will cause collateral accounting to remain in the contract whilst collateral has been removed, allowing users to borrow funds on collateral that doesn’t exist </li>
+  <li><input type="checkbox" /> D. Gas Grief: Large number of various collateral tokens might exceed gas limits during collateral withdrawal causing loss of user funds </li>
+</ul>
+
+<HiddenSolution>
+**Correct Answers: C.**
+
+>It is important to understand how storage works in the EVM. Structs can often be tightly packed into a single word storage slot in the EVM. Mappings like arrays take more than 1 slot in storage. They take 1 slot for their 'marker slot' and all keys get placed separately in different slots depending on a hash functions.
+>
+>Maybe this sounds complex, but what needs to be understood is that the struct values, which could all fit in one word slot potentially, all get zeroed. But nothing prevents the mapping key/values which are stored separately to the struct itself from holding data.
+>
+>If we can re-initialise the struct with the same values inside it, the mapping will still point to key/value pairs that still exist inside of the contract storage.
+>
+>The way this can be weaponised is by ensuring that all collateral tokens are withdrawn, reinitialising the borrowers details, suddenly the mapping of `collateralValues` still contains values even though we previously deleted it. So you can end up in a situation where all collateral is withdrawn, but after creating another struct with the same borrower you suddenly have all that collateral back again.
+>
+>More details on that here: https://docs.alchemy.com/docs/smart-contract-storage-layout
+
+How to fix this issue?
+
+>I think ideally, we would want to avoid using a pattern of a struct with a mapping here, I think there's better data structures that could do the same thing and likely be more gas efficient as well. But assuming we had to maintain the same data structure (ie a struct with a mapping), we want to zero each key of the `borrowers[msg.sender].collateralValues(){:solidity}`. This is something that can only be done if you know what the keys are, which in our case are stored in the ?`approvedCollaterals` or the `borrowers[msg.sender]{:solidity}`.
+
+</HiddenSolution>
+
+---
+
+### Question 4 of 8
+
+Collateral deposit functionality and complexity comes in various forms in this contract. Viewing complexity as a sign of weakness may help focus on specifically vulnerable code branches. Which of the below best describes the impact of a security issue present in `batchDepositCollateral()`?
+
+<ul>
+  <li><input type="checkbox" /> A. Collaterals are not added to the approved collaterals for the users. Liquidations and health checks will not be able to access these collaterals added in batch deposits. </li>
+  <li><input type="checkbox" /> B. Unsafe external calls will increase collateral values without ensuring actual collateral deposits match </li>
+  <li><input type="checkbox" /> C. Excessive array sizes may cause out-of-gas reverts. This would prevent users from depositing collateral. </li>
+  <li><input type="checkbox" /> D. Unchecked math will likely cause numeric overflow, which will prevent users from depositing collateral </li>
+</ul>
+
+<HiddenSolution>
+**Correct Answers: A.**
+
+>Collateral is not checked against an approved list which breaks logic elsewhere in the contract. The main thing I was showing here was that where complexities lay, so do issues, and you should compare against the base non-complex case to find the easy issues.
+
+But isn't the collateral check happening in `approvedCollaterals(collateralTokens[i])`?
+
+>Yeah you are right here my wording is confusing and I've jumbled active and approved collaterals. What I meant to say was that collateral was not added to the `borrowers[user].activeCollaterals{:solidity}`, by not doing that, it breaks behaviour elsewhere for the deposited collateral and wont be included in health checks etc. In this contract its not the case, but maybe in others that could lead to funds not being withdrawable if the withdraw collateral functionality only dispensed what was considered active.
+
+</HiddenSolution>
+
+---
+
+### Question 5 of 8
+
+Another high level area to focus on in lending platforms is interest calculation. Which best describes the tactic/technical issue and relevant impact of a security issue present in the `applyInterest` calculation?
+
+<ul>
+  <li><input type="checkbox" /> A. Tactic/Technical Issue: Inadequate Access Control. Impact: Interest can be calculated and applied to accounts by anyone resulting unnecessary or unexpected debt accrual  </li>
+  <li><input type="checkbox" /> B. Tactic/Technical Issue: Incorrect Constant Values. Impact: Due to incorrect constants used, interest rate accrual is calculated incorrectly. </li>
+  <li><input type="checkbox" /> C. Tactic/Technical Issue: Using block and transaction properties maliciously. Impact: Due to unexpected inputs in block and transaction properties, interest can be zeroed. </li>
+  <li><input type="checkbox" /> D. Tactic/Technical Issue: Rounding Issue, Impact: Due to Rounding issues present in the calculation of interest, it is possible to avoid interest on small debt amounts and accrue bad debt on the protocol. </li>
+</ul>
+
+<HiddenSolution>
+**Correct Answers: C, D.**
+
+>B: Shouldn’t be an issue, the interest rate is now calculated as `333/1e10` which produces `3.333e-8 = 1.05 / 31536000` which is roughly per second interest calculation.
+>
+>C: Debt calculations are increasing based on previous debt every second. There is no check if delta `timestamp == 0`. If so, the entire calculation is Zeroed and the user owes no debt at all.
+>
+>D: even if (C) is fixed there are still rounding issues where `account.debt * interest * deltaTimestamp < RATE_PRECISION`. Meaning small debt amounts could lead to 0 debt accrual. My opinion here is that the the debt calculation should be added separately to the old debt, instead of risking zeroing the whole calculation.
+
+</HiddenSolution>
+
+---
+
+### Question 6 of 8
+
+Liquidations are of critical importance to lending platforms, why?
+
+<ul>
+  <li><input type="checkbox" /> A. If users cannot be liquidated, they end up creating bad debt for the protocol team/lenders </li>
+  <li><input type="checkbox" /> B. Users that are liquidated unfairly/unexpectedly are essentially rugged of all collateral </li>
+  <li><input type="checkbox" /> C. It allows protocols to quickly generate liquidity in the form of stable coins </li>
+  <li><input type="checkbox" /> D. None </li>
+</ul>
+
+<HiddenSolution>
+**Correct Answers: A, B.**
+
+(No further explanation provided)
+</HiddenSolution>
+
+---
+
+### Question 7 of 8
+
+Focusing on the `liquidate()` function, what recommendations for improvement would you provide?
+
+<ul>
+  <li><input type="checkbox" /> A. Liquidations should only be executed by the protocol team </li>
+  <li><input type="checkbox" /> B. Remove use of storage pointers  </li>
+  <li><input type="checkbox" /> C. Ensure active collateral array size cannot exceed an amount where out-of-gas reverts could occur </li>
+  <li><input type="checkbox" /> D. Fix invalid conditional statements to ensure users can be properly liquidated </li>
+</ul>
+
+<HiddenSolution>
+**Correct Answers: C, D.**
+
+>Interestingly, the if statement in this liquidation function isn't properly formated. Since it is missing the curly brackets if the statement is true (ie health check fails) the next code block executes (ie the for loop is executed then the account debt is zeroed). If it evaluates to false (healthy account), the for loop is skipped and account debt is zeroed.
+>
+>Additionally: Active collateral can be added arbitrarily by the user when individually depositing collateral, so it is possible to have gas reverts in this function if enough collateral tokens are added. 
+
+</HiddenSolution>
+
+---
+
+### Question 8 of 8
+
+If we were to run test coverage of the code and possible tests provided, we would likely find that the `healthCheck()` function is hit many times. This becomes a ‘critical code branch’ and if we can break this, we can potentially cause devastating issues. This section is a little bit mathematical, which might make it hard to see the issues unless you have seen them before. Looking at this function, what tactic/technical issues are present?
+
+<ul>
+  <li><input type="checkbox" /> A. Rounding Error: The protocol does not make sufficient protection against rounding errors. Rounding occurs against the protocol, leading to health checks passing, when they should be failing. </li>
+  <li><input type="checkbox" /> B. Decimal Scaling Error: Assuming the oracle aggregates different Chainlink price feeds through latestRoundData() with no additional logic and presents the relevant feed pricing, then quote prices with larger than 18 decimals may end up passing health checks, when they are supposed to fail </li>
+  <li><input type="checkbox" /> C. Decimal Scaling Error: Quote prices with less than 18 decimals may end up passing health checks, when they are supposed to fail </li>
+  <li><input type="checkbox" /> D. Rounding Error: Rounding occurs in favour of the protocol, leading to health checks failing, when they should be passing </li>
+</ul>
+
+<HiddenSolution>
+**Correct Answers: B, D.**
+
+>The question itself is hinting at critical strategic areas I would normally look at when looking at lending protocols. Specifically I would look at the 'healthCheck' function with huge scrutiny. However a few more additional tactical issues to look out for are rounding issues and decimal scaling. These are two issues I didn't truly appreciate until later in my career and can have  nasty implications on protocol security.
+>
+>The contract snippet assumes 18 decimal places, for collateral with 10^x extra decimals in price aggregator feeds, the `scaledPrice` will be orders of 10^x more resulting in a larger cumulative collateral score which assists users in passing health checks
+>
+>Rounding down occurs when quote prices are returned that are based on less than 18 decimals. When scaled they can potentially round down, in situations where they are healthy.
+
+More resources on 'Liquidation Math'?
+
+>I think I'd avoid the idea of 'liquidation math' that seems too specific to be of any real benefit to you as an auditor. Liquidations themselves are going to be different in different situations. Pattern recognition will help you more. The high level strategies I was referring to was focusing on the liquidation / health check functionality, now you can focus line by line in specific areas. Low level tactics which you will look for during a line by line analysis will build up over time, but two really important ones I gave you here to consider were decimal scaling and rounding errors. Those are extremely important and honestly produce crazy complex issues.
+>
+>Slow down when you get to division, consider rounding errors that are possible, then consider how impactful and significant those rounding errors could be. This is a very vague not necessarily related example but.... In some cases you can withdraw less than 1 share in a ERC4626 vault and get a tiny number of assets back, thats kind of useless and not scalable as an attack vector. In other cases you can deposit tiny amounts of assets and receive a whole share. But try to think harder about the impact from here... if the share value is extremely high (as in can be exchanged for some large number of actual valuable assets), that means the rounding is in your favour and profitable.
+
+</HiddenSolution>
+
+---
+
+## Conclusion
+
+>My method of auditing involves splitting things between contract specific high level strategies and low level tactics. High level strategies allow me to target things like lending, governance, vaults, staking and other types of protocols more efficiently by directing me to parts of the code that will be more likely to have critical issues.
+>
+>In the end of the day almost everything will come down to low level tactical issues. These include things like integer overflows, out-of-gas reverts, re-entrancy, signature malleability, malformed opcode parameters, this list would go on for days....
+>
+>Especially at the beginning of your career as an auditor line by line analysis can easily have you lost when looking at super complex code. Acquiring high level strategies can give you a guide to certain contract types, which will help you discover more lower level tactical issues that lead to better findings.
+>
+>Hope you learned something from the process on my audit workflow, crush ur next lending protocol for me!
+>
+>[@kaminsec](https://twitter.com/kamensec)

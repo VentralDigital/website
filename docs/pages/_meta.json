@@ -24,6 +24,19 @@
       "timestamp": false
     }
   },
+  "donate": {
+    "type": "page",
+    "title": "Donate",
+    "theme": {
+      "typesetting": "article",
+      "breadcrumb": false,
+      "footer": true,
+      "sidebar": false,
+      "toc": false,
+      "pagination": false,
+      "timestamp": false
+    }
+  },
   "-- Categories": {
     "type": "separator",
     "title": "Categories"

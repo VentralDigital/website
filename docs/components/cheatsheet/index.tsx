@@ -49,7 +49,7 @@ export function Entry({
 
 export function Cheatsheet({ children }: { children: ReactNode }) {
   return (
-    <Bleed>
+    <Bleed full={false}>
     <div
       className={
         '-mx-6 mb-4 mt-6 overflow-x-auto overscroll-x-contain px-6 pb-4 ' +

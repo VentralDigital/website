@@ -1,0 +1,312 @@
+# RACE #30 Of The Secureum Bootcamp Epoch∞
+
+import { Callout } from 'nextra/components'
+
+This is a Write-Up of RACE-30, Quiz of the [Secureum Bootcamp](https://twitter.com/0xRajeev/status/1470910752085065731) for Ethereum Smart Contract Auditors. Secureum Mentor [Josselin Feist](https://x.com/Montyly), engineering director at [Trail of Bits](https://x.com/trailofbits).
+
+<Callout type="info">
+  Participants of this quiz had to **answer 8 questions within the strict time limit of 16 minutes**. If you’re reading this in preparation for participating yourself, it’s best to give it a try under the same time limit!
+
+  As usual, I waited for submissions to close before publishing it and, to stay true to the original, I omitted syntax highlighting. Feel free to copy it into your favorite editor, but do so after starting the timer!
+</Callout>
+
+<p className="text-xs text-right">June 24, 2024 by [patrickd](/about#patrickd)</p>
+
+<style jsx>{`
+  input[type=checkbox] {
+    width: 15px;
+    height: 15px;
+  }
+  li {
+    padding: 0.5em;
+  }
+`}</style>
+
+export function HiddenSolution({ children }) {
+  return (
+    <details closed className="last-of-type:mb-0 rounded-lg bg-neutral-50 dark:bg-neutral-800 p-2 mt-4">
+      <summary>
+        <strong className="text-lg">Solution</strong>
+      </summary>
+      <div className="nx-p-2">{children}</div>
+    </details>
+  )
+}
+
+---
+
+### Code
+
+<Callout type="info">
+All 8 questions in this RACE are based on the below contracts.
+</Callout>
+
+
+```plaintext showLineNumbers
+pragma solidity >=0.8.0;
+
+import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/token/ERC20/IERC20.sol";
+
+
+contract FixedPoint{
+    uint256 internal constant ONE = 1e18; // 18 decimal
+
+    function div(uint256 a, uint256 b) internal pure returns (uint256) {
+        uint256 aInflated = a * ONE;
+        return aInflated / b;
+    }
+
+    function mul(uint256 a, uint256 b) internal pure returns (uint256) {
+        uint256 product = a * b;
+        return product / ONE;
+    }
+}
+
+// The following implements a pool that follows Balancer’s weighted pool principle.
+// For this Secureum RACE, only 1 swap direction is shown, and you can assume that other functions exist and are correct
+// In particular, assume that the tokens can also be exchanged from tokenOut to tokenIn
+// And LP providers can add/remove liquidity
+// You can also assume that the formula’s specification in outGivenIn is correct 
+contract BalancerLikePool is FixedPoint{
+
+    IERC20 tokenIn;
+    IERC20 tokenOut;
+
+
+   function outGivenIn(
+        uint256 tokenBalanceIn,
+        uint256 tokenBalanceOut,
+        uint256 tokenAmountIn
+    ) internal pure returns (uint256) {
+
+        // Simplified formula (Secureum's version- assume the formula’s documentation is correct)
+        /**********************************************************************************************
+        // outGivenIn                                                                                //
+        // aO = tokenAmountOut                                                                       //
+        // bO = tokenBalanceOut                                                                      //
+        // bI = tokenBalanceIn              /      /            bI             \                     //
+        // aI = tokenAmountIn    aO = bO * |  1 - | --------------------------  |                    //
+        //                                  \      \       ( bI + aI )         /                     //
+        **********************************************************************************************/
+
+        uint256 quotient = div(tokenBalanceIn, tokenBalanceIn + tokenAmountIn);
+        uint256 right_component = ONE - quotient;
+
+        return mul(tokenBalanceOut, right_component);
+    }
+
+    // Receive tokenOut based on the amountIn of tokenIn we sent.
+    function swapOutGivenIn(uint amountIn) public {
+        uint balanceIn = tokenIn.balanceOf(address(this));
+        uint balanceOut = tokenOut.balanceOf(address(this));
+
+        // Take 5% fees. We are ok to round down and receive less fees in general and no fees for small swaps
+        amountIn = amountIn * 105 / 100;
+
+        uint amountOut = outGivenIn(balanceIn, balanceOut, amountIn);
+
+        tokenOut.transfer(msg.sender, amountOut);
+        tokenIn.transferFrom(msg.sender, address(this), amountIn); 
+    }
+
+}
+```
+
+### Question 1 of 8
+
+Which of the following ERC20-related risks are applicable for this code?
+
+<ul>
+  <li><input type="checkbox" /> A. Missing return value checks </li>
+  <li><input type="checkbox" /> B. Flash minting </li>
+  <li><input type="checkbox" /> C. Fees on transfer </li>
+  <li><input type="checkbox" /> D. None of the above </li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, C.**
+
+Some ERC-20 tokens revert on errors, others return `false`. This code does currently not check for return values of function calls such as `tokenOut.transfer()`, but there's no guarantee that the token behind the `tokenOut` variable actually reverts on error. The best practice here is using the SafeERC20 library as a wrapper for ERC20 calls.
+
+Fees that are applied on token transfer mean that the actual balance received can be lower than the value specified during a transfer function call. This can lead to losses for the protocol or errors in the accounting logic of a contract. Usage of such tokens should be avoided when the code is not specifically prepared to handle them.
+</HiddenSolution>
+
+---
+
+### Question 2 of 8
+
+For the below expressions in `outGivenIn`:
+
+<ul>
+  <li><input type="checkbox" /> A. `tokenBalanceIn" + "tokenAmountIn;` - overflow protection must be added </li>
+  <li><input type="checkbox" /> B. `ONE - quotient;` - underflow protection must be added </li>
+  <li><input type="checkbox" /> C. `div(tokenBalanceIn, tokenBalanceIn + tokenAmountIn);` - div operation must round up </li>
+  <li><input type="checkbox" /> D. `mul(tokenBalanceOut, right_component);` - mul operation must round up </li>
+</ul>
+
+<HiddenSolution>
+**Correct is C.**
+
+No overflow or underflow protection is required thanks to the used Solidity version having it natively.
+
+Rounding must be chosen in a manner that favors the protocol to avoid abuse. That means that amounts demanded as payment by the contract should be rounded up. While funds leaving the protocol should be rounded down.
+
+$$
+`"tokenAmountOut" = "tokenBalanceOut" * (1 - ("tokenBalanceIn"/("tokenBalanceIn"+"tokenAmountIn")))`
+$$
+
+You should be able to see that a change in the rounding direction proposed by option D would happen too late.
+</HiddenSolution>
+
+
+---
+
+### Question 3 of 8
+
+Regarding reentrancy risks (not considering potential additional functions):
+
+<ul>
+  <li><input type="checkbox" /> A. The `nonReentrant` modifier must be added to prevent reentrancy between the two transfers </li>
+  <li><input type="checkbox" /> B. The user can re-enter through `outGivenIn` </li>
+  <li><input type="checkbox" /> C. A reentrancy allows to manipulate the pool’s spot price </li>
+  <li><input type="checkbox" /> D. There is no reentrancy risk </li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, C.**
+
+>The reentrancy is tricky here, but if you re-enter on the transfer, and the callback is done after the funds have been moved, you basically end up with the pool in an transient state, where `TokenOut` has decreased, but `TokenIn` has not increased. ~jos
+</HiddenSolution>
+
+
+
+---
+
+### Question 4 of 8
+
+Regarding fees implementation:
+
+<ul>
+  <li><input type="checkbox" /> A. The pool never receives any fees </li>
+  <li><input type="checkbox" /> B. To apply the 5% fees, the operation should be `amountIn` * 100 / 105 </li>
+  <li><input type="checkbox" /> C. Rounding down on the fees allows users to steal the pool's funds </li>
+  <li><input type="checkbox" /> D. None of the above </li>
+</ul>
+
+<HiddenSolution>
+**Correct is A.**
+
+>The fee is applied before we call `outGivenIn`. As a result, the fee is not given the pool, but it just means that the users have a higher `amountIn` than expected (but they will also receive more `amountOut`). ~jos
+</HiddenSolution>
+
+
+
+---
+
+### Question 5 of 8
+
+Regarding the arithmetics:
+
+<ul>
+  <li><input type="checkbox" /> A. The arithmetics work regardless of the token’s name, decimals or total supply </li>
+  <li><input type="checkbox" /> B. Fixed point arithmetic allows for unlimited precision </li>
+  <li><input type="checkbox" /> C. Fixed point arithmetic prevents the rounding risks </li>
+  <li><input type="checkbox" /> D. None of the above </li>
+</ul>
+
+<HiddenSolution>
+**Correct is D.**
+
+>For A, USDC won't work due to the decimals being 6 (ex: `outGivenIn` uses `10**18` for `ONE`). ~jos
+
+Fixed point arithmetic neither allows for unlimited precision (it is still restricted by the underlying datatype `uint256`) nor does it completely prevent rounding risks for the same reason.
+</HiddenSolution>
+
+
+
+---
+
+### Question 6 of 8
+
+The following statement(s) is/are true:
+
+<ul>
+  <li><input type="checkbox" /> A. SafeERC20 should be used to prevent issues with token transfers </li>
+  <li><input type="checkbox" /> B. SafeMath should be used to prevent integer overflow </li>
+  <li><input type="checkbox" /> C. Making `swapOutGivenIn` external will reduce gas cost </li>
+  <li><input type="checkbox" /> D. Making `outGivenIn` public would allow an attacker to steal the pool’s funds </li>
+</ul>
+
+<HiddenSolution>
+**Correct is A.**
+
+At the moment the contract would not be able to support ERC20 tokens that return boolean values (`false`) in case of error, because it's not checking for any return values at all when making transfer-calls. The SafeERC20 library would wrap interactions with ERC20 tokens and ensure that both tokens that revert and return `false` on error are handled correctly.
+
+No overflow protection is required in this version of Solidity.
+
+Changing a function's visibility from `public` to `external` does not impact its gas usage on its own. Rather, the data-location of its parameters does (by avoiding copying to memory but instead accessing parameter values directly in calldata). The function does not make use of datatypes that specify a data-location though, so gas cost can't be reduced this way here.
+
+The `outGivenIn` is a `pure` function (ie. it does not change state, or even read chain information at all) which makes it save to set as any visibility.
+</HiddenSolution>
+
+
+---
+
+### Question 7 of 8
+
+Regarding slippage/front running risks for `swapOutGivenIn`:
+
+<ul>
+  <li><input type="checkbox" /> A. `MinAmountIn` should be added as a parameter </li>
+  <li><input type="checkbox" /> B. `MaxAmountIn` should be added as a parameter </li>
+  <li><input type="checkbox" /> C. `MinAmountOut` should be added as a parameter </li>
+  <li><input type="checkbox" /> D. `MaxAmountOut` should be added as a parameter </li>
+</ul>
+
+<HiddenSolution>
+**Correct is C.**
+
+Currently the user is only specifying an `amountIn`, in other words, the amount he wants to exchange for the other token. The contract, based on `amountIn` and its current ratio of token balances, computes the `amountOut` that the user will receive of the other token. It's possible that the user's transaction is sandwiched, manipulating the ratio and profiting off the spread caused to the user. To prevent this, there should be an additional parameter that specifies a minimum `amountOut` that the user requires for this exchange.
+</HiddenSolution>
+
+
+
+---
+
+### Question 8 of 8
+
+Assuming there is no bug in the codebase (and all potential bugs highlighted in this RACE are fixed), which one of these swap invariants would be correct?
+
+
+<input type="checkbox" /> A.
+  ```plaintext
+  // To be added at the end of the function
+  uint k_before = balanceIn * balanceOut;
+  uint k_after = tokenIn.balanceOf(address(this)) * tokenOut.balanceOf(address(this));
+  require(k_before == k_after);
+  ```
+<input type="checkbox" /> B.
+  ```plaintext
+  // To be added at the end of the function
+  uint k_before = balanceIn * balanceOut;
+  uint k_after = tokenIn.balanceOf(address(this)) * tokenOut.balanceOf(address(this));
+  require(k_before >= k_after);
+  ```
+<input type="checkbox" /> C.
+  ```plaintext
+  // To be added at the end of the function
+  uint k_before = balanceIn * balanceOut;
+  uint k_after = tokenIn.balanceOf(address(this)) * tokenOut.balanceOf(address(this));
+  require(k_before <= k_after);
+  ```
+<input type="checkbox" /> D. None of the above
+
+<HiddenSolution>
+**Correct is C.**
+
+Assuming correct code, it must be the option where k increases thanks to collecting fees.
+</HiddenSolution>
+
+
+
+---

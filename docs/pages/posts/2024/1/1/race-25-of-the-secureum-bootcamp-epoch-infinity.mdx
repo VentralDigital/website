@@ -134,7 +134,7 @@ In what situations could a signature be replayed?
 
 The `messageHash` currently only contains two things: The magic `number` passed and the contract's own address (`address(this)`). It doesn't keep track of which signatures have already been used and it's therefore possible to use the same signature multiple times.
 
-Since the `number` is part of the signed message, it's not possible to change the magic number with the same signature, but there's nothing stopping you from adding more value to the prize by replaying it.
+Since the `number` is part of the signed message, it's not possible to change the magic number with the same signature, but there's nothing stopping you from adding more value to the prize by replaying it. It [may be argued](https://x.com/GalloDaSballo/status/1803855556157018375) that this is true since its possible to exploit invalid signatures for the zero-address, though this wouldn't actually impact any real users (see solution of Question 1).
 
 Additionally to a `nonce`, the signature is also missing a `chainId` within the message it's signing. Due to that, it's possible to replay them across chains. That means one would be able to use a signature from one chain, where the legitimate player has set a prize, on another chain where the player hasn't even played yet.
 </HiddenSolution>

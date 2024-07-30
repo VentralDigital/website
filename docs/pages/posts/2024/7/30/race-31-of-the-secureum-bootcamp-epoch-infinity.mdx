@@ -1,0 +1,466 @@
+# RACE #31 Of The Secureum Bootcamp Epoch∞
+
+import { Callout } from 'nextra/components'
+
+This is a Write-Up of RACE-31, Quiz of the [Secureum Bootcamp](https://twitter.com/0xRajeev/status/1470910752085065731) for Ethereum Smart Contract Auditors. This month's RACE was designed by [phaze](https://x.com/lovethewired), also known as Kurt, who is a blockchain technology specialist with a strong background in mathematics and recently joined the ranks of Mentors at Secureum.
+
+<Callout type="info">
+  Before starting, note that this RACE requires some basic experience with ZK, Noir, or Rust:
+
+  > The Rust syntax in the RACE is really minimal and is a known Solidity algorithm. There are no issues related to Rust/Noir syntax. As long as you can read the code as pseudocode (and it's quite simple) you're good to go. It is helpful to have in mind some properties of ZK proofs in a similar manner as most people know how signatures are used and handled. Signatures can prove that the private key holder has signed a known message without revealing the private key. With ZK, all you need to know is that the proof verifies that all the inputs (public and private) satisfy the constraints in the program and that public inputs are passed in (publicly) along with the proof and that private inputs are kept private (like the private key of signatures).
+  >
+  > It might be a little harder to grasp, since it is unfamiliar territory, but I hope that otherwise minimal pre-knowledge is required.
+
+  Participants of this quiz had to **answer 8 questions within the strict time limit of 16 minutes**. If you’re reading this in preparation for participating yourself, it’s best to give it a try under the same time limit!
+
+  As usual, I waited for submissions to close before publishing it and, to stay true to the original, I omitted syntax highlighting. Feel free to copy it into your favorite editor, but do so after starting the timer!
+</Callout>
+
+<p className="text-xs text-right">July 30, 2024 by [patrickd](/about#patrickd)</p>
+
+<style jsx>{`
+  input[type=checkbox] {
+    width: 15px;
+    height: 15px;
+  }
+  li {
+    padding: 0.5em;
+  }
+`}</style>
+
+export function HiddenSolution({ children }) {
+  return (
+    <details closed className="last-of-type:mb-0 rounded-lg bg-neutral-50 dark:bg-neutral-800 p-2 mt-4">
+      <summary>
+        <strong className="text-lg">Solution</strong>
+      </summary>
+      <div className="nx-p-2">{children}</div>
+    </details>
+  )
+}
+
+---
+
+### Code
+
+<Callout type="info">
+All 8 questions in this RACE are based on the below contracts.
+</Callout>
+
+
+```plaintext showLineNumbers filename="main.nr"
+use dep::std;
+
+global DEPTH: Field = 4;
+
+/// Compute the Merkle tree root
+fn compute_merkle_root(key: [u1; DEPTH], leaf: Field, nodes: [Field; DEPTH]) -> Field {
+    // Start with the `leaf` node.
+    let mut node: Field = leaf;
+
+    // Iterates from `0` until `DEPTH - 1`
+    for i in 0..DEPTH {
+        // Hash current node `node` with provided node `nodes[i]`
+        // to the left or right with `nodes[i]` depending on `key`s i-th bit.
+        node = std::hash::poseidon::bn254::hash_2(
+            if (key[i] == 0) {
+                [node, nodes[i]]
+            } else {
+                [nodes[i], node]
+            });
+    }
+
+    node
+}
+
+/// Main circuit that verifies a zero knowledge proof, demonstrating:
+///   - Knowledge of pre-image of leaf: `leaf == hash(secret + 1)`
+///   - `nullifier` is derived correctly: `nullifier == hash(secret + 2)`
+///   - The leaf is contained in a Merkle tree with root `root`
+///   - The proof is generated for `receiver`
+fn main(
+    receiver: pub Field,
+    key: [u1; DEPTH],
+    secret: Field,
+    nullifier: pub Field,
+    nodes: [Field; DEPTH],
+    root: pub Field
+) {
+    // Compute `leaf` using `secret`.
+    let leaf: Field = std::hash::poseidon::bn254::hash_1([secret + 1]);
+
+    // Assert given `nullifier` is derived from `secret`.
+    assert(nullifier == std::hash::poseidon::bn254::hash_1([secret + 2]));
+
+    // Ensure `leaf` is included in the Merkle tree.
+    assert(compute_merkle_root(key, leaf, nodes) == root);
+
+    // Tie `receiver` into proof.
+    assert(receiver + leaf + nullifier != 0);
+}
+```
+
+```plaintext showLineNumbers filename="ZeroLink.sol"
+// SPDX-License-Identifier: UNLICENSED
+pragma solidity ^0.8.13;
+
+import {UltraVerifier} from "../circuits/contract/ZeroLink/plonk_vk.sol";
+import {PoseidonT3} from "./utils/Poseidon.sol";
+
+uint256 constant DEPTH = 4;
+uint256 constant PRIME_FIELD_ORDER = 21888242871839275222246405745257275088548364400416034343698204186575808495617;
+
+library MerkleLib {
+    function hash(uint256 left, uint256 right) internal pure returns (uint256 result) {
+        require(left < PRIME_FIELD_ORDER && right < PRIME_FIELD_ORDER, "Invalid field element");
+        return PoseidonT3.hash(left, right);
+    }
+
+    /// @notice Returns pre-computed zero sub-tree root of depth `level`.
+    ///         Each sub-tree root is computed by:
+    ///             root(0) := hash(0)
+    ///             root(N) := hash(root(N-1), root(N-1))
+    function zeros(uint256 level) internal pure returns (uint256) {
+        if (level == 0) return 0x2098f5fb9e239eab3ceac3f27b81e481dc3124d55ffed523a839ee8446b64864;
+        if (level == 1) return 0x1069673dcdb12263df301a6ff584a7ec261a44cb9dc68df067a4774460b1f1e1;
+        if (level == 2) return 0x18f43331537ee2af2e3d758d50f72106467c6eea50371dd528d57eb2b856d238;
+        if (level == 3) return 0x07f9d837cb17b0d36320ffe93ba52345f1b728571a568265caac97559dbc952a;
+        if (level == 4) return 0x2b94cf5e8746b3f5c9631f4c5df32907a699c58c94b2ad4d7b5cec1639183f55;
+        revert("Invalid level");
+    }
+
+    /// @notice Computes the Merkle root starting with `leaf` at given `key`.
+    ///         Internal nodes are computed by hashing the current node with the
+    ///         pre-computed zero subtrees to the right, or with the provided
+    ///         nodes `nodes[i]` to the left, depending on the path given by `key`s i-th bit.
+    function appendLeaf(uint256 key, uint256 leaf, uint256[DEPTH] memory nodes)
+        internal
+        pure
+        returns (uint256 root, uint256[DEPTH] memory newNodes)
+    {
+        unchecked {
+            require(key >> DEPTH == 0, "Invalid key");
+
+            uint256 node = leaf;
+
+            for (uint256 i; i < DEPTH; ++i) {
+                newNodes[i] = node;
+                node = ((key >> i) & 1 == 0) // Read `key`s i-th least-significant bit.
+                    ? hash(node, zeros(i))
+                    : hash(nodes[i], node);
+            }
+
+            root = node;
+        }
+    }
+}
+
+contract ZeroLink is UltraVerifier {
+    uint256 public constant DEPOSIT_AMOUNT = 1 ether;
+
+    uint256 public key;
+    uint256 public root;
+    uint256[DEPTH] public proofNodes;
+
+    mapping(uint256 root => bool) public validRoot;
+    mapping(uint256 nullifier => bool) public nullifierSpent;
+    mapping(uint256 leaf => bool) public leafCommitted;
+
+    /// @notice Create a deposit by committing a leaf node to an
+    ///         append-only, fixed size Merkle tree. Every new leaf is
+    ///         appended at `key`----the next available position in the Merkle tree.
+    ///         `leaf` must be correctly derived from `secret`: `leaf == hash(secret + 1)`.
+    function deposit(uint256 leaf) public payable {
+        unchecked {
+            require(msg.value == DEPOSIT_AMOUNT, "Invalid deposit amount");
+            require(!leafCommitted[leaf], "Leaf already committed");
+
+            // Mark the leaf as committed.
+            leafCommitted[leaf] = true;
+
+            // Append `leaf` at index `key` of Merkle tree.
+            // Update Merkle root and internal nodes inserting `leaf` at index `key`.
+            // Increment the Merkle tree index `key`.
+            // Throws if `leaf` or any of `nodes` is not a field element.
+            (root, proofNodes) = MerkleLib.appendLeaf(key++, leaf, proofNodes);
+
+            // Mark new `root` as valid.
+            validRoot[root] = true;
+        }
+    }
+
+    function withdraw(address receiver, uint256 nullifier, uint256 root_, bytes calldata proof) public {
+        // Verify the zero knowledge proof.
+        verifyProof(receiver, nullifier, root_, proof);
+
+        // Refund `receiver`.
+        (bool success,) = receiver.call{value: DEPOSIT_AMOUNT}("");
+        require(success, "Transfer failed");
+
+        // Withdrawer's proof must relate to a previously committed root.
+        require(validRoot[root], "Invalid root");
+
+        // Check `nullifier` to prevent replay.
+        require(!nullifierSpent[nullifier], "Nullifier already spent");
+
+        // Mark `nullifier` as spent.
+        nullifierSpent[nullifier] = true;
+    }
+
+    function verifyProof(address receiver, uint256 nullifier, uint256 root_, bytes calldata proof) public view {
+        // Set up public inputs for `proof` verification.
+        // The Noir circuit expects 3 public inputs.
+        bytes32[] memory publicInputs = new bytes32[](3);
+
+        // All inputs must be prime field elements.
+        publicInputs[0] = bytes32(uint256(uint160(receiver)));
+        publicInputs[1] = bytes32(nullifier % PRIME_FIELD_ORDER);
+        publicInputs[2] = bytes32(root_ % PRIME_FIELD_ORDER);
+
+        // Verify the zero knowledge proof.
+        this.verify(proof, publicInputs);
+    }
+}
+```
+
+### Question 1 of 8
+
+Merkle tree: Which of the following statements is true?
+
+<ul>
+  <li><input type="checkbox" /> A. A Merkle proof requires the `leaf`, its `key` and `DEPTH` inner nodes in order to re-compute the `root`. </li>
+  <li><input type="checkbox" /> B. The Merkle tree is constructed using the `keccak256` hash function. </li>
+  <li><input type="checkbox" /> C. The key parameter in the Merkle proof indicates the path chosen **from the `leaf` to the `root`**. </li>
+  <li><input type="checkbox" /> D. The Merkle path indicating the `key` `b'0110'`s position from `root` to `leaf` is: `left, right, right, left` </li>
+</ul>
+
+```plaintext
+   root
+    /
+    \
+     \
+     /
+  leaf
+```
+
+<HiddenSolution>
+**Correct is A, C, D.**
+
+> A) True: Evident from the `compute_merkle_root` function parameters
+
+> B) False: The hashing function used is Poseidon.
+
+> C) True: The hashing in `compute_merkle_root` starts from the `leaf` node and ends at the `root`.
+
+> D) True: The `key` is intentionally "symmetric" to make the question easier. One can imagine the leaf node '0000' starting at the left most position.
+
+</HiddenSolution>
+
+---
+
+### Question 2 of 8
+
+Deposits: Which of the following statements is true?
+
+<ul>
+  <li><input type="checkbox" /> A. New deposits increase the size of the Merkle tree. </li>
+  <li><input type="checkbox" /> B. The maximum number of deposits is `2^DEPTH - 1`. </li>
+  <li><input type="checkbox" /> C. The `deposit` function correctly ensures that any deposit can always be retrieved. </li>
+  <li><input type="checkbox" /> D. The check for whether the `leaf` was previously committed if (`leafCommitted[leaf]`) prevents double withdrawals. </li>
+  <li><input type="checkbox" /> E. None </li>
+</ul>
+
+<HiddenSolution>
+**Correct is E.**
+
+> A) False: The merkle tree never grows/shrinks and is always kept a fixed size (seen by the constant DEPTH parameter).
+
+> B) False: Tricky one, it's `2^DEPTH` deposits.
+
+> C) False: One can easily verify the requirements of the `deposit` function. There is no requirement on the `leaf` parameter. This can be arbitrary and a pre-image to the `leaf` parameter might not be known.
+
+This one is tricky too, because `deposit` is doing everything it can to ensure that deposits can be retrieved. Only the question's "always" is the hint that raises the question: "but what if the depositor messes it up?"
+
+> D) False: This is a preventative check against double commits/deposits. But it is not required for the protocol's security.
+
+Double withdrawals are prevented by the `nullifier`. So when a `nullifier` was already used, the leaf would no longer be redeemable, which would be problematic if it was used for a deposit more than once.
+
+</HiddenSolution>
+
+
+---
+
+### Question 3 of 8
+
+ZK/Noir: Which of the following statements is true?
+
+<ul>
+  <li><input type="checkbox" /> A. A zero knowledge proof can prove the inclusion of a leaf in a Merkle root without revealing the actual leaf, secret, key or proof nodes. </li>
+  <li><input type="checkbox" /> B. The `root` parameter must be a public input (part of the calldata), since it must be compared to the Merkle root recorded on-chain. </li>
+  <li><input type="checkbox" /> C. The `nullifier` parameter is able to mark a deposit (`leaf`) as spent without revealing it, since the `nullifier` and leaf are inextricably linked to each other through the depositor's secret parameter. </li>
+  <li><input type="checkbox" /> D. The leaf is not part of the zero knowledge proof parameters, since it can be computed from the `nullifier`. </li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, B, C.**
+
+> A) True: This is visible in the main Noir component.
+
+> B) True: Explanation is in the statement: It must be verified against the on-chain root. Otherwise anyone could make up their own root containing multiple malicious commitments.
+
+> C) True: Visible from the code: `nullifierSpent` mapping, `leaf = hash(secret + 1), nullifier = hash(secret + 2)`
+
+> D) False: The leaf cannot be computed from the nullifier. It can only be computed from the secret.
+
+</HiddenSolution>
+
+
+
+---
+
+### Question 4 of 8
+
+Withdrawal proofs: Which of the following statements is true?
+
+<ul>
+  <li><input type="checkbox" /> A. A withdrawal can be made with an arbitrary `nullifier` value and doesn't require a previous deposit. </li>
+  <li><input type="checkbox" /> B. The `nullifier` parameter must equal `hash(secret + 2), where leaf == hash(secret + 1)`. </li>
+  <li><input type="checkbox" /> C. A correct withdrawal function requires additional parameters for a Merkle proof. </li>
+  <li><input type="checkbox" /> D. The withdraw function is missing a check for valid deposits as it is not checking whether the leaf was committed. </li>
+</ul>
+
+<HiddenSolution>
+**Correct is B.**
+
+> A) False: Withdrawals require valid merkle tree inclusion proofs, where the `nullifier` is checked to be linked to the leaf.
+
+> B) True: Evident from the code.
+
+> C) False: The Merkle proof is contained inside of the ZK proof and doesn't need to be provided. Providing the Merkle proof publicly would immediately reveal the depositor.
+
+> D) False: Again, we don't check the withdrawer's leaf, because this would reveal their deposit. The valid deposit is guaranteed by the ZK proof and the root check.
+
+
+</HiddenSolution>
+
+
+
+---
+
+### Question 5 of 8
+
+Withdrawal vulnerabilities: Which of the following statements is true?
+
+<ul>
+  <li><input type="checkbox" /> A. An attacker can front-run a call to withdraw and swap out the receiver for their own address in order to receive the deposit. </li>
+  <li><input type="checkbox" /> B. An attacker can drain the protocol by re-entering the withdraw function. </li>
+  <li><input type="checkbox" /> C. Due to a vulnerability, an attacker can call withdraw with a proof to a root that is not any of the previously recorded roots. </li>
+  <li><input type="checkbox" /> D. The withdraw function does not delete the original leaf entry from the Merkle tree, therefore multiple withdrawals can be made with the same deposit. </li>
+</ul>
+
+<HiddenSolution>
+**Correct is C.**
+
+> A) False: Receiver is part of the ZK proof parameters. Changing this would require creating a new proof.
+
+This can be seen at the line that ties "`receiver` into proof".
+
+> B) False: Although the code is misleading since it does not follow the CEI pattern, the check and the effect for whether the nullifier was spent is made in succession.
+
+Specifically the nullifier check at line 101 would need to happen before the external call for this to be exploitable.
+
+> C) True: The check `if (!validRoot[root]) revert InvalidRoot();` should actually check the withdrawer's `root_` parameter as described in the comment above the line.
+
+> D) False: This Merkle tree is fixed size and append-only. Multiple withdrawals are prevented by check whether the nullifier was spent.
+
+</HiddenSolution>
+
+
+
+---
+
+### Question 6 of 8
+
+Privacy: Which of the following statements is true?
+
+<ul>
+  <li><input type="checkbox" /> A. Knowing the `receiver` parameter also means knowing the depositor. </li>
+  <li><input type="checkbox" /> B. It's impossible to trace a withdrawal back to a deposit only by knowing the `nullifier` value. </li>
+  <li><input type="checkbox" /> C. It's always possible to link a withdrawal to a deposit by looking at a user's submitted `root` argument. </li>
+  <li><input type="checkbox" /> D. Users should not withdraw using the same Merkle tree `root` they deposited with. </li>
+</ul>
+
+<HiddenSolution>
+**Correct is B, D.**
+
+> A) False: The main idea of the protocol is to "unlink" the depositor and withdrawer/receiver.
+
+> B) True: This would require knowing the pre-image (secret) of the Poseidon hash.
+
+The `nullifier` value is only revealed during withdrawal, while during deposit only the `leaf` is revealed. To connect these two the `secret` is necessary, which is never revealed.
+
+> C) False: This would be a big issue in the protocol if this were the case.
+
+> D) True: Since the Merkle root is updated at each deposit, knowing the depositor's root would reveal their leaf.
+
+
+</HiddenSolution>
+
+
+---
+
+### Question 7 of 8
+
+Malleability: Which of the following statements is true?
+
+<ul>
+  <li><input type="checkbox" /> A. Depositors can always generate new valid zero knowledge proofs for new Merkle roots. </li>
+  <li><input type="checkbox" /> B. Since not all nodes of the proof nodes parameter are read, the proof is malleable. This allows multiple different valid proofs to be generated from different private inputs. </li>
+  <li><input type="checkbox" /> C. It is possible to withdraw multiple times from the same deposit due to malleability in the `nullifier` parameter as part of the `publicInputs` in the `verifyProof` function. </li>
+  <li><input type="checkbox" /> D. None of the above. </li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, B, C.**
+
+> A) True: If this were not the case, then depositors could not withdraw after new deposits are added.
+
+> B) True: The proof is malleable (in a few ways I believe). Although, like with verifying signatures, we don't care about malleability, but only that it is valid.
+
+> C) True: This is another vulnerability. The modulus operation should not be applied here. This allows multiple pre-images (multiple nullifiers) to the public input. `publicInputs[1] = bytes32(nullifier % PRIME_FIELD_ORDER);`
+
+Rather than modulo the value, it should revert when it's larger than the prime field order as the hash function does.
+
+</HiddenSolution>
+
+
+
+---
+
+### Question 8 of 8
+
+Protocol: Which of the following statements is true?
+
+<ul>
+  <li><input type="checkbox" /> A. The deposit contract does not initialize and update the `root` and `proofNodes` variables correctly leading to invalid `root` values. This blocks earlier depositors from withdrawing. </li>
+  <li><input type="checkbox" /> B.  Keeping track of `proofNodes` in the contract would not be necessary if they were provided by the user and then the re-computed root was verified against the on-chain root. </li>
+  <li><input type="checkbox" /> C.  The protocol does not strictly require the `validRoot` mapping in order to function, although this could make it vulnerable to DoS attacks. </li>
+  <li><input type="checkbox" /> D. None of the above. </li>
+</ul>
+
+<HiddenSolution>
+**Correct is B, C.**
+
+> A) False: The initialization does not matter and the updates are performed correctly. The `appendLeaf` function can be verified.
+
+> B) True: Explanation is given. Keeping track of the `proofNodes` in contract storage is more of a convenience. We technically only require to record the root and make sure that the updates are correct.
+
+> C) True: Valid proofs can always be generated using the current recorded root parameter. However, if another deposit occurs, then this would require a withdrawer to update their ZK proof against a new root which could lead to a DoS scenario.
+
+In other words, a malicious actor could frontrun a user causing the current recorded root, the root that the victim user created a proof for, to update and cause the victim's transaction to be rejected.
+
+</HiddenSolution>
+
+
+
+---

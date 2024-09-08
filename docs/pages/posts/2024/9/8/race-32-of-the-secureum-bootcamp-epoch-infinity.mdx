@@ -1,0 +1,365 @@
+# RACE #32 Of The Secureum Bootcamp Epoch∞
+
+import { Callout } from 'nextra/components'
+
+This is a Write-Up of RACE-32, Quiz of the [Secureum Bootcamp](https://twitter.com/0xRajeev/status/1470910752085065731) for Ethereum Smart Contract Auditors. This month's RACE was designed by [Prof. Yannis Smaragdakis](https://x.com/YSmaragdakis) from [Dedaub](https://x.com/dedaub).
+
+<Callout type="info">
+  Participants of this quiz had to **answer 8 questions within the strict time limit of 32 minutes**. If you’re reading this in preparation for participating yourself, it’s best to give it a try under the same time limit!
+
+  As usual, I waited for submissions to close before publishing it and, to stay true to the original, I omitted syntax highlighting. Feel free to copy it into your favorite editor, but do so after starting the timer!
+</Callout>
+
+<p className="text-xs text-right">September 8, 2024 by [patrickd](/about#patrickd)</p>
+
+<style jsx>{`
+  input[type=checkbox] {
+    width: 15px;
+    height: 15px;
+  }
+  li {
+    padding: 0.5em;
+  }
+`}</style>
+
+export function HiddenSolution({ children }) {
+  return (
+    <details closed className="last-of-type:mb-0 rounded-lg bg-neutral-50 dark:bg-neutral-800 p-2 mt-4">
+      <summary>
+        <strong className="text-lg">Solution</strong>
+      </summary>
+      <div className="nx-p-2">{children}</div>
+    </details>
+  )
+}
+
+---
+
+### Code
+
+<Callout type="info">
+All 8 questions in this RACE are based on the below contracts.
+</Callout>
+
+```plaintext showLineNumbers
+// SPDX-License-Identifier: GPL-3.0
+pragma solidity 0.8.20;
+
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
+
+interface Depositor{
+  function depositCallback() external;
+}
+
+struct PoolState {
+  // 128 bits should be enough, let's pack in one word when in storage
+  uint128 deposited;
+  uint128 invested;
+}
+
+// This is a tricky challenge. There are several items that may look like bugs
+// but are not realistically exploitable. Your quest is to think deeply and
+// understand the risks, not to do pattern matching. ChatGPT does very badly
+// in this RACE. It won’t help you to read the questions before deeply
+// understanding the code. The questions offer no guidance whatsoever—in fact,
+// they may confuse you.
+contract InvestmentProtocol is Ownable {
+  using SafeERC20 for IERC20;
+
+  mapping(address => mapping(address => uint256)) userBalances;
+  mapping(address => PoolState) totalState;
+  mapping(uint256 => address) userIdToCurAddress;
+
+  bytes32 permissionsRoot;
+
+  constructor() Ownable(msg.sender) {}
+
+  /*
+   * Only owner 
+   */ 
+
+  // create the game ids for each user. New ones can be set at any time.
+  function setId(uint256 _userId, address _userAddr) external onlyOwner {
+    userIdToCurAddress[_userId] = _userAddr;
+  }
+
+  // Off-chain Merkle summary of investment sums for authorized investors
+  function setPermissionsRoot(bytes32 _merkleRoot) external onlyOwner {
+    permissionsRoot = _merkleRoot;
+  }
+
+  /*
+   * External functions
+   */
+
+
+  function deposit(address _token) external {
+    uint256 balanceBefore = IERC20(_token).balanceOf(address(this));
+    Depositor(msg.sender).depositCallback();
+    uint256 balanceAfter = IERC20(_token).balanceOf(address(this));
+
+    uint256 actualAmountDeposited = balanceAfter - balanceBefore;
+
+    userBalances[msg.sender][_token] += actualAmountDeposited;
+
+    PoolState storage tokenPoolState = totalState[_token];
+    tokenPoolState.deposited += uint128(actualAmountDeposited);
+  }
+
+  function withdraw(address _token) external {
+    uint256 balance = userBalances[msg.sender][_token];
+    PoolState storage tokenPoolState = totalState[_token];
+
+    // Cannot withdraw after some investment becomes active. THIS IS SPEC-ED
+    // BEHAVIOR, not a race condition!
+    require(tokenPoolState.invested == 0); 
+    userBalances[msg.sender][_token] = 0;
+    // Let's save some gas
+    unchecked {
+      	tokenPoolState.deposited -= uint128(balance);
+    }
+    IERC20(_token).safeTransfer(msg.sender, balance);
+  }
+
+  // Approved investors are trusted. It is not a bug to get funds to an
+  // investor truly in the Merkle tree, it’s part of spec-ed behavior.
+  // Anyone can call this function, they just pay the gas to get tokens to
+  // an approved investor.
+  function investToken(address _token, uint256 _amount, uint256 _toId, 
+                       bytes32[] memory _proof) external {
+    bytes32 leaf = keccak256(abi.encodePacked(_amount, _toId));
+    require(MerkleProof.verify(_proof, permissionsRoot, leaf));
+    address toAddress = userIdToCurAddress[_toId];
+    PoolState memory tokenPoolState = totalState[_token];
+    uint256 available = 
+      uint256(tokenPoolState.deposited - tokenPoolState.invested);
+    if (_amount > available)
+      _amount = available;
+    IERC20(_token).safeTransfer(toAddress, _amount);
+    totalState[_token].invested = tokenPoolState.invested + uint128(_amount); 
+  }
+
+  // There may be more functionality, as needed for the contract to make sense.
+  // E.g., getting returns for the investments. Your focus is only issues in
+  // the above functionality, assuming all else is done perfectly.
+}
+```
+
+### Question 1 of 8
+
+Which of the following are problems in this contract?
+
+<ul>
+  <li><input type="checkbox" /> A. A user can drain the accounts of others </li>
+  <li><input type="checkbox" /> B. Legitimate transactions can be front-run </li>
+  <li><input type="checkbox" /> C. A quantity can overflow or underflow, causing accounting errors </li>
+  <li><input type="checkbox" /> D. A malicious caller can burn tokens of others </li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, D.**
+
+**A**: When calling the `deposit(_token)` function, it takes note of the current `_token` balance and stores it in `balanceBefore`. Then the `depositCallback()` function is called on the `msg.sender`, ie. the caller of the `deposit()` function. This is intended to allow the `msg.sender` to transfer some tokens to the `InvestmentProtocol` contract and return, after which the `deposit()` function will determine how many tokens the `msg.sender` sent by computing `balanceAfter - balanceBefore`.
+
+The problem is that, instead of sending the tokens and returning, the `msg.sender` could **reenter** the `InvestmentProtocol` contract by once again calling the `deposit()` function. Any balance sent to the contract during the following second call to `depositCallback()` will be counted for both the first and the second call to `deposit()`, effectively counting the same balance as two deposits.
+
+This means that the user's balance within the protocol (according to `userBalances[msg.sender][_token]`) will be double the amount of tokens that the user actually transferred. When the attacker then calls the `withdraw()` function to obtain their full balance, they actually end up draining tokens that were deposited by other users.
+
+> *"This is challenging for many security experts to find. In fact, two auditors from our team missed it (though I don’t know whether they really spent much time). The difficulty in finding this reentrancy is not in recognizing that there is reentrancy: there’s a direct call to the msg.sender. The difficulty is in understanding how it can be exploited. The attack is by re-entering and doing another deposit, which causes the deposited amount to be accounted-for twice. The attacker can then call withdraw at whatever later point and get the funds of others. This seems obvious once stated, but it confuses many people because they expect that reentrancy will directly drain funds."* ~Yannis
+
+**B**: From the partial code we have available to us, it appears that, to be able to withdraw, no tokens may be currently invested (`require(tokenPoolState.invested == 0)`). Therefore an attacker could front-run and block a withdrawal by calling `investToken()`. However the comment `THIS IS SPEC-ED BEHAVIOR, not a race condition!` clarifies this to be as-intended. 
+
+> *"I'd say this is all within spec. Clearly this is partial code. But the comments in the code clearly say that withdrawal is not possible after investment starts and that everyone in the world can start investments at any point. So, it's spec-ed behavior that one cannot withdraw because investment has started, via front-running or via any other means."* ~Yannis
+
+**C**: In this Solidity version, integer over- or underflows are only possible within `unchecked`-blocks of which only one exists within this code's `withdraw()` function. The fact that a user's balance can never be larger than the tracked total deposited, and that both `tokenPoolState.deposited` and `balance` are downcast to `uint128`, means that no underflow can happen during this subtraction. The fact that unsafe downcasting to `uint128` is used does also not pose issues in typical real-world scenarios. The fact that this code appears smelly is intended as a red herring.
+
+> *"If uint128 overflows, a lot of services are in trouble. Even uint96 is sufficient for top DeFi services (e.g., Uniswap). I would argue this is a non-issue in anything realistic, or an extremely remote issue that would be ignored if found in a report."* ~Yannis
+
+**D**: The `investToken()` function restricts token recipients using Merkle Tree Proofs. The issue here is that the tree's leaves are 64 bytes large, created by combining two 32 byte values: The `_amount` and `_toId`. Merkle Proofs are created for Binary Trees where each two neighbouring nodes (each in the form of 32 byte hashes) are combined into a single 32 byte hash repeatedly until a single hash is obtained, the Root (`permissionsRoot`). With that it's possible to select any pair of hashes within this tree and use them as `_amount` and `_toId` values while still reaching the same expected Root. Therefore we can proof the inclusion of bogus values within the Merkle Tree, causing the funds to be "invested" into the zero address returned by `userIdToCurAddress[_toId]` due to no valid address having been mapped to the specified bogus ID.
+
+> *"The second serious bug is the use of 64-byte leaves in the Merkle tree, in investToken. This allows an attacker to take internal nodes of the Merkle tree (whose hash has a known reversal into an input of two other 32-byte hashes) and pretend they are leaves. This enables an attack that can burn all the funds in the contract by sending them to address 0, for all tokens that allow transfers to such an address. This is a less serious problem than the reentrancy in deposit, because of all the above qualifications: the attacker doesn’t stand to gain, and the attack is limited with respect to the token."* ~Yannis
+</HiddenSolution>
+
+---
+
+### Question 2 of 8
+
+Which of the following can pose problems in this contract?
+
+<ul>
+  <li><input type="checkbox" /> A. The use of only `uint128` for the pool state amounts </li>
+  <li><input type="checkbox" /> B. The call back to the `msg.sender` in deposit, which allows reentrancy </li>
+  <li><input type="checkbox" /> C. The `unchecked` operations in `withdraw` </li>
+  <li><input type="checkbox" /> D. The token transfer in `investToken()`, which allows reentrancy for specific tokens </li>
+</ul>
+
+<HiddenSolution>
+**Correct is B.**
+
+**A**: See explanation for **C** in solution of **Question 1**.
+
+**B**: See explanation for **A** in solution of **Question 1**.
+
+**C**: See explanation for **C** in solution of **Question 1**.
+
+**D**: While reentering via a token with receiver-callback (eg. ERC-777) would be possible, this would not achieve anything that isn't already possible by simply calling the `investToken()` function multiple times. This is because the same Merkle leaf can be reused multiple times.
+</HiddenSolution>
+
+
+---
+
+### Question 3 of 8
+
+Which function exhibits the most critical vulnerability?
+
+<ul>
+  <li><input type="checkbox" /> A. There are no critical vulnerabilities, only less serious threats</li>
+  <li><input type="checkbox" /> B. `deposit`</li>
+  <li><input type="checkbox" /> C. `withdraw`</li>
+  <li><input type="checkbox" /> D. `investToken`</li>
+</ul>
+
+<HiddenSolution>
+**Correct is B.**
+
+There are two critical vulnerabilities: The reentrancy in `deposit()` and the use of 64-byte leaves in the Merkle Tree in `investToken()` (See the solution of **Question 1** for detailed explanations).
+
+While both vulnerabilities allow for a loss of funds, the reentrancy is arguably more critical as it allows the attacker to profit from the exploitation.
+</HiddenSolution>
+
+
+
+---
+
+### Question 4 of 8
+
+Which of the following risks apply to function `deposit`?
+
+<ul>
+  <li><input type="checkbox" /> A. Reentrancy (that can lead to attacker profits) </li>
+  <li><input type="checkbox" /> B. Arithmetic overflow/underflow </li>
+  <li><input type="checkbox" /> C. Wrong accounting, even in the absence of other threats </li>
+  <li><input type="checkbox" /> D. Lack of accounting for tokens with non-standard decimals </li>
+</ul>
+
+<HiddenSolution>
+**Correct is A.**
+
+**A**: See explanation for **A** in solution of **Question 1**.
+
+**B**: In this Solidity version, integer over- or underflows are only possible within `unchecked`-blocks, of which there are none within the `deposit()` function.
+
+**C**: No accounting issue in the absence of other threats.
+
+**D**: No need for accounting for tokens of non-standard decimals for deposits.
+</HiddenSolution>
+
+
+
+---
+
+### Question 5 of 8
+
+Which of the following risks apply to function `withdraw`?
+
+<ul>
+  <li><input type="checkbox" /> A. Wrong accounting, even in the absence of other threats </li>
+  <li><input type="checkbox" /> B. Lack of accounting for tokens with non-standard decimals </li>
+  <li><input type="checkbox" /> C. Reentrancy (that can lead to attacker profits)</li>
+  <li><input type="checkbox" /> D. Arithmetic overflow/underflow </li>
+  <li><input type="checkbox" /> E. None of the above </li>
+</ul>
+
+<HiddenSolution>
+**Correct is E.**
+
+See explanations for **Question 1**.
+</HiddenSolution>
+
+
+
+---
+
+### Question 6 of 8
+
+Which of the following risks apply to function `investToken`?
+
+<ul>
+  <li><input type="checkbox" /> A. Reentrancy (that can lead to attacker profits) </li>
+  <li><input type="checkbox" /> B. Lack of accounting for tokens with non-standard decimals </li>
+  <li><input type="checkbox" /> C. Denial of service / burning of funds </li>
+  <li><input type="checkbox" /> D. Front-running attacks of legitimate calls </li>
+</ul>
+
+<HiddenSolution>
+**Correct is B, C.**
+
+**A**: See explanation for **D** in solution of **Question 2**.
+
+**B**: The Merkle Tree determines the amount of tokens that may be sent to each investor. These approved amounts are valid across tokens, without taking into account that different tokens may have different decimals.
+
+> *"A third issue is that the approval in the Merkle tree is for an amount, independent of token decimals, and uniform across tokens. Also that the same Merkle leaf can be reused. These are logic issues that may not be important in real use. E.g., amounts may always be MAX_UINT in practice. Still, this makes (B) a valid additional choice for question Q6. (Though (C) is the answer one definitely expects to see in this question.)"* ~Yannis
+
+**C**: See explanation for **D** in solution of **Question 1**.
+
+**D**: See explanation for **B** in solution of **Question 1**.
+</HiddenSolution>
+
+
+---
+
+### Question 7 of 8
+
+The Merkle tree use in function `investToken`
+
+<ul>
+  <li><input type="checkbox" /> A. Is safe </li>
+  <li><input type="checkbox" /> B. Is problematic because of the use of encodePacked </li>
+  <li><input type="checkbox" /> C. Is problematic if an old version of the OZ libraries is used </li>
+  <li><input type="checkbox" /> D. Is problematic because of being able to cause false verification </li>
+</ul>
+
+<HiddenSolution>
+**Correct is D.**
+
+The use of `encodePacked()` on its own is not problematic in this instance. We have no information which OpenZeppelin library version is used.
+
+See detailed explanation for **D** in solution of **Question 1**.
+</HiddenSolution>
+
+
+
+---
+
+### Question 8 of 8
+
+The use of storage pointers in this code
+
+<ul>
+  <li><input type="checkbox" /> A. Is largely inefficient, causing many extra storage loads </li>
+  <li><input type="checkbox" /> B. Can be safely replaced with `memory` annotations for the same variables everywhere </li>
+  <li><input type="checkbox" /> C. Is relatively ok, perhaps with minor inefficiencies </li>
+  <li><input type="checkbox" /> D. Is dangerous and error-prone</li>
+</ul>
+
+<HiddenSolution>
+**Correct is C.**
+
+The `PoolState` struct packs both `deposited` and `invested` into a single storage slot. This causes minor inefficiencies when unpacking and separating the data after loading the slot when only one of them was necessary. It would be more inefficient to load two separate storage slots when both attributes of `PoolState` need to be accessed.
+
+```plaintext
+PoolState storage tokenPoolState = totalState[_token];
+tokenPoolState.deposited += uint128(actualAmountDeposited);
+```
+
+Replacing `storage` with `memory` here would not update the actual value within storage.
+
+> *"I don't see anything problematic with storage patterns in general, if used correctly, and they are used correctly here. The risk with storage patterns is aliasing (different expressions for the same storage location) and here we have nothing like that."*
+</HiddenSolution>
+
+
+
+---

@@ -8,11 +8,8 @@ import Head from 'next/head'
 import thumbnail from './thumbnail.jpg'
 
 <Head>
-  <meta name="twitter:creator" content="@parickd_de" />
-  <meta name="twitter:creator:id" content="493540838" />
   <meta name="twitter:image" content={thumbnail.src} />
-  <meta name="og:image" content={thumbnail.src} />
-  <meta name="twitter:card" content="summary_large_image" />
+  <meta property="og:image" content={thumbnail.src} />
 </Head>
 
 <div className="grid grid-cols-2 gap-2">
@@ -544,6 +541,11 @@ The exploited issue was described as an implementation error that allowed forgin
   3. Attacker creates tx#2, in which he spends his existing coin, and as output he puts the coin generated in step 2
   4. Attacker populates the tx#2
   5. Attacker populates tx#1 and it passes 
+
+lelantus bug: "something like generate coin A, coin B, then set up the state as if both were minted (but mine only one mint), then spend the second coin using the forged state"
+
+"And yes, it's the case that Spark doesn't need or use internal counters to maintain state
+Coins are instantiated using random nonces that the recipient recovers as part of its detection and correctness checks"
 
   So including the anonymity set hash in the OOOMP transcript prevents creating a proof without having the actual spending coin in the set.
 </Callout>

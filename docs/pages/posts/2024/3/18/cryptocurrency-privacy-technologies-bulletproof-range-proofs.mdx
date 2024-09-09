@@ -5,11 +5,11 @@
 import { Callout } from 'nextra/components'
 import { R, Reference, References } from '@components/references'
 import Head from 'next/head'
-import thumbnail from './thumbnail.jpg'
+import banner from './banner.jpg'
 
 <Head>
-  <meta name="twitter:image" content={'https://ventral.digital' + thumbnail.src} />
-  <meta name="og:image" content={'https://ventral.digital' + thumbnail.src} />
+  <meta property="og:image" content={'https://ventral.digital' + banner.src} />
+  <meta name="twitter:image" content={'https://ventral.digital' + banner.src} />
 </Head>
 
 In this article, we explore how "Bulletproofs"<R reference="1" /> can achieve short and efficient Zero-Knowledge Range Proofs of values within blinded commitments. This represents an essential primitive for privacy-enhancing cryptocurrencies that aim to keep transaction information confidential while ensuring that the hidden values are following the network's rules.

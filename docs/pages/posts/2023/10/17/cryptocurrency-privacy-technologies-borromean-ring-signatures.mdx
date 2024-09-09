@@ -2,6 +2,14 @@
 
 <p className="text-xs text-right">October 18, 2023 by [patrickd](/about#patrickd)</p>
 
+import Head from 'next/head'
+import banner from './banner.jpg'
+
+<Head>
+  <meta property="og:image" content={'https://ventral.digital' + banner.src} />
+  <meta name="twitter:image" content={'https://ventral.digital' + banner.src} />
+</Head>
+
 Despite being regularly referred to as "anonymous Internet money", the ledgers of the most widely adopted cryptocurrencies are completely public. Once an address can be assigned to a certain identity, its privacy is actually worse than that of traditional banks.
 
 Building up to technologies that enable private cryptocurrencies, the [previous article](/posts/2023/9/27/cryptocurrency-privacy-technologies-ring-signatures) focused on the first version of the Ring Signature primitive. This article investigates a more modern variation called Borromean Ring Signatures, which is one of the main building blocks of Bitcoin's Confidential Transactions proposal. Borromean Rings, in case you're unfamiliar, refer to loops that are linked to each other as if they are a knot; But as soon as a single Ring is removed, the entire structure falls apart. You'll see that this metaphor is indeed fitting...

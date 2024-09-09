@@ -3,11 +3,11 @@
 <p className="text-xs text-right">November 1, 2023 by [patrickd](/about#patrickd)</p>
 
 import Head from 'next/head'
-import thumbnail from './thumbnail.jpg'
+import banner from './banner.jpg'
 
 <Head>
-  <meta name="twitter:image" content={thumbnail.src} />
-  <meta name="og:image" content={thumbnail.src} />
+  <meta property="og:image" content={'https://ventral.digital' + banner.src} />
+  <meta name="twitter:image" content={'https://ventral.digital' + banner.src} />
 </Head>
 
 Despite being regularly referred to as "anonymous Internet money", the ledgers of the most widely adopted cryptocurrencies are completely public. Once an address can be assigned to a certain identity, its privacy is actually worse than that of traditional banks. In this series, we explored various technologies that aim to improve this situation, and in this article, it's all coming together for a practical solution.

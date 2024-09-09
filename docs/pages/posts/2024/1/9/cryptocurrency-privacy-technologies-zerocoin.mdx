@@ -7,11 +7,11 @@ import { Tabs } from 'nextra/components'
 import { Timeline, Year } from '@components/timeline'
 import { R, Reference, References } from '@components/references'
 import Head from 'next/head'
-import thumbnail from './thumbnail.jpg'
+import banner from './banner.jpg'
 
 <Head>
-  <meta name="twitter:image" content={thumbnail.src} />
-  <meta name="og:image" content={thumbnail.src} />
+  <meta property="og:image" content={'https://ventral.digital' + banner.src} />
+  <meta name="twitter:image" content={'https://ventral.digital' + banner.src} />
 </Head>
 
 export function DetailBox({ title, children }) {

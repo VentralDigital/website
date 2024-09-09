@@ -2,6 +2,14 @@
 
 <p className="text-xs text-right">March 24, 2023 by [patrickd](/about#patrickd)</p>
 
+import Head from 'next/head'
+import banner from './banner.jpg'
+
+<Head>
+  <meta property="og:image" content={'https://ventral.digital' + banner.src} />
+  <meta name="twitter:image" content={'https://ventral.digital' + banner.src} />
+</Head>
+
 ![Tech-Tree diagram of Blind Signatures](./crypto-tech-diagram-blind-signatures.jpg)
 
 Despite being regularly referred to as "anonymous Internet money", the ledgers of the most widely adopted cryptocurrencies are completely public. Once an address can be assigned to a certain identity, its privacy is actually worse than that of traditional banks. This article explores one of the first technologies ever proposed to enhance the privacy features of digital currencies.

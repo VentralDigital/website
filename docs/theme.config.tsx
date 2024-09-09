@@ -47,6 +47,8 @@ const config: DocsThemeConfig = {
         <meta property="og:title" content={title ? title + ' • Ventral Digital' : 'Ventral Digital'}/>
         <meta property="og:image:alt" content={title ? 'Banner for blog post on Ventral Digital titled ' + title : 'Banner for blog post on Ventral Digital'} />
         <meta property="og:image" content="https://ventral.digital/og.png" />
+        <meta property="og:image:width" content="1200" />
+        <meta property="og:image:height" content="630" />
         <meta name="twitter:card" content="summary_large_image" />
         <meta name="twitter:description" content="Ventral Digital LLC is a research and consultancy firm specializing in Information Security and Privacy."/>
         <meta name="twitter:site:domain" content="ventral.digital" />
@@ -56,6 +58,8 @@ const config: DocsThemeConfig = {
         <meta name="twitter:title" content={title ? title + ' • Ventral Digital' : 'Ventral Digital'}/>
         <meta name="twitter:image:alt" content={title ? 'Banner for blog post on Ventral Digital titled ' + title : 'Banner for blog post on Ventral Digital'} />
         <meta name="twitter:image" content="https://ventral.digital/og.png" />
+        <meta name="twitter:image:width" content="1200" />
+        <meta name="twitter:image:height" content="630" />
         <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
         <link rel="icon" href="/favicon.png" type="image/png" />
         <link rel="icon" href="/favicon-dark.svg" type="image/svg+xml" media="(prefers-color-scheme: dark)"/>

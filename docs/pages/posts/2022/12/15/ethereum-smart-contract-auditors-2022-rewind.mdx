@@ -2,6 +2,14 @@
 
 <p className="text-xs text-right">December 15, 2022 by [patrickd](/about#patrickd)</p>
 
+import Head from 'next/head'
+import banner from './banner.jpg'
+
+<Head>
+  <meta property="og:image" content={'https://ventral.digital' + banner.src} />
+  <meta name="twitter:image" content={'https://ventral.digital' + banner.src} />
+</Head>
+
 This article is the result of reviewing the technical details from many of this year's Smart Contract Vulnerabilities and Exploits in and around the Ethereum ecosystem.
 
 

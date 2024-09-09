@@ -3,11 +3,11 @@
 <p className="text-xs text-right">January 19, 2024 by [patrickd](/about#patrickd)</p>
 
 import Head from 'next/head'
-import thumbnail from './thumbnail.jpg'
+import banner from './banner.jpg'
 
 <Head>
-  <meta name="twitter:image" content={thumbnail.src} />
-  <meta name="og:image" content={thumbnail.src} />
+  <meta property="og:image" content={'https://ventral.digital' + banner.src} />
+  <meta name="twitter:image" content={'https://ventral.digital' + banner.src} />
 </Head>
 
 Welcome to the 2023 Auditor's Rewind where you find technical, no-bs, descriptions on many of last year's security incidents. Unless noteworthy, we'll spare you with the numbers behind the hacks, the losses, and the drama. Instead, this article has a simple goal: Provide you with the information that would've allowed you to identify the issues during a security review or bug hunting. [Last year's rewind](/posts/2022/12/15/ethereum-smart-contract-auditors-2022-rewind/) was released as a Christmas present, but that led to various post-mortem releases falling outside of it. So this Rewind too will cover a few incidents of 2022 that were missed out on.

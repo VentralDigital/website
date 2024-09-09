@@ -1,6 +1,6 @@
 {
   "index": {
-    "title": "Latest articles",
+    "title": "Blog",
     "display": "hidden",
     "theme": {
       "breadcrumb": true,
@@ -36,6 +36,12 @@
       "pagination": false,
       "timestamp": false
     }
+  },
+  "rss": {
+    "type": "page",
+    "title": "RSS",
+    "href": "/rss.xml",
+    "newWindow": true
   },
   "-- Categories": {
     "type": "separator",

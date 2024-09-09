@@ -58,8 +58,8 @@ const config: DocsThemeConfig = {
         <meta name="twitter:image:alt" content={title ? 'Banner for blog post on Ventral Digital titled ' + title : 'Banner for blog post on Ventral Digital'} />
         <meta name="twitter:card" content="summary_large_image" />
         /* Defaults, may be overridden by specific pages: */
-        <meta property="og:image" content="/og.png" />
-        <meta name="twitter:image" content="/og.png" />
+        <meta property="og:image" content="https://ventral.digital/og.png" />
+        <meta name="twitter:image" content="https://ventral.digital/og.png" />
       </>
     )
   },

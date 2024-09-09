@@ -40,6 +40,7 @@ const config: DocsThemeConfig = {
         <meta name="msapplication-TileColor" content="#fff" />
         <meta name="theme-color" content="#fff" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <meta name="Content-Type" content="text/html; charset=UTF-8" />
         <meta httpEquiv="Content-Language" content="en" />
         <meta property="og:locale" content="en_US" />
         <meta property="og:site_name" content="ventraldigital" />

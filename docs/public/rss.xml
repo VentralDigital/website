@@ -3,7 +3,7 @@
     <title>Ventral Digital</title>
     <link>https://ventral.digital/</link>
     <description>Ventral Digital LLC is a research and consultancy firm specializing in Information Security and Privacy.</description>
-    <lastBuildDate>Sun, 08 Sep 2024 00:00:00 GMT</lastBuildDate>
+    <lastBuildDate>Sun, 01 Oct 2024 00:00:00 GMT</lastBuildDate>
     <docs>https://validator.w3.org/feed/docs/rss2.html</docs>
     <generator>brain.exe</generator>
     <image>
@@ -12,6 +12,17 @@
       <link>https://ventral.digital/</link>
     </image>
     <atom:link href="https://ventral.digital/rss.xml" rel="self" type="application/rss+xml"/>
+    <item>
+      <title>
+      <![CDATA[ RACE #33 Of The Secureum Bootcamp Epoch∞ ]]>
+      </title>
+      <link>https://ventral.digital/posts/2024/10/1/race-33-of-the-secureum-bootcamp-epoch-infinity/</link>
+      <guid>https://ventral.digital/posts/2024/10/1/race-33-of-the-secureum-bootcamp-epoch-infinity/</guid>
+      <pubDate>Sun, 01 Oct 2024 00:00:00 GMT</pubDate>
+      <description>
+      <![CDATA[ This is a Write-Up of RACE-33, Quiz of the Secureum Bootcamp for Ethereum Smart Contract Auditors. This month's RACE was designed by Secureum Mentor George from Consensys Diligence... ]]>
+      </description>
+    </item>
     <item>
       <title>
       <![CDATA[ RACE #32 Of The Secureum Bootcamp Epoch∞ ]]>

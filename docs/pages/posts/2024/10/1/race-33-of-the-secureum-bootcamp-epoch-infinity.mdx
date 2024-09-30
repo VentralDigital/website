@@ -1,0 +1,359 @@
+# RACE #33 Of The Secureum Bootcamp Epoch∞
+
+import { Callout } from 'nextra/components'
+import Head from 'next/head'
+import banner from '../../../../secureum-banner.jpg'
+
+<Head>
+  <meta property="og:image" content={'https://ventral.digital' + banner.src} />
+  <meta name="twitter:image" content={'https://ventral.digital' + banner.src} />
+</Head>
+
+This is a Write-Up of RACE-33, Quiz of the [Secureum Bootcamp](https://twitter.com/0xRajeev/status/1470910752085065731) for Ethereum Smart Contract Auditors. This month's RACE was designed by Secureum Mentor [George](https://x.com/sick_nerdballer) from [Consensys Diligence](https://x.com/ConsenSysAudits).
+
+<Callout type="info">
+  Participants of this quiz had to **answer 8 questions within the strict time limit of 16 minutes**. If you’re reading this in preparation for participating yourself, it’s best to give it a try under the same time limit!
+
+  As usual, I waited for submissions to close before publishing it and, to stay true to the original, I omitted syntax highlighting. Feel free to copy it into your favorite editor, but do so after starting the timer!
+</Callout>
+
+<p className="text-xs text-right">October 1, 2024 by [patrickd](/about#patrickd)</p>
+
+<style jsx>{`
+  input[type=checkbox] {
+    width: 15px;
+    height: 15px;
+  }
+  li {
+    padding: 0.5em;
+  }
+`}</style>
+
+export function HiddenSolution({ children }) {
+  return (
+    <details closed className="last-of-type:mb-0 rounded-lg bg-neutral-50 dark:bg-neutral-800 p-2 mt-4">
+      <summary>
+        <strong className="text-lg">Solution</strong>
+      </summary>
+      <div className="nx-p-2">{children}</div>
+    </details>
+  )
+}
+
+---
+
+### Code
+
+<Callout type="info">
+All 8 questions are based on the following contract for a custom token implementation.
+
+At first, the contract mints the intended token total supply (`totalSupplyCap`) to the 0-address. Then, the owner transfers those tokens from the 0-address to the signatory addresses in batches as they see fit. Those addresses create signatures that allow users to claim some amounts of tokens. In order to claim those tokens, users need to deposit some ETH into the contract, which will be subtracted from them based on the amount of tokens they are claiming with the signature from signatories. Finally, users will be able to withdraw their deposited ETH after requesting withdrawals with a locking period.
+
+For simplicity, assume that the contract was deployed with `totalSupplyCap=10**6`, and 5 users have already deposited ETH in anticipation of their claims, to a total of 10 ETH.
+
+The ERC20 implementation used (`ERC20_modified.sol`) is a modified version of OpenZeppelin's implementation where 0-address checks have been removed which didn't allow transfers to/from the 0-address without minting/burning respectively. Assume the rest of the functionality, like appropriate modification of `_totalSupply` tracking, has been adjusted as well.
+</Callout>
+
+```plaintext showLineNumbers filename="PrivilegedMintToken.sol"
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+import "contracts/ERC20_modified.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
+
+contract PrivilegedMintToken is ERC20, Ownable {
+    using EnumerableSet for EnumerableSet.AddressSet;
+
+    uint256 public immutable totalSupplyCap;
+    uint256 public mintedSupply;
+    uint256 public tokensPerEthPrice;
+    EnumerableSet.AddressSet private privilegedAddresses;
+
+    mapping(address => uint256) public deposits;
+    mapping(address => uint256) public withdrawals;
+    mapping(address => uint256) public unlockedAt;
+
+    event BalanceUpdated(address indexed user, uint256 newBalance);
+    event Minted(address indexed recipient, uint256 amount);
+    event Deposit(address indexed user, uint256 amount);
+    event Withdrawal(address indexed user, uint256 amount);
+
+    constructor(uint256 _totalSupplyCap) ERC20("PrivilegedMintToken", "PMT") Ownable(msg.sender) payable {
+        totalSupplyCap = _totalSupplyCap;
+        mintedSupply = 0;
+        tokensPerEthPrice = 10**4;
+        mintToSigner(address(0), _totalSupplyCap);
+    }
+
+    function setTokenPrice(uint256 _price) external onlyOwner {
+        tokensPerEthPrice = _price;
+    }
+
+    function mintToSigner(address recipient, uint256 amount) public onlyOwner {
+        if (recipient == address(0)) {
+            _mint(recipient, amount);
+        } else {
+            _transfer(address(0), recipient, amount);
+            mintedSupply += amount;
+        }
+        privilegedAddresses.add(recipient);
+        emit Minted(recipient, amount);
+    }
+
+    function getUserMintAmount(uint256 amount, address user) public view returns (uint256) {
+        uint256 requiredDeposit = amount / tokensPerEthPrice;
+        if (deposits[user] >= requiredDeposit) {
+            return amount;
+        } else {
+            return 0;
+        }
+    }
+
+    function userClaim(address recipient, uint256 amount, bytes32 sigR, bytes32 sigS, uint8 sigV) external {
+        bytes32 messageHash = keccak256(abi.encodePacked(recipient, amount));
+       
+        bytes32 ethSignedMessageHash = keccak256(
+            abi.encodePacked(
+                "\x19Ethereum Signed Message:\n32",
+                messageHash
+            )
+        );
+
+        address recoveredSigner = ecrecover(ethSignedMessageHash, sigV, sigR, sigS);
+        require(privilegedAddresses.contains(recoveredSigner), "Invalid signature");
+
+        uint256 mintAmount = getUserMintAmount(amount, recipient);
+        require(mintAmount > 0, "Insufficient deposit to mint");
+
+        _transfer(recoveredSigner, msg.sender, amount);
+        deposits[msg.sender] -= amount / tokensPerEthPrice;
+
+        emit BalanceUpdated(msg.sender, deposits[msg.sender]);
+        emit Minted(recipient, mintAmount);
+    }
+
+    function deposit() external payable {
+        deposits[msg.sender] += msg.value;
+        unlockedAt[msg.sender] = block.timestamp + 1 days;
+        emit Deposit(msg.sender, msg.value);
+    }
+   
+    function prepareWithdrawal(uint256 amount) external {
+        require(deposits[msg.sender] >= amount, "Insufficient deposit");
+        withdrawals[msg.sender] += amount;
+        unlockedAt[msg.sender] = block.timestamp + 1 days;
+        deposits[msg.sender] -= amount;
+        emit BalanceUpdated(msg.sender, amount);
+    }
+
+    function withdraw(uint256 amount) external {
+        if (unlockedAt[msg.sender] < block.timestamp) {
+            emit Withdrawal(msg.sender, deposits[msg.sender]);
+        }
+        else {
+            revert();
+        }
+        withdrawals[msg.sender] = 0;
+        unlockedAt[msg.sender] = 0;
+        payable(msg.sender).transfer(amount);
+    }
+}
+```
+
+### Question 1 of 8
+
+The signature used to claim tokens by user:
+
+<ul>
+  <li><input type="checkbox" /> A. Is secure because it uses `ecrecover` directly by itself. </li>
+  <li><input type="checkbox" /> B. Is secure from cross-chain attacks because it uses the wrapper `"\x19Ethereum Signed Message:\n32"`. </li>
+  <li><input type="checkbox" /> C. Can be re-used. </li>
+  <li><input type="checkbox" /> D. Is using an outdated hashing mechanism `keccak256` that is not compatible with `ecrecover` after the Paris hardfork. </li>
+</ul>
+
+<HiddenSolution>
+**Correct is C.**
+
+**A**: Arguably the opposite is true, there are some intricacies that should be considered when making use of the [`ecrecover()` precompile](https://www.evm.codes/precompiled?fork=cancun#0x01). It's recommended to make use of a library such as [OpenZeppelin's ECDSA](https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/utils/cryptography/ECDSA.sol) contract which takes care of them. Also consider the [SignatureVerification](https://github.com/Uniswap/permit2/blob/main/src/libraries/SignatureVerification.sol) contract of Permit2, which offers a more condensed handling.
+
+**B**: This wrapper alone offers no protection against cross-chain attacks between Ethereum-based chains. Furthermore, the contract does not make use of [EIP712](https://eips.ethereum.org/EIPS/eip-712) for structuring the signed data, allowing replay attacks due to a lack of chain ID, target address, etc, especially with such a simple (recipient, amount) pair being signed.
+
+**C**: Not only can the signature be re-played in other places, the same signature can also be re-used multiple times within this contract as it lacks any checks of a nonce, or any other type of logic that would mark a signature as having been redeemed.
+
+**D**: The `keccak256` function is the generally recommended hashing mechanism within Ethereum, and there's no compatibility issue using it with `ecrecover`.
+</HiddenSolution>
+
+---
+
+### Question 2 of 8
+
+The signer address recovery process:
+
+<ul>
+  <li><input type="checkbox" /> A. Will always retrieve the correct signer of the message. </li>
+  <li><input type="checkbox" /> B. Can retrieve a 0-address as the recovered signer address. </li>
+  <li><input type="checkbox" /> C. Can retrieve a random/uncontrolled address as the recovered signer address. </li>
+  <li><input type="checkbox" /> D. Is missing a parameter `z` from the signature to retrieve the signer address. </li>
+</ul>
+
+<HiddenSolution>
+**Correct is B, C.**
+
+**B**: If the signature is mathematically incorrect preventing any public key, and from that, address to be recovered, the `ecrecover()` function does not revert. Instead it simply returns the 0-address. Instead of handling that as an error it continues on as if the 0-address itself is the legitimate signer. This 0-address contains all of the initial supply and is also part of the privileged addresses.
+
+**A/C**: It is however possible to construct a signature that can be processed (the math works) but returns arbitrary and unpredictable addresses as the supposed signer. Looking at the [Applied Elliptic Curve Cryptography](/posts/2023/8/22/applied-elliptic-curve-cryptography/#ecdsa) article on ECDSA you can see that nothing is stopping your from choosing random private keys for creating a signature.
+
+**D**: There's no `z` parameter for [`ecrecover`](https://www.evm.codes/precompiled?fork=cancun#0x01).
+
+</HiddenSolution>
+
+
+---
+
+### Question 3 of 8
+
+The users that claim the tokens via `userClaim`:
+
+<ul>
+  <li><input type="checkbox" /> A. Are always part of the signature. </li>
+  <li><input type="checkbox" /> B. Can have their signature transactions front-run. </li>
+  <li><input type="checkbox" /> C. Need to deposit before claiming 1000 tokens. </li>
+  <li><input type="checkbox" /> D. Can control how many tokens they claim in one transaction. </li>
+</ul>
+
+<HiddenSolution>
+**Correct is B.**
+
+**A**: The receiver of the tokens (`msg.sender`) may be different from the address `receiver` specified which is part of the signature. Meaning that the user who is making the claim is not necessarily part of the signature.
+
+**B**: An adversary could indeed monitor the transaction memory pool for calls to `userClaim` and front-run these using that same signature.
+
+**C:**: Claiming 1000 tokens does not actually require a deposit as it will be rounded down to 0. This is due to truncation from integer division at `requiredDeposit = amount / tokensPerEthPrice` with `tokensPerEthPrice = 10**4`.
+
+**D**: The claim amount cannot be directly controlled as it is part of the signature.
+</HiddenSolution>
+
+
+
+---
+
+### Question 4 of 8
+
+The `getUserMintAmount()` function:
+
+<ul>
+  <li><input type="checkbox" /> A. Takes in ETH amount and recipient address as arguments, returns PMT token amount to be minted. </li>
+  <li><input type="checkbox" /> B. Takes in PMT token amount and recipient address as arguments, returns ETH amount to be subtracted from the user balance. </li>
+  <li><input type="checkbox" /> C. Takes in PMT token amount and recipient address as arguments, returns PMT token amount to be minted. </li>
+  <li><input type="checkbox" /> D. Is correctly performing the required deposit calculation that isn’t vulnerable to any rounding issues as it uses a pre-calculated price provided via `tokensPerEthPrice`. </li>
+</ul>
+
+<HiddenSolution>
+**Correct is C.**
+
+**A**: The required amount of ETH is computed within this function, and the deposited amount of ETH is read from storage. It does not take in the ETH amount as argument.
+
+**B**: It does not return an ETH amount to be subtracted, it returns the amount of PMT token to be transferred, if the deposited amount of ETH is sufficient.
+
+**C**: Yes.
+
+**D**: It is vulnerable to rounding errors when small amounts (`amount < tokensPerEthPrice`) are passed.
+</HiddenSolution>
+
+
+
+---
+
+### Question 5 of 8
+
+In the deposit and withdrawal process:
+
+<ul>
+  <li><input type="checkbox" /> A. Users can only withdraw as much as they deposit. </li>
+  <li><input type="checkbox" /> B. The withdrawal process has a re-entrancy issue that can exploit the contract as the transfer occurs before the state update. </li>
+  <li><input type="checkbox" /> C. Users need to perform a deposit, then request withdrawal, and only then can receive any funds from the contract. </li>
+  <li><input type="checkbox" /> D. None of the above. </li>
+</ul>
+
+<HiddenSolution>
+**Correct is D.**
+
+**A/C**: Assuming the `unlockedAt` timestamp has expired, a user can call `withdraw()` directly without previously calling `prepareWithdraw()`, allowing them to obtain arbitrary amounts. This is works because the withdrawals amount is re-set to 0 instead of subtracting the withdrawal amount from it, which would cause a revert from integer underflow protection if a user attempts to withdraw more than deposited.
+
+**B**: No, the external call (via `transfer()`) is made at the end of the function when state updates have already happened (Checks-Effects-Interactions pattern followed).
+
+</HiddenSolution>
+
+
+
+---
+
+### Question 6 of 8
+
+The events are:
+
+<ul>
+  <li><input type="checkbox" /> A. Correctly emitted for all `Deposit` events. </li>
+  <li><input type="checkbox" /> B. Correctly emitted for all `Withdrawal` events. </li>
+  <li><input type="checkbox" /> C. Correctly emitted for all `BalanceUpdated` events. </li>
+  <li><input type="checkbox" /> D. Correctly emitted for all `Minted` events. </li>
+</ul>
+
+<HiddenSolution>
+**Correct is A.**
+</HiddenSolution>
+
+
+---
+
+### Question 7 of 8
+
+Assuming there are no vulnerabilities, the owner:
+
+<ul>
+  <li><input type="checkbox" /> A. Cannot mint more tokens than is defined by variable `totalSupplyCap`. </li>
+  <li><input type="checkbox" /> B. Receives all spent deposits to their owner address directly. </li>
+  <li><input type="checkbox" /> C. Can change the price of the token. </li>
+  <li><input type="checkbox" /> D. Can retrieve any user funds from the contract. </li>
+</ul>
+
+<HiddenSolution>
+**Correct is C.**
+
+**A**: Owner can mint past `_totalSupplyCap` by executing `mintToSigner` to 0-address again.
+
+**B**: The owner address is only used for authentication purposes, never receives deposits directly.
+
+**C**: Yes, via the `setTokenPrice()` function.
+
+**D**: With the assumption that the vulnerability within `withdraw()` has been fixed, no.
+</HiddenSolution>
+
+
+
+---
+
+### Question 8 of 8
+
+The contract:
+
+<ul>
+  <li><input type="checkbox" /> A. Is ERC-20 compliant. </li>
+  <li><input type="checkbox" /> B. Is upgradeable. </li>
+  <li><input type="checkbox" /> C. No longer complies with the ERC-20 standard due to changed function names like `mintToSigner` and `userClaim` instead of mint.  </li>
+  <li><input type="checkbox" /> D. Is not EIP-712 compliant. </li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, D.**
+
+**A/C**: Despite using a modified OpenZeppelin ERC-20 implementation, the contract is still ERC-20 compliant.
+
+**B**: Does not make use of any patterns allowing to upgrade the contract's logic.
+
+**D**: See solution to **Question 1**.
+</HiddenSolution>
+
+
+
+---

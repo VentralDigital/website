@@ -6,6 +6,13 @@ $$
 
 import { ArticleCard, ArticleCards } from '@components/articlecards'
 import { NewsletterIcon, GlobeIcon } from '@components/icons'
+import Head from 'next/head'
+import banner from './secureum-banner.jpg'
+
+<Head>
+  <meta property="og:image" content={'https://ventral.digital' + banner.src} />
+  <meta name="twitter:image" content={'https://ventral.digital' + banner.src} />
+</Head>
 
 ## When is the next bootcamp gonna start?
 
@@ -26,6 +33,12 @@ In 2022, with all of the learning material from Epoch 0 already available, Epoch
 ## Write-Ups
 
 <ArticleCards>
+  <ArticleCard
+    icon={<NewsletterIcon />}
+    title="RACE #33 Of The Secureum Bootcamp Epoch∞"
+    subtitle="October 1, 2024 by patrickd"
+    href="/posts/2024/10/1/race-33-of-the-secureum-bootcamp-epoch-infinity/"
+  />
   <ArticleCard
     icon={<NewsletterIcon />}
     title="RACE #32 Of The Secureum Bootcamp Epoch∞"

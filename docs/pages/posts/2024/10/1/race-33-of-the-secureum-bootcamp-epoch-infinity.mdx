@@ -228,7 +228,7 @@ The users that claim the tokens via `userClaim`:
 
 **B**: An adversary could indeed monitor the transaction memory pool for calls to `userClaim` and front-run these using that same signature.
 
-**C:**: Claiming 1000 tokens does not actually require a deposit as it will be rounded down to 0. This is due to truncation from integer division at `requiredDeposit = amount / tokensPerEthPrice` with `tokensPerEthPrice = 10**4`.
+**C**: Claiming 1000 tokens does not actually require a deposit as it will be rounded down to 0. This is due to truncation from integer division at `requiredDeposit = amount / tokensPerEthPrice` with `tokensPerEthPrice = 10**4`.
 
 **D**: The claim amount cannot be directly controlled as it is part of the signature.
 </HiddenSolution>
@@ -278,7 +278,7 @@ In the deposit and withdrawal process:
 <HiddenSolution>
 **Correct is D.**
 
-**A/C**: Assuming the `unlockedAt` timestamp has expired, a user can call `withdraw()` directly without previously calling `prepareWithdraw()`, allowing them to obtain arbitrary amounts. This is works because the withdrawals amount is re-set to 0 instead of subtracting the withdrawal amount from it, which would cause a revert from integer underflow protection if a user attempts to withdraw more than deposited.
+**A/C**: Because the `unlockedAt` timestamp is zero-initialized for users that have never made a deposit, they can simply call `withdraw()` directly without previously calling `prepareWithdraw()`, allowing them to obtain arbitrary amounts because it will satisfy `unlockedAt[msg.sender] < block.timestamp`. This is works because the `withdrawals` amount is re-set to 0 instead of subtracting the amount being withdrawn from it, which would cause a revert from integer underflow protection if a user attempted to withdraw more than deposited.
 
 **B**: No, the external call (via `transfer()`) is made at the end of the function when state updates have already happened (Checks-Effects-Interactions pattern followed).
 

@@ -247,3 +247,18 @@ Since decimals was defined as `uint` (same as `uint256`) and not as `uint8` as E
 
 ---
 
+import { Card, Cards } from 'nextra/components'
+import { NewsletterIcon } from '@components/icons'
+
+<Cards>
+  <Card
+    icon={<NewsletterIcon />}
+    title="← Secureum Bootcamp Security Pitfalls & Best Practices 101 Quiz"
+    href="/posts/2021/11/7/secureum-bootcamp-security-pitfalls-amp-best-practices-101-quiz/"
+  />
+  <Card
+    icon={<NewsletterIcon />}
+    title="Secureum Bootcamp Audit Techniques & Tools 101 Quiz →"
+    href="/posts/2021/11/21/secureum-bootcamp-audit-techniques-tools-101-quiz"
+  />
+</Cards>

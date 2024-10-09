@@ -1,7 +1,13 @@
 # RACE #20 Of The Secureum Bootcamp Epoch∞
 
 import { Callout } from 'nextra/components'
+import Head from 'next/head'
+import banner from '../../../../secureum-banner.jpg'
 
+<Head>
+  <meta property="og:image" content={'https://ventral.digital' + banner.src} />
+  <meta name="twitter:image" content={'https://ventral.digital' + banner.src} />
+</Head>
 This is a Write-Up of RACE-12, Quiz of the [Secureum Bootcamp](https://twitter.com/0xRajeev/status/1470910752085065731) for Ethereum Smart Contract Auditors.   This one was designed by none other than [Hari (@hrkrshnn)](https://twitter.com/_hrkrshnn), Secureum Mentor and Co-Founder of Spearbit. With his background in working on the Solidity compiler this one was sure to be a doozy…
 
 <Callout type="info">
@@ -387,8 +393,8 @@ import { NewsletterIcon } from '@components/icons'
 <Cards>
   <Card
     icon={<NewsletterIcon />}
-    title="← Secureum A-MAZE-X CTF 2023 At DeFi Security Summit"
-    href="/posts/2023/7/16/secureum-a-maze-x-ctf-2023-at-defi-security-summit/"
+    title="← RACE #19 Of The Secureum Bootcamp Epoch∞"
+    href="/posts/2023/7/3/race-19-of-the-secureum-bootcamp-epoch-infinity/"
   />
   <Card
     icon={<NewsletterIcon />}

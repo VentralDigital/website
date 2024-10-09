@@ -3,7 +3,13 @@
 This is a writeup of the [Secureum Bootcamp Security Pitfalls & Best Practices 201 Quiz](https://secureum.substack.com/p/secureum-bootcamp-for-smart-contract) containing solutions and references to the provided study material.
 
 import { Callout } from 'nextra/components'
+import Head from 'next/head'
+import banner from '../../../../secureum-banner.jpg'
 
+<Head>
+  <meta property="og:image" content={'https://ventral.digital' + banner.src} />
+  <meta name="twitter:image" content={'https://ventral.digital' + banner.src} />
+</Head>
 <Callout type="info">
   For fairness, it was published after submissions to it were closed. **All questions are concerning the same snippet of code. No syntax highlighting or indentation was used in the original quiz, so it was skipped here as well. Make sure to read code comments carefully.** The quiz consisted of 8 questions with a strict timelimit of 16 minutes. The ordering of the questions was randomized, so the numbering here won’t match with the numbering elsewhere.
 </Callout>
@@ -254,13 +260,13 @@ import { NewsletterIcon } from '@components/icons'
   <Card
     icon={<NewsletterIcon />}
 
-    title="← Secureum Bootcamp Solidity 201 Quiz"
-    href="/posts/2021/10/30/secureum-bootcamp-solidity-201-quiz/"
+    title="← Secureum Bootcamp Security Pitfalls & Best Practices 101 Quiz"
+    href="/posts/2021/11/7/secureum-bootcamp-security-pitfalls-amp-best-practices-101-quiz/"
   />
   <Card
     icon={<NewsletterIcon />}
-    title="Secureum Bootcamp Security Pitfalls & Best Practices 201 Quiz →"
-    href="/posts/2021/11/14/secureum-bootcamp-security-pitfalls-amp-best-practices-201-quiz"
+    title="Secureum Bootcamp Audit Findings 101 Quiz →"
+    href="/posts/2021/11/28/secureum-bootcamp-audit-findings-101-quiz"
 
 
   />

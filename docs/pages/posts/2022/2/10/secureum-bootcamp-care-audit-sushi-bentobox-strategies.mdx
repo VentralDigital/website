@@ -1,5 +1,11 @@
 # Secureum Bootcamp CARE: Sushi's BentoBox Strategies
+import Head from 'next/head'
+import banner from '../../../../secureum-banner.jpg'
 
+<Head>
+  <meta property="og:image" content={'https://ventral.digital' + banner.src} />
+  <meta name="twitter:image" content={'https://ventral.digital' + banner.src} />
+</Head>
 <p className="text-xs text-right">February 10, 2022 by [patrickd](/about#patrickd)</p>
 
 This report is the result of [Secureum Bootcamp's Epoch 0, second phase](https://secureum.substack.com/p/secureum-bootcamp-for-smart-contract), CARE (Comprehensive Audit Readiness Evaluation) which is intended as a way to improve a project's security stance in preparation for an Audit, allowing Auditors to spend more time looking for critical issues. As such, this review centers mostly around the [Security 201 Pitfalls](https://secureum.substack.com/p/security-pitfalls-and-best-practices-101) & [Best Practices](https://secureum.substack.com/p/security-pitfalls-and-best-practices-201) that were taught during the Bootcamp. Despite that, and the fact that the review is done by me alone, this is still a best-effort approach to find as many issues beyond that as possible.

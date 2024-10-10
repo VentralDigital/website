@@ -1,7 +1,13 @@
 # RACE #29 Of The Secureum Bootcamp Epoch∞
 
 import { Callout } from 'nextra/components'
+import Head from 'next/head'
+import banner from '../../../../secureum-banner.jpg'
 
+<Head>
+  <meta property="og:image" content={'https://ventral.digital' + banner.src} />
+  <meta name="twitter:image" content={'https://ventral.digital' + banner.src} />
+</Head>
 <Callout type="info">
   This is a mirror of a Write-Up on RACE-29, Quiz of the [Secureum Bootcamp](https://twitter.com/0xRajeev/status/1470910752085065731) for Ethereum Smart Contract Auditors. It was designed by Secureum Mentor [Dimitri Kamenski (aka kamensec)](https://twitter.com/kamensec), from [Sigma Prime](https://twitter.com/sigp_io).
 
@@ -427,3 +433,21 @@ More resources on 'Liquidation Math'?
 >Hope you learned something from the process on my audit workflow, crush ur next lending protocol for me!
 >
 >[@kaminsec](https://twitter.com/kamensec)
+
+---
+
+import { Card, Cards } from 'nextra/components'
+import { NewsletterIcon } from '@components/icons'
+
+<Cards>
+  <Card
+    icon={<NewsletterIcon />}
+    title="← RACE #28 Of The Secureum Bootcamp Epoch∞"
+    href="/posts/2024/4/2/race-28-of-the-secureum-bootcamp-epoch-infinity/"
+  />
+  <Card
+    icon={<NewsletterIcon />}
+    title="RACE #30 Of The Secureum Bootcamp Epoch∞ →"
+    href="/posts/2024/6/24/race-30-of-the-secureum-bootcamp-epoch-infinity"
+  />
+</Cards>

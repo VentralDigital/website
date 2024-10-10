@@ -3,7 +3,13 @@
 This is a writeup of the [Secureum Bootcamp Solidity 201 Quiz](https://secureum.substack.com/p/secureum-bootcamp-for-smart-contract) containing solutions and references to the provided study material.
 
 import { Callout } from 'nextra/components'
+import Head from 'next/head'
+import banner from '../../../../secureum-banner.jpg'
 
+<Head>
+  <meta property="og:image" content={'https://ventral.digital' + banner.src} />
+  <meta name="twitter:image" content={'https://ventral.digital' + banner.src} />
+</Head>
 <Callout type="info">
   For fairness, it was published after submissions to it were closed. The quiz consisted of 32 questions with a strict timelimit of 16 minutes. The ordering of the questions was randomized, so the numbering here won’t match with the numbering elsewhere.
 </Callout>
@@ -822,3 +828,19 @@ from point 159.1 of [Solidity 201 - by Secureum](https://secureum.substack.com/p
 </HiddenSolution>
 
 ---
+
+import { Card, Cards } from 'nextra/components'
+import { NewsletterIcon } from '@components/icons'
+
+<Cards>
+  <Card
+    icon={<NewsletterIcon />}
+    title="← Secureum Bootcamp Solidity 101 Quiz"
+    href="/posts/2021/10/24/secureum-bootcamp-solidity-101-quiz/"
+  />
+  <Card
+    icon={<NewsletterIcon />}
+    title="Secureum Bootcamp Security Pitfalls & Best Practices 101 Quiz →"
+    href="/posts/2021/11/7/secureum-bootcamp-security-pitfalls-amp-best-practices-101-quiz"
+  />
+</Cards>

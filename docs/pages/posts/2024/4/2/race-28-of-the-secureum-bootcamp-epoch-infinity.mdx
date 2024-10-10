@@ -1,7 +1,13 @@
 # RACE #28 Of The Secureum Bootcamp Epoch∞
 
 import { Callout } from 'nextra/components'
+import Head from 'next/head'
+import banner from '../../../../secureum-banner.jpg'
 
+<Head>
+  <meta property="og:image" content={'https://ventral.digital' + banner.src} />
+  <meta name="twitter:image" content={'https://ventral.digital' + banner.src} />
+</Head>
 This is a Write-Up of RACE-28, Quiz of the [Secureum Bootcamp](https://twitter.com/0xRajeev/status/1470910752085065731) for Ethereum Smart Contract Auditors. It was designed by our recently joined Secureum Mentor [Palina](https://twitter.com/palinatolmach), Research and Verification Engineer at [Runtime Verification Inc](https://twitter.com/rv_inc).
 
 <Callout type="info">
@@ -305,3 +311,19 @@ What are the issues with the underlying ERC20 token integration in the ERC4626Va
 </HiddenSolution>
 
 ---
+
+import { Card, Cards } from 'nextra/components'
+import { NewsletterIcon } from '@components/icons'
+
+<Cards>
+  <Card
+    icon={<NewsletterIcon />}
+    title="← RACE #27 Of The Secureum Bootcamp Epoch∞"
+    href="/posts/2024/3/4/race-27-of-the-secureum-bootcamp-epoch-infinity/"
+  />
+  <Card
+    icon={<NewsletterIcon />}
+    title="RACE #29 Of The Secureum Bootcamp Epoch∞ →"
+    href="/posts/2024/5/15/race-29-of-the-secureum-bootcamp-epoch-infinity"
+  />
+</Cards>

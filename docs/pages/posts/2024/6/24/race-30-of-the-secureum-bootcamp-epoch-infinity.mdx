@@ -1,7 +1,13 @@
 # RACE #30 Of The Secureum Bootcamp Epoch∞
 
 import { Callout } from 'nextra/components'
+import Head from 'next/head'
+import banner from '../../../../secureum-banner.jpg'
 
+<Head>
+  <meta property="og:image" content={'https://ventral.digital' + banner.src} />
+  <meta name="twitter:image" content={'https://ventral.digital' + banner.src} />
+</Head>
 This is a Write-Up of RACE-30, Quiz of the [Secureum Bootcamp](https://twitter.com/0xRajeev/status/1470910752085065731) for Ethereum Smart Contract Auditors. This month's RACE was created by Secureum Mentor [Josselin Feist](https://x.com/Montyly), engineering director at [Trail of Bits](https://x.com/trailofbits).
 
 <Callout type="info">
@@ -310,3 +316,19 @@ Assuming correct code, it must be the option where k increases thanks to collect
 
 
 ---
+
+import { Card, Cards } from 'nextra/components'
+import { NewsletterIcon } from '@components/icons'
+
+<Cards>
+  <Card
+    icon={<NewsletterIcon />}
+    title="← RACE #29 Of The Secureum Bootcamp Epoch∞"
+    href="/posts/2024/5/15/race-29-of-the-secureum-bootcamp-epoch-infinity/"
+  />
+  <Card
+    icon={<NewsletterIcon />}
+    title="RACE #31 Of The Secureum Bootcamp Epoch∞ →"
+    href="/posts/2024/7/30/race-31-of-the-secureum-bootcamp-epoch-infinity"
+  />
+</Cards>

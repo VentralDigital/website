@@ -316,7 +316,13 @@ Based on this new information, we now have to do the following to build on the p
 If you were paying attention, you should've noticed by now that I made an incorrect assumption right at the beginning: I assumed that the exploiter wouldn't be the owner – why would he be, right? If that were the case we could just call self-destruct on everything without anything stopping us. Well, the reason why that is the case, is that this challenge is supposed to reflect what happened during the [Tornado Cash hack](https://neptunemutual.com/blog/understanding-tornado-cash-exploit/) and how the exploiter gained control via the governance that the contracts were deployed with. Admittedly, that isn't quite well reflected here, it would be too complex to do so.
 
 import { Callout } from 'nextra/components'
+import Head from 'next/head'
+import banner from '../../../../secureum-banner.jpg'
 
+<Head>
+  <meta property="og:image" content={'https://ventral.digital' + banner.src} />
+  <meta name="twitter:image" content={'https://ventral.digital' + banner.src} />
+</Head>
 <Callout>
   Note that more comments were added to the setup now to make it more obvious who the owner is
 </Callout>

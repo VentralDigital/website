@@ -1,7 +1,13 @@
 # RACE #15 Of The Secureum Bootcamp Epoch∞
 
 import { Callout } from 'nextra/components'
+import Head from 'next/head'
+import banner from '../../../../secureum-banner.jpg'
 
+<Head>
+  <meta property="og:image" content={'https://ventral.digital' + banner.src} />
+  <meta name="twitter:image" content={'https://ventral.digital' + banner.src} />
+</Head>
 This is a Write-Up of RACE-15, Quiz of the [Secureum Bootcamp](https://twitter.com/0xRajeev/status/1470910752085065731) for Ethereum Smart Contract Auditors.  It was designed by Secureum Mentor [Nurit Dor](https://twitter.com/NuritDor) from [Certora](https://twitter.com/CertoraInc).
 
 <Callout type="info">
@@ -346,3 +352,19 @@ The symbol `<=>` is called the biconditional operator, meaning that the expressi
 </HiddenSolution>
 
 ---
+
+import { Card, Cards } from 'nextra/components'
+import { NewsletterIcon } from '@components/icons'
+
+<Cards>
+  <Card
+    icon={<NewsletterIcon />}
+    title="← RACE #14 Of The Secureum Bootcamp Epoch∞"
+    href="/posts/2023/1/30/race-14-of-the-secureum-bootcamp-epoch-infinity/"
+  />
+  <Card
+    icon={<NewsletterIcon />}
+    title="RACE #16 Of The Secureum Bootcamp Epoch∞ →"
+    href="/posts/2023/4/1/race-16-of-the-secureum-bootcamp-epoch-infinity"
+  />
+</Cards>

@@ -1,7 +1,13 @@
 # RACE #24 Of The Secureum Bootcamp Epoch∞
 
 import { Callout } from 'nextra/components'
+import Head from 'next/head'
+import banner from '../../../../secureum-banner.jpg'
 
+<Head>
+  <meta property="og:image" content={'https://ventral.digital' + banner.src} />
+  <meta name="twitter:image" content={'https://ventral.digital' + banner.src} />
+</Head>
 <Callout type="info">
   This is a mirror of a Write-Up on RACE-24, Quiz of the [Secureum Bootcamp](https://twitter.com/0xRajeev/status/1470910752085065731) for Ethereum Smart Contract Auditors. It was designed by Secureum Mentor [Vahe (aka k3mmio)](https://twitter.com/k3mmio), from [hexens](https://twitter.com/hexensio).
 
@@ -581,3 +587,19 @@ The query joins Contracts and Functions tables based on ContractID. It filters f
 </HiddenSolution>
 
 ---
+
+import { Card, Cards } from 'nextra/components'
+import { NewsletterIcon } from '@components/icons'
+
+<Cards>
+  <Card
+    icon={<NewsletterIcon />}
+    title="← RACE #23 Of The Secureum Bootcamp Epoch∞"
+    href="/posts/2023/11/8/race-23-of-the-secureum-bootcamp-epoch-infinity/"
+  />
+  <Card
+    icon={<NewsletterIcon />}
+    title="RACE #25 Of The Secureum Bootcamp Epoch∞ →"
+    href="/posts/2024/1/1/race-25-of-the-secureum-bootcamp-epoch-infinity"
+  />
+</Cards>

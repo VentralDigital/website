@@ -1,7 +1,13 @@
 # RACE #12 Of The Secureum Bootcamp Epoch∞
 
 import { Callout } from 'nextra/components'
+import Head from 'next/head'
+import banner from '../../../../secureum-banner.jpg'
 
+<Head>
+  <meta property="og:image" content={'https://ventral.digital' + banner.src} />
+  <meta name="twitter:image" content={'https://ventral.digital' + banner.src} />
+</Head>
 This is a Write-Up of RACE-12, Quiz of the [Secureum Bootcamp](https://twitter.com/0xRajeev/status/1470910752085065731) for Ethereum Smart Contract Auditors.
 
 <Callout type="info">
@@ -310,3 +316,19 @@ The way that `Context`'s `_msgSender()` function has been overridden, it allows 
 </HiddenSolution>
 
 ---
+
+import { Card, Cards } from 'nextra/components'
+import { NewsletterIcon } from '@components/icons'
+
+<Cards>
+  <Card
+    icon={<NewsletterIcon />}
+    title="← RACE #11 Of The Secureum Bootcamp Epoch∞"
+    href="/posts/2022/10/31/race-11-of-the-secureum-bootcamp-epoch/"
+  />
+  <Card
+    icon={<NewsletterIcon />}
+    title="RACE #13 Of The Secureum Bootcamp Epoch∞ →"
+    href="/posts/2023/1/3/race-13-of-the-secureum-bootcamp-epoch"
+  />
+</Cards>

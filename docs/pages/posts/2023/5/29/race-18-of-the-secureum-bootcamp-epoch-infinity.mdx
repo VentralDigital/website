@@ -1,7 +1,13 @@
 # RACE #18 Of The Secureum Bootcamp Epoch∞
 
 import { Callout } from 'nextra/components'
+import Head from 'next/head'
+import banner from '../../../../secureum-banner.jpg'
 
+<Head>
+  <meta property="og:image" content={'https://ventral.digital' + banner.src} />
+  <meta name="twitter:image" content={'https://ventral.digital' + banner.src} />
+</Head>
 This is a Write-Up of RACE-18, Quiz of the [Secureum Bootcamp](https://twitter.com/0xRajeev/status/1470910752085065731) for Ethereum Smart Contract Auditors.   It was designed by Secureum Mentor [Josselin Feist](https://twitter.com/Montyly) from [Trail of Bits](https://twitter.com/trailofbits).
 
 <Callout type="info">
@@ -340,3 +346,19 @@ The `burn` and `_has_enough_balance` functions have the following risks (assumin
 </HiddenSolution>
 
 ---
+
+import { Card, Cards } from 'nextra/components'
+import { NewsletterIcon } from '@components/icons'
+
+<Cards>
+  <Card
+    icon={<NewsletterIcon />}
+    title="← RACE #17 Of The Secureum Bootcamp Epoch∞"
+    href="/posts/2023/5/1/race-17-of-the-secureum-bootcamp-epoch-infinity/"
+  />
+  <Card
+    icon={<NewsletterIcon />}
+    title="RACE #19 Of The Secureum Bootcamp Epoch∞ →"
+    href="/posts/2023/7/3/race-19-of-the-secureum-bootcamp-epoch-infinity"
+  />
+</Cards>

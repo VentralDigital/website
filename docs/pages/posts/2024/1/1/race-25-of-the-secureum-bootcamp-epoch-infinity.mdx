@@ -1,7 +1,13 @@
 # RACE #25 Of The Secureum Bootcamp Epoch∞
 
 import { Callout } from 'nextra/components'
+import Head from 'next/head'
+import banner from '../../../../secureum-banner.jpg'
 
+<Head>
+  <meta property="og:image" content={'https://ventral.digital' + banner.src} />
+  <meta name="twitter:image" content={'https://ventral.digital' + banner.src} />
+</Head>
 This is a Write-Up of RACE-25, Quiz of the [Secureum Bootcamp](https://twitter.com/0xRajeev/status/1470910752085065731) for Ethereum Smart Contract Auditors. It was designed by the Secureum Mentor [Zach Obront](https://twitter.com/tinchoabbate), an Independent Security Researcher and Senior Watson at Sherlock.
 
 <Callout type="info">
@@ -327,3 +333,19 @@ Making this two valid preimages for the magic number 1.
 </HiddenSolution>
 
 ---
+
+import { Card, Cards } from 'nextra/components'
+import { NewsletterIcon } from '@components/icons'
+
+<Cards>
+  <Card
+    icon={<NewsletterIcon />}
+    title="← RACE #24 Of The Secureum Bootcamp Epoch∞"
+    href="/posts/2023/12/17/race-24-of-the-secureum-bootcamp-epoch-infinity/"
+  />
+  <Card
+    icon={<NewsletterIcon />}
+    title="RACE #26 Of The Secureum Bootcamp Epoch∞ →"
+    href="/posts/2024/1/30/race-26-of-the-secureum-bootcamp-epoch-infinity"
+  />
+</Cards>

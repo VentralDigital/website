@@ -6,7 +6,13 @@ Secureum organized a [Capture The Flag Workshop](https://defisecuritysummit.org/
 
 
 import { Callout } from 'nextra/components'
+import Head from 'next/head'
+import banner from '../../../../secureum-banner.jpg'
 
+<Head>
+  <meta property="og:image" content={'https://ventral.digital' + banner.src} />
+  <meta name="twitter:image" content={'https://ventral.digital' + banner.src} />
+</Head>
 <Callout type="warning">
   Note that a few things have changed since the time I solved it. So there might be some discrepancies but the overall Solutions should still be the same.
 </Callout>
@@ -426,12 +432,22 @@ This challenge was a lesson on why to never trust DEX's current prices as a pric
 ---
 
 import { Card, Cards } from 'nextra/components'
-import { FileIcon, NewsletterIcon } from '@components/icons'
+import { NewsletterIcon } from '@components/icons'
 
 <Cards>
   <Card
-    icon={<FileIcon />}
-    title="Secureum A-MAZE-X CTF 2023 At DeFi Security Summit →"
-    href="/posts/2023/7/16/secureum-a-maze-x-ctf-2023-at-defi-security-summit/"
+    icon={<NewsletterIcon />}
+    title="← Secureum Bootcamp Epoch∞ - July RACE #8"
+    href="/posts/2022/7/25/secureum-bootcamp-epoch-july-race-8/"
+  />
+  <Card
+    icon={<NewsletterIcon />}
+    title="Skip-To: Secureum A-MAZE-X CTF 2023 At DeFi Security Summit →"
+    href="/posts/2023/7/16/secureum-a-maze-x-ctf-2023-at-defi-security-summit"
+  />
+  <Card
+    icon={<NewsletterIcon />}
+    title="Secureum Bootcamp Epoch∞ - August RACE #9 →"
+    href="/posts/2022/8/29/secureum-bootcamp-epoch-august-race-9"
   />
 </Cards>

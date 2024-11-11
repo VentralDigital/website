@@ -1,7 +1,13 @@
 # Secureum Bootcamp Epoch∞ - October RACE #10
 
 import { Callout } from 'nextra/components'
+import Head from 'next/head'
+import banner from '../../../../secureum-banner.jpg'
 
+<Head>
+  <meta property="og:image" content={'https://ventral.digital' + banner.src} />
+  <meta name="twitter:image" content={'https://ventral.digital' + banner.src} />
+</Head>
 This is a write-up of the [Secureum Bootcamp Race 10 Quiz of Epoch Infinity](https://twitter.com/0xRajeev/status/1470910752085065731) with solutions.
 
 <Callout type="info">
@@ -311,3 +317,19 @@ The `minted` event's parameters appear to be in the wrong order.
 </HiddenSolution>
 
 ---
+
+import { Card, Cards } from 'nextra/components'
+import { NewsletterIcon } from '@components/icons'
+
+<Cards>
+  <Card
+    icon={<NewsletterIcon />}
+    title="← Secureum Bootcamp Epoch∞ - August RACE #9"
+    href="/posts/2022/8/29/secureum-bootcamp-epoch-august-race-9/"
+  />
+  <Card
+    icon={<NewsletterIcon />}
+    title="RACE #11 Of The Secureum Bootcamp Epoch∞ →"
+    href="/posts/2022/10/31/race-11-of-the-secureum-bootcamp-epoch"
+  />
+</Cards>

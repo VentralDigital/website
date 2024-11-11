@@ -1,7 +1,13 @@
 # RACE #31 Of The Secureum Bootcamp Epoch∞
 
 import { Callout } from 'nextra/components'
+import Head from 'next/head'
+import banner from '../../../../secureum-banner.jpg'
 
+<Head>
+  <meta property="og:image" content={'https://ventral.digital' + banner.src} />
+  <meta name="twitter:image" content={'https://ventral.digital' + banner.src} />
+</Head>
 This is a Write-Up of RACE-31, Quiz of the [Secureum Bootcamp](https://twitter.com/0xRajeev/status/1470910752085065731) for Ethereum Smart Contract Auditors. This month's RACE was designed by [phaze](https://x.com/lovethewired), also known as Kurt, who is a blockchain technology specialist with a strong background in mathematics and recently joined the ranks of Mentors at Secureum.
 
 <Callout type="info">
@@ -464,3 +470,19 @@ In other words, a malicious actor could frontrun a user causing the current reco
 
 
 ---
+
+import { Card, Cards } from 'nextra/components'
+import { NewsletterIcon } from '@components/icons'
+
+<Cards>
+  <Card
+    icon={<NewsletterIcon />}
+    title="← RACE #30 Of The Secureum Bootcamp Epoch∞"
+    href="/posts/2024/6/24/race-30-of-the-secureum-bootcamp-epoch-infinity/"
+  />
+  <Card
+    icon={<NewsletterIcon />}
+    title="RACE #32 Of The Secureum Bootcamp Epoch∞ →"
+    href="/posts/2024/9/8/race-32-of-the-secureum-bootcamp-epoch-infinity"
+  />
+</Cards>

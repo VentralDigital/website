@@ -1,0 +1,369 @@
+# RACE #34 Of The Secureum Bootcamp Epoch∞
+
+import { Callout } from 'nextra/components'
+import Head from 'next/head'
+import banner from '../../../../secureum-banner.jpg'
+
+<Head>
+  <meta property="og:image" content={'https://ventral.digital' + banner.src} />
+  <meta name="twitter:image" content={'https://ventral.digital' + banner.src} />
+</Head>
+
+This is a Write-Up of RACE-34, Quiz of the [Secureum Bootcamp](https://twitter.com/0xRajeev/status/1470910752085065731) for Ethereum Smart Contract Auditors. This month's RACE was designed by Secureum Mentor and Independent Security Researcher [MiloTruck](https://x.com/milotruck).
+
+<Callout type="info">
+  Participants of this quiz had a single attempt to **answer 8 questions within the strict time limit of 16 minutes**. If you’re reading this in preparation for participating yourself, it’s best to give it a try under the same time limit!
+
+  As usual, I waited for submissions to close before publishing it and, to stay true to the original, I omitted syntax highlighting. Feel free to copy it into your favorite editor, but do so after starting the timer!
+</Callout>
+
+<p className="text-xs text-right">November 10, 2024 by [patrickd](/about#patrickd)</p>
+
+<style jsx>{`
+  input[type=checkbox] {
+    width: 15px;
+    height: 15px;
+  }
+  li {
+    padding: 0.5em;
+  }
+`}</style>
+
+export function HiddenSolution({ children }) {
+  return (
+    <details closed className="last-of-type:mb-0 rounded-lg bg-neutral-50 dark:bg-neutral-800 p-2 mt-4">
+      <summary>
+        <strong className="text-lg">Solution</strong>
+      </summary>
+      <div className="nx-p-2">{children}</div>
+    </details>
+  )
+}
+
+---
+
+### Code
+
+<Callout type="info">
+All 8 questions are based on the following contract.
+</Callout>
+
+```plaintext showLineNumbers filename="CrossChainMessenger.sol"
+// SPDX-License-Identifier: UNLICENSED
+pragma solidity 0.8.20;
+
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+
+library SafeCall {
+    function safeCall(address _to, uint256 _gas, bytes memory _data) external returns (bool _success) {
+        assembly {
+            _success := call(_gas, _to, 0, add(_data, 32), mload(_data), 0, 0)
+        }
+    }
+
+    function unsafeCall(address _to, uint256 _gas, bytes memory _data) internal returns (bytes memory) {
+        assembly {
+            let _success := call(_gas, _to, 0, add(_data, 32), mload(_data), 0, 0)
+
+            // Copy return data
+            returndatacopy(0, 0, returndatasize())
+
+            // Revert on error, otherwise return data from the call
+            switch _success
+            case 0 { revert(0, returndatasize()) }
+            default { return(0, returndatasize()) }
+        }
+    }
+}
+
+/*
+Assume this contract is part of a cross-chain messaging protocol.
+A message is sent from a source to destination chain as follows:
+1. Users call sendMessage() on the source chain to send a message.
+2. The protocol reads the MessageSent event emitted from sendMessage() offchain.
+3. The protocol calls relayMessage() on the destination chain with the same message.
+*/
+contract CrossChainMessenger is Ownable(msg.sender) {
+    event MessageSent(Message message);
+
+    struct Message {
+        address sender;
+        address to;
+        uint256 gas;
+        bytes data;
+    }
+
+    uint256 public constant MAXIMUM_GAS_LIMIT = 100_000;
+    uint256 public constant GAS_BUFFER = 40_000;
+
+    mapping(bytes32 => bool) public failedMessages;
+
+    /**
+     * @notice Send a message from the source chain.
+     *
+     * @param to   Address that receives the message on the destination chain.
+     * @param gas  Minimum amount of gas sent to the receiver.
+     * @param data Calldata the receiver is called with.
+     */
+    function sendMessage(address to, uint256 gas, bytes memory data) external {
+        Message memory message = Message({sender: msg.sender, to: to, gas: gas, data: data});
+
+        emit MessageSent(message);
+    }
+
+    /**
+     * @notice Receive a message on the destination chain.
+     *
+     * @param message Message struct containing the sender, receiver, gas and calldata.
+     */
+    function relayMessage(Message calldata message) external onlyOwner {
+        require(gasleft() >= (message.gas * 64) / 63 + GAS_BUFFER, "Insufficient gas");
+
+        bool success = SafeCall.safeCall(message.to, message.gas, message.data);
+
+        if (!success) {
+            bytes32 messageHash = keccak256(abi.encode(message));
+            failedMessages[messageHash] = true;
+        }
+    }
+
+    /**
+     * @notice Replay a message that failed execution in relayMessage().
+     *
+     * @param message Message struct containing the sender, receiver, gas and calldata.
+     */
+    function replayMessage(Message calldata message) public {
+        require(msg.sender == message.sender || msg.sender == message.to, "Not sender or receiver");
+
+        bytes32 messageHash = keccak256(abi.encode(message));
+        require(failedMessages[messageHash], "Invalid message");
+
+        require(gasleft() >= (message.gas * 64) / 63 + GAS_BUFFER, "Insufficient gas");
+
+        bool success = SafeCall.safeCall(message.to, message.gas, message.data);
+        require(success, "Message execution failed");
+
+        failedMessages[messageHash] = false;
+    }
+
+    /**
+     * @notice Forcefully replay failed messages.
+     *
+     * @param messages An array of message structs to execute.
+     */
+    function forceReplayMessages(Message[] calldata messages) external onlyOwner {
+        for (uint256 i; i < messages.length; i++) {
+            Message memory message = messages[i];
+
+            bytes32 messageHash = keccak256(abi.encode(message));
+            require(failedMessages[messageHash], "Invalid message");
+            failedMessages[messageHash] = false;
+
+            uint256 gasLimit = message.gas < MAXIMUM_GAS_LIMIT ? message.gas : MAXIMUM_GAS_LIMIT;
+            require(gasleft() >= (gasLimit * 64) / 63 + GAS_BUFFER, "Insufficient gas");
+
+            SafeCall.unsafeCall(message.to, gasLimit, message.data);
+        }
+    }
+}
+```
+
+### Question 1 of 8
+
+The protocol facilitates cross-chain messaging by:
+
+<ul>
+  <li><input type="checkbox" /> A. Transmitting messages sent from a source chain to the receiver on a destination chain through `relayMessage()`.</li>
+  <li><input type="checkbox" /> B. Allowing messages that revert during execution in `relayMessage()` to be re-executed in `replayMessage()`.</li>
+  <li><input type="checkbox" /> C. Allowing anyone to execute failed messages in `replayMessage()`.</li>
+  <li><input type="checkbox" /> D. Allowing the protocol to execute failed messages on anyone’s behalf.</li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, B, D.**
+
+This is a giveaway question meant to test the participant's understanding of the contract. From looking at the code, A, B and D are clearly true. C is incorrect according to the first require statement within `replayMessage()`.
+</HiddenSolution>
+
+---
+
+### Question 2 of 8
+
+In `relayMessage()`, the `gasleft()` check multiplies `message.gas` by 64 / 63 to:
+
+<ul>
+  <li><input type="checkbox" /> A. Avoid rounding errors due to division in Solidity rounding down.</li>
+  <li><input type="checkbox" /> B. Account for the reduction in gas passed to a callee due to EIP-150.</li>
+  <li><input type="checkbox" /> C. Reserve sufficient gas for the function to complete execution after `safeCall()`.</li>
+  <li><input type="checkbox" /> D. Provide extra gas in case the message sender specifies too little gas.</li>
+</ul>
+
+<HiddenSolution>
+**Correct is B.**
+
+The [EIP-150](https://github.com/ethereum/EIPs/blob/master/EIPS/eip-150.md) standard indeed defines the "send all but one 64th" gas rule: It dictates that only 63/64 of the currently remaining gas is passed to a callee.
+
+The question is whether the check truly accounts for the reduction in gas passed to the callee:
+```solidity
+require(gasleft() >= (message.gas * 64) / 63 + GAS_BUFFER, "Insufficient gas");
+```
+
+Let's say we specify $`y`$ as gas amount sent during the `CALL`. Then the actual gas received by the callee is $`y * 63/64`$. But we want this received amount to be exactly `message.gas`, let's call it $`x`$, then $`y * 63/64 = x`$. By solving for $`y`$ we will obtain the gas amount we'd have to specify for $`x`$ to arrive at the callee: $`y = x * 64/53`$. This matches with the `require()` statement.
+
+If you're wondering whether checks like this actually happen in practice, you can search for the require statement on [codeslaw](https://www.codeslaw.app/contracts/arbitrum/0x41675c099f32341bf84bfc5382af534df5c7461a?file=eth_0xfd0732dc9e303f09fcef3a7388ad10a83459ec99_code%2Fcontracts%2FSafe.sol&start=197) and find many projects where it's used.
+
+This check indeed also reserves sufficient gas for the function to complete after `safeCall()`, but it does so using the `GAS_BUFFER`. This is not related to the multiplication by 64 / 63 as the question suggests.
+
+(Answers A and D are fillers)
+</HiddenSolution>
+
+---
+
+### Question 3 of 8
+
+In `relayMessage()`, the external call to `message.to` may receive less gas than `message.gas` because:
+
+<ul>
+  <li><input type="checkbox" /> A. Calling `safeCall()` performs a delegate call, which reduces the gas remaining by 1/64.</li>
+  <li><input type="checkbox" /> B. Calling `safeCall()` performs an internal call, which consumes gas for a few opcodes.</li>
+  <li><input type="checkbox" /> C. Copying message from calldata to memory when calling `safeCall()` consumes gas.</li>
+  <li><input type="checkbox" /> D. None of the above, the `gasleft()` check ensures sufficient gas is always passed to the callee.</li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, C.**
+
+There's an [important difference](https://eip2535diamonds.substack.com/p/the-difference-between-solidity-libraries) in how external functions of Solidity libraries are handled compared to internal functions: Internal functions are "inlined" into the contract calling it, in other words, the functions bytecode is added to the calling contract and the call is a `JUMP`. On the other hand, external functions of libraries are deployed within a separate contract. When a contract makes a call to such an external library function, it does so using the `DELEGATECALL` opcode.
+
+* Therefore `safeCall()` indeed performs a delegate call while `unsafeCall()` performs an internal call.
+* And EIP-150 applies to [`DELEGATECALL`](https://www.evm.codes/?fork=cancun#f4)s as well.
+* Additionally, calling `safeCall()` requires copying `message` (declared with data location `calldata` in `CrossChainMessenger`'s functions) from calldata to memory before the call can be executed with the message data as parameter.
+* For large `message.data` this copy operation could indeed consume more gas than anticipated by `GAS_BUFFER`.
+</HiddenSolution>
+
+---
+
+### Question 4 of 8
+
+A failed message may never be executed if:
+
+<ul>
+  <li><input type="checkbox" /> A. Trying to execute the message in `replayMessage()` fails once.</li>
+  <li><input type="checkbox" /> B. A sender sends multiple messages with the exact same `Message` struct without checking if execution in `relayMessage()` was successful.</li>
+  <li><input type="checkbox" /> C. The message was sent with empty `message.data`.</li>
+  <li><input type="checkbox" /> D. None of the above, a sender can always call `replayMessage()` to retry a failed message.</li>
+</ul>
+
+<HiddenSolution>
+**Correct is B.**
+
+> There is no way to uniquely identify two messages with the exact same `sender`, `to`, `gas` and `data`. If multiple messages with the same Message struct are sent, they will all have the same `messageHash` when being stored in the `failedMessages` mapping. Therefore, `replayMessage()` can only be called once, even though multiple messages failed.
+
+A and C are filler answers: A message is only removed from the `failedMessages` mapping if the replay succeeded. The `message.data` being empty has no impact on the ability to replay messages.
+</HiddenSolution>
+
+---
+
+### Question 5 of 8
+
+If `replayMessage()` could only be called by `message.sender` (i.e. no `msg.sender == message.to` condition check in `require()`), it would be problematic because:
+
+<ul>
+  <li><input type="checkbox" /> A. There is no way to verify if the caller of `sendMessage()` is the address that calls `replayMessage()`.</li>
+  <li><input type="checkbox" /> B. An EOA that calls `sendMessage()` on a source chain cannot call `replayMessage()` on the destination chain as EOAs are chain-specific.</li>
+  <li><input type="checkbox" /> C. Messages sent from contracts that directly call `sendMessage()` may not be replayable if execution fails.</li>
+  <li><input type="checkbox" /> D. None of the above, there are no issues with the current implementation.</li>
+</ul>
+
+<HiddenSolution>
+**Correct is C.**
+
+Unless a contract's deployment was [specifically prepared](https://medium.com/patronum-labs/nicks-method-ethereum-keyless-execution-168a6659479c) for this, it's unlikely for a contract to have the same address across different chains. In such cases, messages sent from contracts that directly call `sendMessage()` may not be replayable if execution fails when requiring `msg.sender == message.sender` alone.
+
+With the additional `msg.sender == message.to` condition the receiver is able to replay the message in such cases.
+
+A and B are filler answers: You can obviously keep track of the `msg.sender` values, and EOAs are not chain-specific and can be used across chains.
+</HiddenSolution>
+
+---
+
+### Question 6 of 8
+
+Is `replayMessage()` susceptible to reentrancy?
+
+<ul>
+  <li><input type="checkbox" /> A. No, the `gasleft()` check prevents any state changes from occurring in a reentrant call.</li>
+  <li><input type="checkbox" /> B. No, the `failedMessages[messageHash]` check prevents any reentrancy attacks.</li>
+  <li><input type="checkbox" /> C. Yes, reentrancy can be used to block the execution of future messages.</li>
+  <li><input type="checkbox" /> D. Yes, reentrancy can be used to execute a single failed message multiple times.</li>
+</ul>
+
+<HiddenSolution>
+**Correct is D.**
+
+> Notice how `failedMessages[messageHash]` is reset to false only after `safeCall()`. Executing a failed message multiple times can be achieved by re-entering `replayMessage()` in `safeCall()`.
+
+A possible scenario where this could be exploited would be if the protocol receiving the message makes an unsafe external call to an untrusted contract. Such a malicious contract could then re-enter `replayMessage()` before `safeCall()` has returned, causing the protocol to be called once again with the same message. A protocol assuming that each message may only arrive once could benefit the attacker by eg. rewarding them twice.
+
+C isn't possible and A, B are filler answers that are unrelated to reentrancy.
+</HiddenSolution>
+
+---
+
+### Question 7 of 8
+
+When `forceReplayMessages()` is called, it should not revert. However, a receiver contract (i.e. `message.to`) can force the function to revert by:
+
+<ul>
+  <li><input type="checkbox" /> A. Reverting in the function called by `unsafeCall()`.</li>
+  <li><input type="checkbox" /> B. Returning `false` in the function called by `unsafeCall()`.</li>
+  <li><input type="checkbox" /> C. Consuming all the remaining gas in the function called by `unsafeCall()` without reverting.</li>
+  <li><input type="checkbox" /> D. Performing a return bomb attack (i.e. return a huge chunk of data, causing `forceReplayMessage()` to consume more gas than the block gas limit).</li>
+</ul>
+
+<HiddenSolution>
+**Correct is A.**
+
+While `safeCall()` returns a boolean depending on whether the `CALL` was successful, the `unsafeCall()` function will "bubble up" the callee's revert causing `forceReplayMessages()` to revert. If the callee returns `false` instead of reverting it is simply treated as returned data. 
+
+> Assuming that `forceReplayMessage()` is called with sufficient gas to execute all messages, the gas limit on each message prevents any execution from consuming all remaining gas in `forceReplayMessages()`.
+
+> D is a trick option. Although `unsafeCall()` reads an unbounded amount of data from the called function, only a maximum of 100,000 gas is passed to the called function. Due to the memory expansion cost, the function will not be able to create a huge chunk of data in memory to be returned, hence a return bomb attack is not possible.
+</HiddenSolution>
+
+---
+
+### Question 8 of 8
+
+When `forceReplayMessages()` is called with multiple messages, it will:
+
+<ul>
+  <li><input type="checkbox" /> A. Execute all messages in the `messages` array.</li>
+  <li><input type="checkbox" /> B. Always revert when trying to execute the first message.</li>
+  <li><input type="checkbox" /> C. Execute all messages in the `messages` array and revert after the last call.</li>
+  <li><input type="checkbox" /> D. Only execute the first message in the `messages` array.</li>
+</ul>
+
+<HiddenSolution>
+**Correct is D.**
+
+At a first glance, it may appear that it is correctly looping through all messages, but the problem is that `unsafeCall()` is not making use of a regular (Solidity) `return` statement, but rather executes the `RETURN` opcode which will exit the currently executed contract and not simply return to the calling function. Remember that, `unsafeCall()` being
+an internal library function, it is not externally-called but instead inlined into the `CrossChainMessenger` contract. Therefore, when `forceReplayMessages()` calls `unsafeCall()` it will `JUMP` to the function's bytecode which will then terminate execution with `RETURN` instead of jumping back to `forceReplayMessages()`'s bytecode.
+
+> A PoC demonstrating this can be found here: https://gist.github.com/MiloTruck/837ecb49fe18901d70bf03241548768b
+
+(Answers B and C are fillers)
+</HiddenSolution>
+
+---
+
+import { Card, Cards } from 'nextra/components'
+import { NewsletterIcon } from '@components/icons'
+
+<Cards>
+  <Card
+    icon={<NewsletterIcon />}
+    title="← RACE #33 Of The Secureum Bootcamp Epoch∞"
+    href="/posts/2024/10/1/race-33-of-the-secureum-bootcamp-epoch-infinity/"
+  />
+</Cards>

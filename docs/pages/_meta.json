@@ -49,6 +49,7 @@
   },
   "cryptography": "Cryptography",
   "ethereum": "Ethereum/EVM",
+  "opsec": "OpSec",
   "web2": "Web2",
   "misc": "Miscellaneous",
   "---": {

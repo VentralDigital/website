@@ -3,5 +3,10 @@
   "fuzzing": "Fuzzing",
   "ctf": "CTF",
   "bughunting": "Bughunting",
-  "auditorrewind": "Smart Contract Auditor's Rewind"
+  "auditorrewind": "Smart Contract Auditor's Rewind",
+  "cheatsheet": {
+    "title": "Solidity Cheatsheet",
+    "href": "https://github.com/patrickd-/cheatsheet.sol/blob/main/contracts/cheatsheet.sol",
+    "newWindow": true
+  }
 }

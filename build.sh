@@ -4,6 +4,6 @@ pnpm clean
 pnpm i
 pnpm build
 cd docs
-rm export.zip
+rm -rf export.zip export .next
 until pnpm build; do echo "Build failed, retrying..."; done
 zip -r export.zip export

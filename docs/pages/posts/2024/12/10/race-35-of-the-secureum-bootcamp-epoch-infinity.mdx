@@ -1,0 +1,408 @@
+# RACE #35 Of The Secureum Bootcamp Epoch∞
+
+import { Callout } from 'nextra/components'
+import Head from 'next/head'
+import banner from '../../../../secureum-banner.jpg'
+
+<Head>
+  <meta property="og:image" content={'https://ventral.digital' + banner.src} />
+  <meta name="twitter:image" content={'https://ventral.digital' + banner.src} />
+</Head>
+
+This is a Write-Up of RACE-35, Quiz of the [Secureum Bootcamp](https://twitter.com/0xRajeev/status/1470910752085065731) for Ethereum Smart Contract Auditors. This month's RACE was designed by Secureum Mentor and Independent Security Researcher 0x4non aka [another anon](https://x.com/eugenioclrc).
+
+<Callout type="info">
+  Participants of this quiz had a single attempt to **answer 8 questions within the strict time limit of 16 minutes**. If you’re reading this in preparation for participating yourself, it’s best to give it a try under the same time limit!
+
+  As usual, I waited for submissions to close before publishing it and, to stay true to the original, I omitted syntax highlighting. Feel free to copy it into your favorite editor, but do so after starting the timer!
+</Callout>
+
+<p className="text-xs text-right">December 10, 2024 by [patrickd](/about#patrickd)</p>
+
+<style jsx>{`
+  input[type=checkbox] {
+    width: 15px;
+    height: 15px;
+  }
+  li {
+    padding: 0.5em;
+  }
+`}</style>
+
+export function HiddenSolution({ children }) {
+  return (
+    <details closed className="last-of-type:mb-0 rounded-lg bg-neutral-50 dark:bg-neutral-800 p-2 mt-4">
+      <summary>
+        <strong className="text-lg">Solution</strong>
+      </summary>
+      <div className="nx-p-2">{children}</div>
+    </details>
+  )
+}
+
+---
+
+### Question 1 of 8
+
+```plaintext showLineNumbers
+// this is the contract that its in your generated address
+contract Empty{}
+```
+
+You have received a bug bounty in USDC and, as usual, you generate a new wallet to receive it. After the project has paid, you use etherscan to check if the funds arrived. But you discover that your wallet is a contract! What are the odds? Which of the following statements are true?
+
+<ul>
+  <li><input type="checkbox" /> A. You can directly transfer the USDC using your private key. </li>
+  <li><input type="checkbox" /> B. You can’t send a tx because of EIP-3607. </li>
+  <li><input type="checkbox" /> C. It is still possible to recover the USDC. </li>
+  <li><input type="checkbox" /> D. The USDC is lost forever. </li>
+</ul>
+
+<HiddenSolution>
+**Correct is B, C.**
+
+In the rare event that this happens, A is not possible because of B.
+
+EIP-3607 was specifically created to handle this type of situation where a contract address and an EOA address have a collision: To prevent a situation where it turns out that an otherwise trustworthy contract address suddenly rug pulls all funds using such a collision, this Ethereum Improvement Proposal was implemented dictating that any private-key based transactions from addresses with code must be rejected by nodes and not included or accepted in blocks.
+
+EIP-3607 warns that it can be bypassed by a blockchain reorganization or by self-destructing the contract. The former should be rather unlikely, the latter won't work anymore either with the changes to the `SELFDESTRUCT` opcode introduced by the Dencun (Cancun-Deneb, March 2024) Fork where deleting the contract code is only possible if it was deployed within that same transaction. But in the first place, this empty contract doesn't allow to trigger self-destruction.
+
+However there's still a way to rescue the funds: After all, they aren't actually located at that address, rather it's that the token contract has stored a balance for that address. As long as we have an approval to the funds of that address without actually sending transactions from it, we can rescue them using a `transferFrom()` call. Naturally, a call to `approve()` would be rejected by EIP-3607 just as a call to `transfer()` would. But luckily USDC implements `permit()` (EIP-2612) which allows us to sign an approval to the funds without an on-chain transaction.
+</HiddenSolution>
+
+---
+
+### Question 2 of 8
+
+```plaintext showLineNumbers
+function docall(address vault, string memory func, bytes calldata data) external {
+  require(keccak256(bytes(func)) != keccak256("withdraw()"), "forbidden sig");
+  (bool success, ) = address(vault).call(abi.encodeWithSignature(func, data));
+  require(success);
+}
+```
+
+Which of the following statements are true regarding the `docall()` function?
+
+<ul>
+  <li><input type="checkbox" /> A. Function is secure, an user can not bypass the check and call `withdraw()`. </li>
+  <li><input type="checkbox" /> B. Function is not secure, an user can bypass the check and call `withdraw()`. </li>
+  <li><input type="checkbox" /> C. Function needs a reentrancy guard. </li>
+  <li><input type="checkbox" /> D. Function will always revert. </li>
+</ul>
+
+<HiddenSolution>
+**Correct is B.**
+
+A/B: What's actually used in a call is only the first 4 bytes of the function signature's hash. This check requires the full hash to be unequal, which makes this check trivial to bypass: We can have the first 4 bytes that actually matter match with the first 4 bytes of `keccak256("withdraw()")` and the rest of the hash can just be random as long as its different. Such function-signature clashes, ie. functions that share the first 4 bytes of the keccak256 hash are easily generated. Specifying `hack_540276142()` as `func` will do the trick here. Check out the [Polynetwork hack](https://rekt.news/polynetwork-rekt/) for a real-world example of a function-signature clash being exploited.
+
+C: This function has no state changes. Reentrancy vulnerabilities are related to passing execution control to other (often untrusted) code while the contract's state has not been fully updated yet, allowing that other code to exploit such incomplete state.
+
+D: It will revert depending on whether the call can be executed successfully. But it won't always revert.
+</HiddenSolution>
+
+---
+
+### Question 3 of 8
+
+```plaintext showLineNumbers
+/// @dev docall is a secure function that lets you call an address with any message except “withdraw()”
+function docall(address vault, bytes calldata data) external {
+    bytes4 sig;
+    assembly {
+        sig := calldataload(0x64)
+    }
+    // abi.encodeWithSignature("withdraw()") == 0x3ccfd60b
+    require(sig != 0x3ccfd60b, "forbidden sig");
+    (bool success, ) = address(vault).call(data);
+    require(success);
+}
+```
+
+Which of the following statements are true regarding the `docall()` function?
+
+<ul>
+  <li><input type="checkbox" /> A. Function is secure, the check cannot be bypassed. </li>
+  <li><input type="checkbox" /> B. This can be easily bypassed by calling `docall(vault, abi.encodeWithSignature("withdraw()", "anything"));`. </li>
+  <li><input type="checkbox" /> C. Function is not secure, a user can bypass the check and call `withdraw()`. </li>
+  <li><input type="checkbox" /> D. This function is protected by EIP-3607. </li>
+</ul>
+
+<HiddenSolution>
+**Correct is C.**
+
+Here an attacker can exploit the fact that ABI encoding makes use of pointers for variable length types like bytes. We can put any rubbish at offset `0x64` if the actual content of the `data` variable is specified to be located somewhere else.
+
+The contract expects the calldata to have the following structure:
+
+| Offset | Length in bytes | Description |
+|--------|-----------------|-------------|
+| `0x00` | 4 | function signature of `docall(address,bytes)` |
+| `0x04` | 32 | 20 bytes of these are occupied by the `vault` address |
+| `0x24` | 32 | pointer specifying the offset where the content of `data` is located, excludes the function signature, ie. points to `0x44` by specifying `0x40` |
+| `0x44` | 32 | length of the raw value of `data` |
+| `0x64` | `0x44` | actual raw value of `data`, the first 32 bytes of this are loaded by `sig := calldataload(0x64)` |
+
+To exploit this, the above calldata can be rewritten to have the pointer specify a later location, such as `0x80` the value at which will be decoded and put into the `data` variable. But the value loaded into the `sig` variable will instead be whatever we put at `0x64`, which we can choose freely.
+
+Answers B and C are fillers.
+</HiddenSolution>
+
+---
+
+### Question 4 of 8
+
+```plaintext showLineNumbers
+contract Token {
+    Owner immutable public owner;
+    constructor(address _owner) {
+        owner = Owner(_owner);
+    }
+    .......
+}
+
+contract Owner {
+    Token immutable public token;
+    constructor(address _token) {
+        token = Token(_token);
+    }
+    .......
+}
+```
+
+Which of the following statements are true for the above contracts? 
+
+<ul>
+  <li><input type="checkbox" /> A. This setup is impossible to deploy. </li>
+  <li><input type="checkbox" /> B. Can be deployed using a contract that uses `CREATE`. </li>
+  <li><input type="checkbox" /> C. Can be deployed using the `CREATE2` opcode with the above contracts' bytecode. </li>
+  <li><input type="checkbox" /> D. Can be deployed using a contract that uses the `CREATE3` pattern. </li>
+</ul>
+
+<HiddenSolution>
+**Correct is B, D.**
+
+The apparent problem here is that there's a circular dependency between these contracts where `Token` requires the address of `Owner` before it can be deployed, while `Owner` requires the address of `Token` to be deployed. But addresses of contracts can be deterministically determined before they're actually created on-chain.
+
+```
+NEXT_CREATE_ADDRESS = HASH(deployer_address, deployer_nonce)
+```
+
+The `CREATE` opcode determines a contract's address based on the address of the contract executing the `CREATE` opcode, hashed with that contract's `nonce` counter. Both of these values can be known beforehand, therefore we're able to determine the deployment address without actually deploying anything yet.
+
+```
+NEXT_CREATE2_ADDRESS = HASH(0xff, deployer_address, salt, init_code)
+```
+
+The `CREATE2` opcode is different in that, instead of a `nonce`, it determines the deployment address based on a `salt` that we can freely choose and on the initialization code of the contract to deploy.
+
+You may think that the problem here is the use of `immutable` variables, the values of which are placed into the bytecode by the constructor, therefore changing the deployment address. This is not the case though, as the constructor is causing changes to the runtime bytecode when placing the values of immutables, not the initialization bytecode that is actually used to determine the deployment address.
+
+The actual problem is that the `address` passed into the constructor is part of the initialization bytecode, throwing us back to the circular dependency problem. The initialization bytecode basically consists of 3 components: The actual initialization code (ie. constructor and storage variable assignments), the raw runtime bytecode (with empty placeholders for immutable variables ready to be filled by initialization code), and finally the ABI-encoded parameter values to be passed to the constructor.
+
+```
+PROXY_DEPLOYER_ADDRESS = HASH(0xff, deployer_address, salt, PROXY_DEPLOYER_BYTECODE)
+NEXT_CREATE3_ADDRESS = HASH(PROXY_DEPLOYER_ADDRESS, FIRST_PROXY_DEPLOYER_NONCE)
+```
+
+The `CREATE3` pattern is not an actual opcode, but rather [a trick](https://github.com/0xsequence/create3/blob/master/contracts/Create3.sol) that allows removing the initialization code as a factor for the deployment address. It works by deploying a simple static contract via `CREATE2` that does nothing else but deploy whatever you send to it as calldata via `CREATE`. Thanks to this "proxy deployer" always having the same initialization bytecode, we can pre-determine its address deterministically. We can hash this address with a nonce of 1 to determine the deployment address of whatever code we will pass to it.
+</HiddenSolution>
+
+---
+
+<Callout type="info">
+  The remaining questions of this RACE are based on the following code.
+</Callout>
+
+```plaintext showLineNumbers
+pragma solidity ^0.8.24;
+import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+
+// deploy example:
+// new ProxyContract(address(new ImplementationContract()));
+
+contract ProxyContract is ERC1967Proxy {
+    uint160 public counter;
+    uint public cState;
+    address public admin;
+    constructor(address logic) ERC1967Proxy(logic, abi.encodeWithSelector(ImplementationContract.initialize.selector)) {
+        ERC1967Utils.changeAdmin(msg.sender);
+        admin = msg.sender;
+    }
+
+    receive() external payable {}
+
+    function implementation() external view returns (address) {
+        return _implementation();
+    }
+
+    function upgradeTo(address newImplementation) external {
+        require(ERC1967Utils.getAdmin() == msg.sender, "NoT AdMiN");
+        ERC1967Utils.upgradeToAndCall(newImplementation,"");
+    }
+
+    function updateCounter(uint160 _counter) external {
+        counter = _counter;
+    }
+    function updatecState(uint newState) external {
+        cState = newState;
+    }
+}
+
+// Hint, slots of arrays are keccak256(abi.encode(SLOT_NUMBER)) 
+// https://www.rareskills.io/post/solidity-dynamic
+contract ImplementationContract is Initializable{
+    address public owner;
+    uint private constant MAX = 10;
+    uint256[] public buckets;
+    /// @dev Equivalent to: `uint72(bytes9(keccak256("_REENTRANCY_GUARD_SLOT")))`
+    uint256 constant private _REENTRANCY_GUARD = 0x929eee149b4bd21268;
+
+    modifier reentrantGuard() {
+        assembly { 
+            let _reenter := tload(_REENTRANCY_GUARD)
+            if eq(_reenter, 2) {
+                mstore(0x00, 0xab143c06) // `Reentrancy()`.
+                revert(0x1c, 0x04)
+            }
+            tstore(_REENTRANCY_GUARD, 2)
+        }
+        _;
+    }
+
+    constructor() {
+        owner = msg.sender;
+    }
+
+    function initialize() external {
+        buckets = new uint256[](MAX);
+        buckets[0] = 1;
+    }
+
+    function deposit(uint bucketNumber, uint value) payable external {
+        require(msg.sender==owner);
+        unchecked { buckets[bucketNumber] += value; }
+    }
+
+    function withdraw(uint bucketNumber, uint value) external reentrantGuard {
+        require(msg.sender==owner);
+        unchecked {buckets[bucketNumber] -= value;}
+        msg.sender.call{value: value}("");
+    }
+}
+```
+
+
+### Question 5 of 8
+
+In one tx anyone can change:
+
+<ul>
+  <li><input type="checkbox" /> A. The admin slot of the `ProxyContract` by calling `updatecState()`. </li>
+  <li><input type="checkbox" /> B. The implementation of the `ProxyContract` by calling `updatecState()`. </li>
+  <li><input type="checkbox" /> C. The owner of the `ImplementationContract` by calling `updateCounter()`. </li>
+  <li><input type="checkbox" /> D. The implementation of the `ProxyContract` by calling `updateCounter()`. </li>
+</ul>
+
+<HiddenSolution>
+**Correct is C.**
+
+C/D: There is a storage clash between the `ProxyContract`'s `counter` variable and the `ImplementationContract`'s `owner` variable: Due to the way how Solidity manages storage variables, both variables will be assigned to the same storage slots. Since a proxy shares the same storage with its implementation(s) that means that setting one overwrites the other. Calling `updateCounter()` will cause a change in these clashing variables, but none to the proxy's implementation storage variable.
+
+A/B: Calling `updatecState()` will update the value at slot 1, which for the implementation contains the length of the `buckets` array, and for the proxy contains the value of `cState`. At no point does this affect the admin slot or implementation of the proxy.
+</HiddenSolution>
+
+---
+
+### Question 6 of 8
+
+Which of the following statements are true?
+
+<ul>
+  <li><input type="checkbox" /> A. It is possible to reinitialize the implementation and `selfdestruct` triggering a DOS.</li>
+  <li><input type="checkbox" /> B. It is possible to add more than 10 elements to the bucket.</li>
+  <li><input type="checkbox" /> C. It’s impossible to add more than 10 elements to the bucket.</li>
+  <li><input type="checkbox" /> D. By default `ImplementationContract(proxy).owner()` is the `msg.sender`.</li>
+</ul>
+
+<HiddenSolution>
+**Correct is B.**
+
+As mentioned in the previous question, due to the storage clash between `cState` and the length of the `buckets` array, it's possible to increase the array length and therefore add more than 10 elements to the bucket.
+
+The initial value of `ImplementationContract(proxy).owner()` will be the zero-address because the owner is set within the `constructor`, instead of the `initialize()` function.
+</HiddenSolution>
+
+---
+
+### Question 7 of 8
+
+It is possible to:
+
+<ul>
+  <li><input type="checkbox" /> A. Change the `ERC1967Proxy.ADMIN_SLOT` value. </li>
+  <li><input type="checkbox" /> B. Change the proxy `IMPLEMENTATION` without calling `upgradeTo(address newImplementation)`. </li>
+  <li><input type="checkbox" /> C. Renounce the `ERC1967Proxy`, making it impossible to regain ownership and without changing the current implementation. </li>
+  <li><input type="checkbox" /> D. Change the value of slot `_REENTRANCY_GUARD` to trigger a DOS in `withdraw(uint256,uint256)`. </li>
+</ul>
+
+<HiddenSolution>
+**Correct is A.**
+
+We can find the following storage slot locations in OpenZeppelin's [ERC1967Utils.sol](https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/proxy/ERC1967/ERC1967Utils.sol):
+
+```
+IMPLEMENTATION_SLOT = 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
+ADMIN_SLOT = 0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103;
+```
+
+As mentioned within the code's inline comments, we can also determine the slot location of the first array element based on the Solidity-assigned slot number of the array variable (here 1) with `keccak256(abi.encode(SLOT_NUMBER))`:
+
+```
+> FIRST_ARRAY_ITEM_SLOT = keccak256(abi.encode(1))
+0xb10e2d527612073b26eecdfd717e6a320cf44b4afac2b0732d9fcbe2b7fa0cf6
+```
+
+With this we can see that the order of these slots within storage is IMPLEMENTATION_SLOT, FIRST_ARRAY_ITEM_SLOT, ADMIN_SLOT which means that we can keep adding elements to the `buckets` array until we clash with the `ADMIN_SLOT` and are able to overwrite it.
+
+This vulnerability also makes it impossible to fully renounce ownership, as you could always exploit it to regain ownership.
+
+The reentrancy guard is making use of transient storage, which always starts with zeroed values at the beginning of a transaction. A Denial of Service would require using the persistent storage instead.
+</HiddenSolution>
+
+---
+
+### Question 8 of 8
+
+Which of the following statements are true?
+
+<ul>
+  <li><input type="checkbox" /> A. `reentrantGuard` modifier cannot be bypassed. </li>
+  <li><input type="checkbox" /> B. `withdraw` will get locked forever after calling it one time. </li>
+  <li><input type="checkbox" /> C. The `reentrantGuard` with transient storage is more gas efficient. </li>
+  <li><input type="checkbox" /> D. All the above. </li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, C.**
+
+A: Although the `reentrantGuard` modifier can indeed not be bypassed, it also never actually unlocks itself. This means that functions using the modifier can't be called twice within the same transaction.
+
+B: While this is not true on the actual chain, it will appear like that when testing it within Foundry which runs everything within a single transaction without clearing the TRANSIENT storage between tests.
+
+C: Modifying a transient storage value is indeed cheaper than modifying persistent storage (ie. the global state).
+</HiddenSolution>
+
+---
+
+import { Card, Cards } from 'nextra/components'
+import { NewsletterIcon } from '@components/icons'
+
+<Cards>
+  <Card
+    icon={<NewsletterIcon />}
+    title="← RACE #34 Of The Secureum Bootcamp Epoch∞"
+    href="/posts/2024/11/10/race-34-of-the-secureum-bootcamp-epoch-infinity/"
+  />
+</Cards>

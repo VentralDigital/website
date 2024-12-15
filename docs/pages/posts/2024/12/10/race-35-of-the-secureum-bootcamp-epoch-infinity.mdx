@@ -348,7 +348,7 @@ It is possible to:
 </ul>
 
 <HiddenSolution>
-**Correct is A.**
+**Correct is A [and B].**
 
 We can find the following storage slot locations in OpenZeppelin's [ERC1967Utils.sol](https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/proxy/ERC1967/ERC1967Utils.sol):
 
@@ -364,11 +364,31 @@ As mentioned within the code's inline comments, we can also determine the slot l
 0xb10e2d527612073b26eecdfd717e6a320cf44b4afac2b0732d9fcbe2b7fa0cf6
 ```
 
-With this we can see that the order of these slots within storage is IMPLEMENTATION_SLOT, FIRST_ARRAY_ITEM_SLOT, ADMIN_SLOT which means that we can keep adding elements to the `buckets` array until we clash with the `ADMIN_SLOT` and are able to overwrite it.
+With this we can see that the order of these slots within storage is `IMPLEMENTATION_SLOT`, `FIRST_ARRAY_ITEM_SLOT`, `ADMIN_SLOT` which means that we can keep adding elements to the `buckets` array until we clash with the `ADMIN_SLOT` and are able to overwrite it.
 
 This vulnerability also makes it impossible to fully renounce ownership, as you could always exploit it to regain ownership.
 
 The reentrancy guard is making use of transient storage, which always starts with zeroed values at the beginning of a transaction. A Denial of Service would require using the persistent storage instead.
+
+---
+
+As [Y4nhu1](https://x.com/_YaNnhui_) pointed out on [Discord](https://discord.com/channels/814328279468474419/928508513964146729/1317729509071654923), it's actually also possible to update the proxy's implementation by exploiting the same issue, and therefore without calling the `upgradeTo()` function.
+
+[Solidity version 0.8.0](https://soliditylang.org/blog/2020/12/16/solidity-v0.8.0-release-announcement/) added overflow protection against arrays growing too large in memory. The assumption was that this too prevents arrays in storage from becoming so large that they would wrap-around and allow manipulating storage slots before the first array element. But this is not the case.
+
+Using the `updatecState()` function we can set the `buckets` array length to the maximum value of the `uint256` type. This effectively means that the array's contents cover the entirety of the storage. With `.deposit()` we are then able to specify the storage slot we want to overwrite as `bucketNumber`, ie. the index of the bucket that the `value` will be added to.
+
+```solidity
+// Update the owner using the storage clash with the counter variable (See Q5).
+proxy.updateCounter(uint160(address(this)));
+// Make the buckets array stretch over the contract's entire storage.
+proxy.updatecState(type(uint).max);
+// Compute the index within the buckets array at which IMPLEMENTATION_SLOT is located.
+uint bucketNumber = type(uint).max - uint(keccak256(abi.encode(1))) + 1 + IMPLEMENTATION_SLOT;
+// Update the value at IMPLEMENTATION_SLOT.
+impl.deposit(bucketNumber, 0x1337);
+```
+
 </HiddenSolution>
 
 ---

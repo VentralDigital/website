@@ -219,7 +219,25 @@ The security concern(s) with `InSecureumApe` constructor is/are
 
 None of the mentioned parameters are sanity/threshold checked which would allow accidental deployment with incorrect parameters that could be noticed too late, after money has already gone into the contract.
 
-Unlike in Solidity 0.8.x, integer overflows aren't automatically checked for in this version, so an extremely high `saleStart` value could indeed cause an integer overflow, although unlikely for sane values. The best practice is to use a SafeMath library here.
+Unlike in Solidity 0.8.x, integer overflows aren't automatically checked for in this version, so an extremely high `saleStart` value could indeed cause an integer overflow, although unlikely for sane values.
+
+This is true despite the fact that the code appears to be `using SafeMath for uint256;`. Remember that this merely adds the methods of the `SafeMath` library to the type. For this to actually have any effect the code actually needs to make use of the methods:
+
+```diff
+- REVEAL_TIMESTAMP = saleStart + (86400 * 9);
++ REVEAL_TIMESTAMP = saleStart.add(86400 * 9);
+```
+
+Later in Solidity 0.8.19 [User-Defined Operators](https://soliditylang.org/blog/2023/02/22/user-defined-operators/) were added. A library making use of this, would indeed be able to override the addition operator (`+`) to make it equivalent to calling `SafeMath.add()`.
+
+```solidity
+type Int is int;
+using { add as + } for Int global;
+
+function add(Int a, Int b) pure returns (Int) {
+    return Int.wrap(Int.unwrap(a) + Int.unwrap(b));
+}
+```
 </HiddenSolution>
 
 ---

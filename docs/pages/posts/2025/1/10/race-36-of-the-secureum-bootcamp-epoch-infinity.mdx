@@ -1,0 +1,488 @@
+# RACE #36 Of The Secureum Bootcamp Epoch∞
+
+import { Callout } from 'nextra/components'
+import Head from 'next/head'
+import banner from '../../../../secureum-banner.jpg'
+
+<Head>
+  <meta property="og:image" content={'https://ventral.digital' + banner.src} />
+  <meta name="twitter:image" content={'https://ventral.digital' + banner.src} />
+</Head>
+
+This is the official solution of RACE-36, Quiz of the [Secureum Bootcamp](https://twitter.com/0xRajeev/status/1470910752085065731) for Ethereum Smart Contract Auditors. Answers and explanations have been provided by the author [Zigtur](https://x.com/zigtur), an independent security researcher and colleague at Spearbit.
+
+
+<Callout type="info">
+  Participants of this quiz had a single attempt to **answer 8 questions within the strict time limit of 16 minutes**. If you’re reading this in preparation for participating yourself, it’s best to give it a try under the same time limit!
+
+  As usual, I waited for submissions to close before publishing it and, to stay true to the original, I omitted syntax highlighting. Feel free to copy it into your favorite editor, but do so after starting the timer!
+</Callout>
+
+<p className="text-xs text-right">January 10, 2025 by [Zigtur](https://x.com/zigtur)</p>
+
+<style jsx>{`
+  input[type=checkbox] {
+    width: 15px;
+    height: 15px;
+  }
+  li {
+    padding: 0.5em;
+  }
+`}</style>
+
+export function HiddenSolution({ children }) {
+  return (
+    <details closed className="last-of-type:mb-0 rounded-lg bg-neutral-50 dark:bg-neutral-800 p-2 mt-4">
+      <summary>
+        <strong className="text-lg">Solution</strong>
+      </summary>
+      <div className="nx-p-2">{children}</div>
+    </details>
+  )
+}
+
+---
+
+### Code Snippet #1
+
+<Callout type="info">
+All 8 questions refer to the following library.
+</Callout>
+
+```plaintext showLineNumbers filename="BN128.sol"
+// SPDX-License-Identifier: UNLICENSED
+pragma solidity 0.8.20;
+
+library BN128Verifier {
+   struct G1Point {
+       uint256 X;
+       uint256 Y;
+   }
+
+   struct G2Point {
+       uint256[2] X;
+       uint256[2] Y;
+   }
+
+   function G1() internal pure returns (G1Point memory) {
+       return G1Point(1, 2);
+   }
+
+   /// Generator point in F_p2
+   uint256 internal constant x1G2 =
+       11559732032986387107991004021392285783925812861821192530917403151452391805634;
+   uint256 internal constant x0G2 =
+       10857046999023057135944570762232829481370756359578518086990519993285655852781;
+   uint256 internal constant y1G2 =
+       4082367875863433681332203403145435568316851327593401208105741076214120093531;
+   uint256 internal constant y0G2 =
+       8495653923123431417604973247489272438418190587263600148770280649306958101930;
+
+   function G2() internal pure returns (G2Point memory) {
+       return G2Point([x1G2, x0G2], [y1G2, y0G2]);
+   }
+
+   /// Negative generator G2
+   uint256 internal constant x1nG2 =
+       11559732032986387107991004021392285783925812861821192530917403151452391805634;
+   uint256 internal constant x0nG2 =
+       10857046999023057135944570762232829481370756359578518086990519993285655852781;
+   uint256 internal constant y1nG2 =
+       17805874995975841540914202342111839520379459829704422454583296818431106115052;
+   uint256 internal constant y0nG2 =
+       13392588948715843804641432497768002650278120570034223513918757245338268106653;
+
+   function negG2() internal pure returns (G2Point memory) {
+       return G2Point([x1nG2, x0nG2], [y1nG2, y0nG2]);
+   }
+
+   function add(
+       G1Point memory a,
+       G1Point memory b
+   ) internal view returns (G1Point memory output) {
+       uint256[4] memory input;
+       input[0] = a.X;
+       input[1] = a.Y;
+       input[2] = b.X;
+       input[3] = b.Y;
+       bool success;
+
+       assembly {
+           success := staticcall(gas(), 6, input, 0x80, output, 0x40)
+       }
+
+       require(success, "alt_bn128: add failed");
+   }
+
+   function eq(
+       G1Point memory a,
+       G1Point memory b
+   ) internal view returns (bool) {
+       return (a.X == b.X && a.Y == b.Y);
+   }
+
+   function mul(
+       G1Point memory a,
+       uint256 scalar
+   ) internal view returns (G1Point memory output) {
+       uint256[3] memory input;
+       input[0] = a.X;
+       input[1] = a.Y;
+       input[2] = scalar;
+       bool success;
+
+       assembly {
+           success := staticcall(gas(), 7, input, 0x60, output, 0x40)
+       }
+
+       require(success, "alt_bn128: mul failed");
+   }
+
+   function pairing(
+       G1Point memory a,
+       G2Point memory b,
+       G1Point memory c,
+       G2Point memory d
+   ) internal view returns (bool output) {
+       uint256[12] memory input;
+       input[0] = a.X;
+       input[1] = a.Y;
+       input[2] = b.X[0];
+       input[3] = b.X[1];
+       input[4] = b.Y[0];
+       input[5] = b.Y[1];
+       input[6] = c.X;
+       input[7] = c.Y;
+       input[8] = d.X[0];
+       input[9] = d.X[1];
+       input[10] = d.Y[0];
+       input[11] = d.Y[1];
+       bool success;
+
+       assembly {
+           success := staticcall(gas(), 8, input, 0x180, input, 0x20)
+       }
+       require(success, "alt_bn128: pairing failed");
+       output = input[0] != 0;
+   }
+
+   function verifyPubkeyMatching(
+       G1Point memory publicKeyG1,
+       G2Point memory publicKeyG2
+   ) public view returns (bool valid) {
+       uint256 pseudorandom = uint256(keccak256(abi.encode(publicKeyG1, publicKeyG2, block.timestamp, block.prevrandao)));
+       G1Point memory keyTester = mul(G1(), pseudorandom);
+       valid = pairing(mul(publicKeyG1, pseudorandom), negG2(), keyTester, publicKeyG2);
+
+       require(valid, "Mismatch: publicKeyG1 / publicKeyG2");
+   }
+
+   function verifySignature(
+       G1Point memory publicKeyG1,
+       G2Point memory publicKeyG2,
+       G1Point memory signature,
+       uint256 sigHash
+   ) public view returns (bool valid) {
+       verifyPubkeyMatching(publicKeyG1, publicKeyG2);
+
+       uint256 pseudorandom = uint256(keccak256(abi.encode(publicKeyG1, publicKeyG2, signature, block.timestamp, block.prevrandao)));
+       G1Point memory sigTester = mul(G1(), pseudorandom);
+
+       valid = pairing(mul(signature, pseudorandom), negG2(), mul(mul(G1(), pseudorandom), sigHash), publicKeyG2);
+       require(valid, "Invalid signature");
+   }
+}
+```
+
+### Question 1 of 8
+
+The `alt_bn128`/`bn254` curve is the only pairing-friendly curve supported in the EVM through a precompile. What is it mainly used for?
+
+<ul>
+  <li><input type="checkbox" /> A. zk-SNARKs </li>
+  <li><input type="checkbox" /> B. zk-STARKs </li>
+  <li><input type="checkbox" /> C. Schnorr multi-signatures </li>
+  <li><input type="checkbox" /> D. BLS multi-signatures </li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, D.**
+
+**A**: True, this curve is used for zk-SNARKs like Groth16. A good ressource for Groth16 and ZK is the [ZK book](https://www.rareskills.io/zk-book) by Rareskills.
+
+**B**: False. STARKs rely on hash functions and not on elliptic curves. The [STARK101 course](https://starkware.co/stark-101/) by Starknet is a good ressource to get started.
+
+**C**: False. [Schnorr](https://en.bitcoin.it/wiki/Schnorr) multi-signature is a digital signature algorithm used in Bitcoin. It allows multi-signature with SECP256K1.
+
+**D**: True, the curve can be used for BLS multi signatures. This signature scheme is really useful for validators (Ethereum consensus uses it with another curve).
+
+These signatures are based on bilinear pairings. It allows aggregating pubkeys and signatures through addition to make a single signature verification through pairing.
+
+For example, if there are 100 validators that sign the same data, ECDSA will require verifying 100 signatures. BLS signatures allow to aggregate the pubkeys and signatures into a single pubkey-signature pair. This single aggregated signature is verified with the single aggregated pubkey.
+</HiddenSolution>
+
+---
+
+### Question 2 of 8
+
+Which of the following curve is the most similar to `alt_bn128`/`bn254`:
+
+<ul>
+  <li><input type="checkbox" /> A. `secp256k1` </li>
+  <li><input type="checkbox" /> B. `ed25519` </li>
+  <li><input type="checkbox" /> C. `bls12-381` </li>
+  <li><input type="checkbox" /> D. `brainpoolP256r1` </li>
+</ul>
+
+<HiddenSolution>
+**Correct is C.**
+
+**A/B/D**: False, it is not a pairing friendly elliptic curve.
+
+**C**: True, both are pairing-friendly elliptic curves.
+
+</HiddenSolution>
+
+---
+
+### Question 3 of 8
+
+Which Ethereum projects rely on the `alt_bn128`/`bn254` curve?
+
+<ul>
+  <li><input type="checkbox" /> A. Tornado Cash </li>
+  <li><input type="checkbox" /> B. EigenLayer </li>
+  <li><input type="checkbox" /> C. AAVE </li>
+  <li><input type="checkbox" /> D. KyberSwap </li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, B.**
+
+**A**: True, ZK purposes.
+
+**B**: True, EigenLayer with EigenDA. EigenDA uses it to verify aggregated (BLS) signatures for AVS.
+
+**C/D**: False. They are DeFi protocols and don't use multi-signature or ZK.
+
+`alt_bn128` elliptic curve is used for ZK purposes. It is used with the Groth16 ZK algorithm to make private transfers.
+
+Despite `bls12-381` curve being used in the Ethereum consensus, it is not supported inside of the EVM. The only ZK-friendly curve in EVM is `alt_bn128`, which is why it is used by Tornado Cash.
+
+</HiddenSolution>
+
+---
+
+### Question 4 of 8
+
+There are 3 EVM precompiles for operations on the `alt_bn128` curve. Which statements are true?
+
+<ul>
+  <li><input type="checkbox" /> A. `ecDiv` precompile allows dividing a point by another point </li>
+  <li><input type="checkbox" /> B. `ecAdd` allows adding a scalar to a point and adding two points together. </li>
+  <li><input type="checkbox" /> C. `ecMul` only allows multiplying a point and a scalar. </li>
+  <li><input type="checkbox" /> D. `ecMul` expects point input in compressed format. </li>
+</ul>
+
+<HiddenSolution>
+**Correct is C.**
+
+**A**: False. Division does not exist in elliptic curve calculations.
+
+**B**: False. Elliptic curve only supports addition of two points and not addition of a point and a scalar.
+
+**C**: True, elliptic curves define multiplication as an operation between a point and a scalar.
+
+**D**: False. `ecAdd`, `ecMul` and `ecPairing` precompiles support operations on uncompressed format points.
+
+</HiddenSolution>
+
+---
+
+### Question 5 of 8
+
+With `e` being the pairing function, `H` being the message hash, `sk` being a secret key and `r` being a random, which formula(s) verify a signature?
+
+<ul>
+  <li><input type="checkbox" /> A. `e([sk * H]_1, -[1]_2) + e([H]_1, [sk]_2) == 0` </li>
+  <li><input type="checkbox" /> B. `e([sk * H]_1, [1]_2) ==  e([H]_1, [sk]_2)` </li>
+  <li><input type="checkbox" /> C. `e([sk * H]_1 * r, [1]_2) ==  e([H]_1, [sk]_2 * r)` </li>
+  <li><input type="checkbox" /> D. `e([sk * H]_1, [r]_2) + e([H * r]_1, [sk]_2) == 0` </li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, B, C.**
+
+**A**: True, this is the equation that the `ecPairing` precompile will verify for a signature.
+
+**B**: True, equivalent to option A. It is equivalent due to bilinear pairing properties. The `ecPairing` precompile is not able to handle such calculations though. The first equation form (Answer A) should be used.
+
+**C**: True, a random can be added during signature verification. Due to pairing properties, a random `r` can be added on both sides of the equation without breaking it.
+
+**D**: False, the random is added on both side, however one of them should be negative for the equation to be zero.
+
+</HiddenSolution>
+
+---
+
+### Code Snippet #2
+
+```plaintext showLineNumbers filename="Validators.sol"
+// SPDX-License-Identifier: UNLICENSED
+pragma solidity 0.8.20;
+
+import {BN128Verifier} from "./BN128.sol";
+
+contract Validators {
+   using BN128Verifier for BN128Verifier.G1Point;
+   using BN128Verifier for BN128Verifier.G2Point;
+
+   address owner;
+   BN128Verifier.G1Point aggPubkeys;
+   BN128Verifier.G1Point pendingPubkey;
+
+   mapping(bytes32 => bool) validSignature;
+
+   constructor() {
+       owner = msg.sender;
+   }
+
+   function registerValidator(BN128Verifier.G1Point memory pubkeyToAdd) external {
+       require(pendingPubkey.eq(BN128Verifier.G1()), "pending pubkey already set");
+       pendingPubkey = pubkeyToAdd;
+   }
+
+   function aggregateValidator() external {
+       require(msg.sender == owner, "only owner");
+       require(!pendingPubkey.eq(BN128Verifier.G1()), "empty pending");
+       aggPubkeys = aggPubkeys.add(pendingPubkey);
+      
+       // reset pending pubkey
+       pendingPubkey = BN128Verifier.G1();
+   }
+
+   function validateSignature(bytes memory message, BN128Verifier.G1Point memory signature, BN128Verifier.G2Point memory g2AggPubkey) public view returns (bool) {
+       bytes32 hashed = keccak256(message);
+       bool valid = BN128Verifier.verifySignature(aggPubkeys, g2AggPubkey, signature, hashed);
+
+       bytes32 hashedSig = keccak256(signature);
+       validSignature[hashedSig] = valid;
+   }
+
+}
+```
+
+<Callout type="info">
+Note that in the original RACE the code of the `validateSignature` function couldn't compile due to a check on the `hashed` variable which wasn't initialized and wasn't setting the `valid` boolean in storage. The issue is corrected above and had no impact on the answers.
+</Callout>
+
+---
+
+### Question 6 of 8
+
+What is true about the given Validators contract?
+
+<ul>
+  <li><input type="checkbox" /> A. No validator is able to register. </li>
+  <li><input type="checkbox" /> B. Only owner is able to aggregate a validator. </li>
+  <li><input type="checkbox" /> C. Malicious validator can break aggregation. </li>
+  <li><input type="checkbox" /> D. Ownership is transferable </li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, B, C.**
+
+**A**: True, `registerValidator` require the `pendingPubkey` to be `G1`, but this is not initialized in constructor. This is because `G1` is not `(0, 0)`. `G1` is expected to be `(1, 2)`.
+
+**B**: True, owner check is done through require.
+
+**C**: True, by using `registerValidator` with an incorrect pubkey, caller will break `aggregateValidator` (permanent DOS): `aggregateValidator` will not work because the `pendingPubkey` is not a point that satisfies the BN256 elliptic curve equation. It is not a valid point. When adding a valid point with an invalid point, the addition will fail.
+
+**D**: False. There is no such functionality in the contract.
+
+</HiddenSolution>
+
+---
+
+### Question 7 of 8
+
+What is true about `validateSignature`?
+
+<ul>
+  <li><input type="checkbox" /> A. It requires 2/3 of validators' signatures </li>
+  <li><input type="checkbox" /> B. It is prone to signature malleability </li>
+  <li><input type="checkbox" /> C. It requires all validators' signatures </li>
+  <li><input type="checkbox" /> D. A signature marked as valid will always remain valid </li>
+</ul>
+
+<HiddenSolution>
+**Correct is C.**
+
+**A**: False. A threshold mechanism could have been set with BLS signatures by subtracting the non-signer pubkeys from the aggregated pubkey to obtain a 2/3 threshold.
+
+**B**: False, BLS signatures are not prone to signature malleability.
+
+**C**: True, all validators must sign for the signature to be valid with the aggregated pubkey. The aggregated pubkey is the sum of all validators pubkey. For a signature to be valid with this aggregated pubkey, it must be the sum of all validators signature. If one of the signature is invalid (e.g. the data signed is not the same), then the whole aggregated signature is invalid.
+
+**D**: False, if a validator is added, the `aggPubkeys` change and the signature can be reset to false in the mapping.
+
+</HiddenSolution>
+
+---
+
+### Question 8 of 8
+
+```plaintext showLineNumbers
+   function verifySignature(
+       G1Point memory publicKeyG1,
+       G2Point memory publicKeyG2,
+       G1Point memory signature,
+       uint256 sigHash
+   ) public view returns (bool valid) {
+
+       uint256 pseudorandom = uint256(keccak256(abi.encode(publicKeyG1, publicKeyG2, signature, block.timestamp, block.prevrandao)));
+       G1Point memory sigTester = mul(G1(), pseudorandom);
+
+       valid = pairing(mul(signature, pseudorandom), negG2(), mul(G1(), sigHash), publicKeyG2);
+       require(valid, "Invalid signature");
+   }
+```
+
+What is true about `verifySignature`?
+
+<ul>
+  <li><input type="checkbox" /> A. The pseudorandom used in the pairing validation is not needed for verifying the signature </li>
+  <li><input type="checkbox" /> B. The function ensures that the G1 public key matches with the G2 public key </li>
+  <li><input type="checkbox" /> C. The function will revert for incorrect signatures. </li>
+  <li><input type="checkbox" /> D. The function will revert for correct signatures. </li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, C, D.**
+
+**A**: True, it can be removed or kept to test the signature validity, as long as equation is adapted.
+
+**B**: False. There is no such check.
+
+**C**: True, it will revert everytime for both valid and invalid signatures.
+
+**D**: True. The pseudorandom is included in the first element of the equation but not in the second part. It is equivalent to `e([sk * H * r]_1, [-1]_2) + e([H]_1, [sk]_2)`.
+
+The pairing never resolves into `== 0` and wil never be valid.
+
+The code to verify correct signatures: `valid = pairing(mul(signature, pseudorandom), negG2(), mul(mul(G1(), sigHash), pseudorandom), publicKeyG2);`
+
+</HiddenSolution>
+
+---
+
+import { Card, Cards } from 'nextra/components'
+import { NewsletterIcon } from '@components/icons'
+
+<Cards>
+  <Card
+    icon={<NewsletterIcon />}
+    title="← RACE #35 Of The Secureum Bootcamp Epoch∞"
+    href="/posts/2024/12/10/race-35-of-the-secureum-bootcamp-epoch-infinity/"
+  />
+</Cards>

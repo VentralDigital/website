@@ -1,0 +1,82 @@
+<rss xmlns:atom="http://www.w3.org/2005/Atom" version="2.0">
+  <channel>
+    <title>Ventral Digital</title>
+    <link>https://ventral.digital/</link>
+    <description>Ventral Digital LLC is a research and consultancy firm specializing in Information Security and Privacy.</description>
+    <lastBuildDate>Fri, 10 Jan 2025 00:00:00 GMT</lastBuildDate>
+    <docs>https://validator.w3.org/feed/docs/rss2.html</docs>
+    <generator>brain.exe</generator>
+    <image>
+      <title>Ventral Digital</title>
+      <url>http://ventral.digital/favicon.png</url>
+      <link>https://ventral.digital/</link>
+    </image>
+    <atom:link href="https://ventral.digital/rss.xml" rel="self" type="application/rss+xml"/>
+    <item>
+      <title>
+      <![CDATA[ RACE #36 Of The Secureum Bootcamp Epoch∞ ]]>
+      </title>
+      <link>https://ventral.digital/posts/2025/1/10/race-36-of-the-secureum-bootcamp-epoch-infinity/</link>
+      <guid>https://ventral.digital/posts/2025/1/10/race-36-of-the-secureum-bootcamp-epoch-infinity/</guid>
+      <pubDate>Fri, 10 Jan 2025 00:00:00 GMT</pubDate>
+      <description>
+      <![CDATA[This is the official solution of RACE-36, Quiz of the Secureum Bootcamp for Ethereum Smart Contract Auditors. Answers and explanations have been provided by the author Zigtur, an independent security researcher and colleague at Spearbit.... ]]>
+      </description>
+    </item>
+    <item>
+      <title>
+      <![CDATA[ RACE #35 Of The Secureum Bootcamp Epoch∞ ]]>
+      </title>
+      <link>https://ventral.digital/posts/2024/12/10/race-35-of-the-secureum-bootcamp-epoch-infinity/</link>
+      <guid>https://ventral.digital/posts/2024/12/10/race-35-of-the-secureum-bootcamp-epoch-infinity/</guid>
+      <pubDate>Tue, 10 Dec 2024 00:00:00 GMT</pubDate>
+      <description>
+      <![CDATA[ This is a Write-Up of RACE-35, Quiz of the Secureum Bootcamp for Ethereum Smart Contract Auditors. This month's RACE was designed by Secureum Mentor and Independent Security Researcher 0x4non... ]]>
+      </description>
+    </item>
+    <item>
+      <title>
+      <![CDATA[ Practical GrapheneOS for the Paranoid ]]>
+      </title>
+      <link>https://ventral.digital/posts/2024/12/9/practical-grapheneos-for-the-paranoid/</link>
+      <guid>https://ventral.digital/posts/2024/12/9/practical-grapheneos-for-the-paranoid/</guid>
+      <pubDate>Mon, 09 Dec 2024 00:00:00 GMT</pubDate>
+      <description>
+      <![CDATA[ GrapheneOS is a FOSS (Free and Open Source Software) Operating System based on the Android Open Source Project (AOSP), specifically focusing on improving privacy and security. Although we'd all like to have the best security and best privacy possible, it's an unfortunate fact that such improvements rarely come without a cost to convenience and usability. This article explores how to get the most out of Graphene's improvements, and the impact of these measures on the user experience with practical solutions... ]]>
+      </description>
+    </item>
+    <item>
+      <title>
+      <![CDATA[ RACE #34 Of The Secureum Bootcamp Epoch∞ ]]>
+      </title>
+      <link>https://ventral.digital/posts/2024/11/10/race-34-of-the-secureum-bootcamp-epoch-infinity/</link>
+      <guid>https://ventral.digital/posts/2024/11/10/race-34-of-the-secureum-bootcamp-epoch-infinity/</guid>
+      <pubDate>Mon, 11 Nov 2024 00:00:00 GMT</pubDate>
+      <description>
+      <![CDATA[ This is a Write-Up of RACE-34, Quiz of the Secureum Bootcamp for Ethereum Smart Contract Auditors. This month's RACE was designed by Secureum Mentor and Independent Security Researcher MiloTruck... ]]>
+      </description>
+    </item>
+    <item>
+      <title>
+      <![CDATA[ RACE #33 Of The Secureum Bootcamp Epoch∞ ]]>
+      </title>
+      <link>https://ventral.digital/posts/2024/10/1/race-33-of-the-secureum-bootcamp-epoch-infinity/</link>
+      <guid>https://ventral.digital/posts/2024/10/1/race-33-of-the-secureum-bootcamp-epoch-infinity/</guid>
+      <pubDate>Tue, 01 Oct 2024 00:00:00 GMT</pubDate>
+      <description>
+      <![CDATA[ This is a Write-Up of RACE-33, Quiz of the Secureum Bootcamp for Ethereum Smart Contract Auditors. This month's RACE was designed by Secureum Mentor George from Consensys Diligence... ]]>
+      </description>
+    </item>
+    <item>
+      <title>
+      <![CDATA[ RACE #32 Of The Secureum Bootcamp Epoch∞ ]]>
+      </title>
+      <link>https://ventral.digital/posts/2024/9/8/race-32-of-the-secureum-bootcamp-epoch-infinity/</link>
+      <guid>https://ventral.digital/posts/2024/9/8/race-32-of-the-secureum-bootcamp-epoch-infinity/</guid>
+      <pubDate>Sun, 08 Sep 2024 00:00:00 GMT</pubDate>
+      <description>
+      <![CDATA[ This is a Write-Up of RACE-32, Quiz of the Secureum Bootcamp for Ethereum Smart Contract Auditors. This month's RACE was designed by Prof. Yannis Smaragdakis from Dedaub... ]]>
+      </description>
+    </item>
+  </channel>
+</rss>

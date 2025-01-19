@@ -12,7 +12,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: fetch
+      - name: Fetch
         run: wget https://github.com/VentralDigital/website/releases/download/prod/export.zip
-      - name: unzip
+      - name: Unzip
         run: unzip export.zip
+      - name: Deploy
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./export

@@ -16,6 +16,8 @@ jobs:
         run: wget https://github.com/VentralDigital/website/releases/download/prod/export.zip
       - name: Unzip
         run: unzip export.zip
+      - name: Make sure _next folder will be deployed too
+        run: touch ./export/.nojekyll
       - name: Deploy
         uses: peaceiris/actions-gh-pages@v4
         with:

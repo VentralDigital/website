@@ -1,0 +1,602 @@
+# RACE #37 Of The Secureum Bootcamp Epoch∞
+
+import { Callout } from 'nextra/components'
+import Head from 'next/head'
+import banner from '../../../../secureum-banner.jpg'
+
+<Head>
+  <meta property="og:image" content={'https://ventral.digital' + banner.src} />
+  <meta name="twitter:image" content={'https://ventral.digital' + banner.src} />
+</Head>
+
+This is a write-up for RACE-37, Quiz of the [Secureum Bootcamp](https://twitter.com/0xRajeev/status/1470910752085065731) for Ethereum Smart Contract Auditors. It was designed by [Hrishi](https://x.com/hrishi_bhat) who's widely known for his expertise in judging competitive audits, now Head of Competitions & Bounties at [Cantina](https://x.com/cantinaxyz).
+
+
+<Callout type="info">
+  Participants of this quiz had a single attempt to **answer 8 questions within the strict time limit of 16 minutes**. If you’re reading this in preparation for participating yourself, it’s best to give it a try under the same time limit!
+
+  Note that in this RACE it was **not possible to return to a previous question** as some of them contain hints to previous answers. 
+</Callout>
+
+<p className="text-xs text-right">February 4, 2025 by [patrickd](/about/#patrickd)</p>
+
+<style jsx>{`
+  input[type=checkbox] {
+    width: 15px;
+    height: 15px;
+  }
+  li {
+    padding: 0.5em;
+  }
+`}</style>
+
+export function HiddenSolution({ children }) {
+  return (
+    <details className="last-of-type:mb-0 rounded-lg bg-neutral-50 dark:bg-neutral-800 p-2 mt-4">
+      <summary>
+        <strong className="text-lg">Solution</strong>
+      </summary>
+      <div className="nx-p-2">{children}</div>
+    </details>
+  )
+}
+
+---
+
+### Question 1 of 8
+
+```plaintext showLineNumbers filename="CollateralDeposit.sol"
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+contract CollateralDeposit is Ownable {
+
+    /**
+     * @dev Base collateral requirement. Represents a minimum required deposit amount
+     *      related to some underlying asset or protocol rule.
+     */
+    uint256 public baseCollateralRate;
+
+    /**
+     * @dev Volatility factor that scales the base requirement up or down
+     *      depending on current market or protocol conditions.
+     */
+    uint256 public volatilityFactor;
+
+    /**
+     * @dev Dynamic risk multiplier. Adjusts deposit requirements to account for
+     *      additional risk factors such as market uncertainty or leverage considerations.
+     */
+    uint256 public riskMultiplier;
+
+    /**
+     * @dev Keeps track of how much collateral each address has deposited in ETH.
+     */
+    mapping(address => uint256) public deposits;
+
+    /**
+     * @param _baseCollateralRate Initial baseCollateralRate (replaces systemVarA).
+     * @param _volatilityFactor   Initial volatilityFactor (replaces systemVarB).
+     * @param _riskMultiplier     Initial riskMultiplier (replaces scalingFactor).
+     */
+    constructor(
+        uint256 _baseCollateralRate,
+        uint256 _volatilityFactor,
+        uint256 _riskMultiplier
+    ) {
+        baseCollateralRate = _baseCollateralRate;
+        volatilityFactor = _volatilityFactor;
+        riskMultiplier = _riskMultiplier;
+    }
+
+    /**
+     * @dev Allows a user to deposit ETH. The required amount is calculated by multiplying
+     *      the three parameters: baseCollateralRate, volatilityFactor, and riskMultiplier.
+     * 
+     *      After the deposit is validated, we call the internal `_updateCollateralParameters`
+     *      function to adjust the baseCollateralRate and volatilityFactor for subsequent deposits.
+     */
+    function depositEth() external payable {
+        // 1. Retrieve the user’s sanctioned loan amount
+        uint256 loanAmount = userLoans[msg.sender];
+
+        uint256 requiredDeposit = (loanAmount * baseCollateralRatio) / 100;
+
+        // 3. Optionally incorporate a volatility factor or risk multiplier
+        requiredDeposit = requiredDeposit * volatilityFactor * riskMultiplier;
+
+        require(msg.value >= requiredDeposit, "Incorrect deposit amount");
+
+        // Record the deposit
+        deposits[msg.sender] += requiredDeposit;
+        // Automatically adjust system parameters for the next deposit.
+        _updateCollateralParameters();
+        
+        //Code to update users load data omitted
+
+    }
+
+    function _updateCollateralParameters() internal {
+        // Potentially update the following under certain conditions only. Code omitted
+        // Increase baseCollateralRate by 2%
+        baseCollateralRate = baseCollateralRate + (baseCollateralRate * 2 / 100);
+
+        // Increase volatilityFactor by 1%
+        volatilityFactor = volatilityFactor + (volatilityFactor * 1 / 100);
+    }
+
+    function updateRiskMultiplier(uint256 _riskMultiplier) external onlyOwner {
+        riskMultiplier = _riskMultiplier;
+    }
+    // Rest of the contract logicis functioning as expected
+}
+```
+
+Which of the following statements is true?
+
+<ul>
+  <li><input type="checkbox" /> A. There is no bug in the code here </li>
+  <li><input type="checkbox" /> B. Users could lose some ETH potentially  </li>
+  <li><input type="checkbox" /> C. For the typical case, the issue can be resolved in the front end </li>
+  <li><input type="checkbox" /> D. None of the above </li>
+</ul>
+
+<HiddenSolution>
+**Correct is B, C.**
+
+The variable tracking how much the user has deposited so far (`deposits[msg.sender]`) is not increased by the actual amount of ether sent (`msg.value`), but by the minimum required amount (`requiredDeposit`). There's no code sending the excess back to the user, which can potentially cause a user who sends too much ETH a loss.
+
+In the typical case, users do not interact with contracts like this directly though. Here, the issue can be resolved by the UI enforcing that no excess ETH beyond the `requiredDeposit` is ever sent.
+</HiddenSolution>
+
+---
+
+### Question 2 of 8
+
+```plaintext showLineNumbers
+/**
+ * @dev Processes a reward claim on behalf of a user for all assets in the lending pool,
+ *      including any pending (unclaimed) rewards.
+ * @param executor The address allowed to initiate the reward claim on behalf of the user
+ * @param account The address whose rewards are being claimed
+ * @param receiver The address that will receive the claimed rewards
+ */
+function _claimRewards(
+    address executor,
+    address account,
+    address receiver,
+    AccruedRewards[] memory claimableRewards
+) internal virtual {
+    for (uint256 i = 0; i < claimableRewards.length; i++) {
+        uint256 outstandingRewards = _usersUnclaimedRewards[account][claimableRewards[i].programId];
+
+        // Aggregate any previously unclaimed rewards
+        claimableRewards[i].amount += outstandingRewards;
+
+        if (claimableRewards[i].amount != 0) {
+            emit RewardsAccrued(
+                account,
+                claimableRewards[i].rewardToken,
+                getProgramName(claimableRewards[i].programId),
+                claimableRewards[i].amount
+            );
+
+            // Transfer the total amount of rewards
+            _transferRewards(
+                claimableRewards[i].rewardToken,
+                receiver,
+                claimableRewards[i].amount
+            );
+
+            emit RewardsClaimed(
+                account,
+                receiver,
+                claimableRewards[i].rewardToken,
+                claimableRewards[i].programId,
+                executor,
+                claimableRewards[i].amount
+            );
+        }
+    }
+}
+
+function _transferRewards(
+    address rewardToken,
+    address recipient,
+    uint256 amount
+) internal virtual {
+    // Ensure the recipient address is valid (non-zero)
+    require(recipient != address(0), "Invalid recipient address");
+
+    // Perform the token transfer
+    IERC20(rewardToken).safeTransfer(recipient, amount);
+}
+
+function _fetchProgramIds(string[] calldata _programNames)
+        internal
+        pure
+        virtual
+        returns (bytes32[] memory programIds)
+    {
+        programIds = new bytes32[](_programNames.length);
+
+        for (uint256 i = 0; i < _programNames.length; i++) {
+            programIds[i] = fetchProgramId(_programNames[i]);
+        }
+    }
+
+function claimRewards(
+    address _receiver,
+    string[] calldata _rewardPrograms
+)
+    external
+    virtual
+    returns (AccruedRewards[] memory gatheredRewards)
+{
+    if (_receiver == address(0)) revert InvalidToAddress();
+
+    bytes32[] memory retrievedProgramIds = _fetchProgramIds(_rewardPrograms);
+    gatheredRewards = _accumulateRewardsForPrograms(msg.sender, retrievedProgramIds);
+    _claimRewards(msg.sender, msg.sender, msg.sender, gatheredRewards);
+}
+
+// Assume the rest of the code works as intended
+```
+
+Which of the following statements is true?
+
+<ul>
+  <li><input type="checkbox" /> A. User could potentially lose the rewards </li>
+  <li><input type="checkbox" /> B. Funds can be drained </li>
+  <li><input type="checkbox" /> C. The Program Ids are fetched incorrectly </li>
+  <li><input type="checkbox" /> D. Contract logic above works as intended </li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, B.**
+
+A: The intended `_receiver` of rewards can be specified but is ultimately ignored. This could cause a loss of the claimed rewards if the `msg.sender` is, for example, a smart contract.
+
+B: Funds can be drained because unclaimed rewards are not set to zero after the claim has been executed. Because the `_usersUnclaimedRewards` mapping is not updated that way, users can claim the same rewards repeatedly.
+
+*Note: The intention was for only B to be true. The fact that `_receiver` isn't used was intended as a red herring but ultimately turned into an issue. Unfortunately, adjustments were not made in time and the official RACE only accepted B as the correct answer.*
+
+</HiddenSolution>
+
+---
+
+<Callout type="warning">
+  **Point of no Return**: The next Question will be a spoiler to the previous one.
+</Callout>
+
+---
+
+### Question 3 of 8
+
+In Question 2, the issue was that unclaimed rewards were not set to zero after the claim.
+
+Which of the following statements is true?
+
+<ul>
+  <li><input type="checkbox" /> A. Medium severity issue because there is an error in fetching programIds </li>
+  <li><input type="checkbox" /> B. High severity issue </li>
+  <li><input type="checkbox" /> C. High Impact issue </li>
+  <li><input type="checkbox" /> D. Low Impact issue </li>
+</ul>
+
+<HiddenSolution>
+**Correct is B, C.**
+
+The issue has High Impact, High Likelihood and therefore High severity.
+
+You may check Cantina's official [Severity Matrix](https://docs.cantina.xyz/cantina-docs/cantina-competitions/judging-process/finding-severity-criteria) for further explanations.
+</HiddenSolution>
+
+---
+
+### Question 4 of 8
+
+```plaintext showLineNumbers
+    function repayLoan(uint256 loanId) external nonReentrant {
+        Loan memory _loan = loans[loanId];
+
+        require(_loan.status == Status.Active, "invalid status");
+
+        uint256 protocolFee = (_loan.repaymentAmount - _loan.assetAmount) * PROTOCOL_FEE / 10000;
+        uint256 amountToLender = _loan.repaymentAmount - protocolFee;
+
+        loans[loanId].status = Status.Repaid;
+
+        //since the token could be ERC777 and the lender could be a contract, there is a possible DoS attack vector during repayment/liquidation
+        //this is acceptable, since borrowers are expected to be aware of the risk when using non-standard tokens
+        IERC20(_loan.asset).safeTransferFrom(_loan.borrower, _loan.lender, amountToLender); //return asset
+        IERC20(_loan.collateral).safeTransfer(_loan.borrower, _loan.collateralAmount); //return collateral
+
+        IERC20(_loan.asset).safeTransferFrom(_loan.borrower, feeCollector, protocolFee);
+
+        emit LoanRepaid(loanId, _loan.borrower, _loan.lender);
+        emit ProtocolRevenue(loanId, _loan.asset, protocolFee);
+    } 
+```
+
+Which of the following statements is true?
+
+<ul>
+  <li><input type="checkbox" /> A. There is a loss for the lender here </li>
+  <li><input type="checkbox" /> B. There is a loss of funds for the borrower here </li>
+  <li><input type="checkbox" /> C. There is a Medium severity Issue </li>
+  <li><input type="checkbox" /> D. There is a High severity Issue </li>
+</ul>
+
+<HiddenSolution>
+**Correct is B, D.**
+
+> Anyone can repay a Loan with the borrower's funds without their consent leading to financial loss to the borrower in terms of fees and interest (Lenders are incentivized to do this to earn quick bucks). For example, if a borrower wants the loan for a year, the attacker (malicious lender) can repay the loan immediately: They fill the loan request leading to loss for borrower and financial gain for the attacker.
+</HiddenSolution>
+
+---
+
+### Question 5 of 8
+
+```plaintext showLineNumbers filename="ProtocolFeeLibrary.sol"
+// SPDX-License-Identifier: GPL-2.0-or-later
+pragma solidity ^0.8.0;
+
+/// @notice library of functions related to protocol fees
+library ProtocolFeeLibrary {
+    /// @notice Max protocol fee is 0.1% (1000 pips)
+    /// @dev Increasing these values could lead to overflow in Pool.swap
+    uint16 public constant MAX_PROTOCOL_FEE = 1000;
+
+    /// @notice Thresholds used for optimized bounds checks on protocol fees
+    uint24 internal constant FEE_0_THRESHOLD = 1001;
+    uint24 internal constant FEE_1_THRESHOLD = 1001 << 12;
+
+    /// @notice the protocol fee is represented in hundredths of a bip
+    uint256 internal constant PIPS_DENOMINATOR = 1_000_000;
+
+    function getZeroForOneFee(uint24 self) internal pure returns (uint16) {
+        return uint16(self & 0xfff);
+    }
+
+    function getOneForZeroFee(uint24 self) internal pure returns (uint16) {
+        return uint16(self >> 12);
+    }
+    // This function is called when setting the protocol fees
+    function isValidProtocolFee(uint24 self) internal pure returns (bool valid) {
+        // Equivalent to: getZeroForOneFee(self) <= MAX_PROTOCOL_FEE && getOneForZeroFee(self) <= MAX_PROTOCOL_FEE
+        assembly ("memory-safe") {
+            let isZeroForOneFeeOk := lt(and(self, 0xfff), FEE_0_THRESHOLD)
+            let isOneForZeroFeeOk := lt(and(self, 0xfff000), FEE_1_THRESHOLD)
+            valid := and(isZeroForOneFeeOk, isOneForZeroFeeOk)
+        }
+    }
+
+    // The protocol fee is taken from the input amount first and then the LP fee is taken from the remaining
+    // The swap fee is capped at 100%
+    // Equivalent to protocolFee + lpFee(1_000_000 - protocolFee) / 1_000_000
+    /// @dev here `self` is just a single direction's protocol fee, not a packed type of 2 protocol fees
+    function calculateSwapFee(uint16 self, uint24 lpFee) internal pure returns (uint24 swapFee) {
+        // protocolFee + lpFee - (protocolFee * lpFee / 1_000_000). Div rounds up to favor LPs over the protocol.
+        assembly ("memory-safe") {
+            self := and(self, 0xfff)
+            lpFee := and(lpFee, 0xffffff)
+            let numerator := mul(self, lpFee)
+            let divRoundingUp := add(div(numerator, PIPS_DENOMINATOR), gt(mod(numerator, PIPS_DENOMINATOR), 0))
+            swapFee := sub(add(self, lpFee), divRoundingUp)
+        }
+    }
+}
+```
+
+Based on the above code here is a bug submission:
+
+>The function accepts a `uint16 self` value, and uses that value in `and(self, 0xfff)`, the issue here is that `0xfff` is a 12 bit space with capacity to hold a max range of 4,095 `uint` amount as value. However max `uint16` value is 65,535.
+>
+>The `and(self, 0xfff)` bitwise operation will keep the value of `self` within 0 and 4095, if a `uint16` value greater than 4095 is used as `self`, it will discard the upper bits above 12 bits and keep the lower bits. i.e if `self` (protocol fee) is 4,100, the operation will output 4 as value for `self` (protocol fee) and use that in rest of the calculations. It could even be 0, if `self` is 4096.
+>
+>Because of this, the smaller value will be given to `self` and will then be used in the rest of the calculation as seen in the calculation of the numerator. This will result in the final `swapFee` charged/paid for by the user being much lower than it ought to be. This will mean loss of fees for the protocol.
+>
+>Ideally based on the swap fee formula, mathematically, a protocol fee value of 4096 and `lpFee` Value of 100 should not result to the same values as when protocol fee is 0 and `lpFee` value is 100. But this happens here because of the truncation of the `uint16` value to 12 bits. The swap fee formula below
+>
+>`protocolFee + lpFee - (protocolFee * lpFee / 1_000_000)`
+>
+>I believe there is a mistake in `and(self, 0xfff)` operation here, `0xffff` ought to be used instead of `0xfff`. With `0xffff`, this is a 16 bit space and hold a max value of 65,535, which is same max value that can be held by the `uint16` self variable. Using `0xffff` here will follow same logic like seen in the bitwise operation for `lpFee`, `lpFee := and(lpFee, 0xffffff)`, `lpFee` is a `uint24` variable which can hold a max value of 16,777,215 and `0xffffff` has a 24 bit space which ranges from 0 to 16,777,215.
+
+Which of the following statements is true?
+
+<ul>
+  <li><input type="checkbox" /> A. This is theoretically possible, and a valid medium severity issue </li>
+  <li><input type="checkbox" /> B. This is a low severity issue </li>
+  <li><input type="checkbox" /> C. This submission is invalid </li>
+  <li><input type="checkbox" /> D. None of the above </li>
+</ul>
+
+<HiddenSolution>
+**Correct is C.**
+
+The bug submission's premise is that it's possible for the value of `protocolFee` to be greater than 12 bits. The `isValidProtocolFee()` function is, according to its description, called when setting the protocol fees. It enforces `MAX_PROTOCOL_FEE`, a maximum protocol fee, with a value of 1000. Therefore the `protocolFee` value will never be greater than a 12 bit value, making the submitted issue invalid.
+</HiddenSolution>
+
+---
+
+### Question 6 of 8
+
+```plaintext showLineNumbers filename="FeeAccumulator.sol"
+/// @title Fee Accumulator.
+/// @notice A system for managing fee collected through X DAO and X Protocol 
+///         
+/// @dev The Fee Accumulator acts as a unified hub for collecting and
+///      transforming fees collected and their preparation for delivery
+///      to X DAO users. Currently, fees can be swapped via offchain
+///      solver integrations such as 1Inch. An alternative model of
+///      permissionless dutch auctions such as the work seen by Uniswap/Euler
+///      could be used. However, A/B testing may provide greater insight into
+///      the superior model.
+///
+///      Fees can be marked for OTC which will allow the X DAO to
+///      purchase them, at fair market value. The Fee accumulator also works
+///      in collaboration with the Protocol Messaging Hub to manage system
+///      information and fees. Epoch fee distributions are distributed once a
+///      single chain has recorded fees accumulated and tokens locked across
+///      all supported chains inside the X Protocol system.
+///
+///      These fees are distributed pro-rata based on the under of locked
+///      veCVE tokens on each chain, see "CVELocker.sol" for more information
+///      on this.
+///
+///      Native gas tokens are stored inside the contract to pay for all
+///      crosschain actions. Locked token data actions are intended to be
+///      moved over to Wormhole's CCQ prior to mainnet deployment.
+///      At this time, payload/MessageType configuration + encoding/decoding
+///      are not production ready.
+///
+contract FeeAccumulator is ReentrancyGuard {
+
+    // Please note most of the code is omitted for brevity and works as intended
+
+
+    /// @notice Address of fee token.
+    address public immutable feeToken;
+    /// @notice X DAO hub.
+    ICentralRegistry public immutable centralRegistry;
+    /// @notice Address of OneBalanceFeeManager contract.
+    address public immutable oneBalanceFeeManager;
+    /// @notice Fee token decimal unit.
+    uint256 internal immutable _feeTokenUnit;
+    receive() external payable {}
+
+    /// @notice Sends all left over fees to new fee accumulator.
+    /// @dev This does not need to be permissioned as it pulls data
+    ///      directly from the Central Registry meaning a malicious actor
+    ///      cannot abuse this. 
+    ///      This function is only needed to be called in case of a need for migrating over to a new Fee Accumulator
+    function migrateFeeAccumulator() external {
+        address newFeeAccumulator = centralRegistry.feeAccumulator();
+        if (newFeeAccumulator == address(this)) {
+            revert FeeAccumulator__NewFeeAccumulatorIsNotChanged();
+        }
+
+        address[] memory currentRewardTokens = rewardTokens;
+        uint256 numTokens = currentRewardTokens.length;
+        uint256 tokenBalance;
+
+        // Send remaining fee tokens to new fee accumulator, if any.
+        for (uint256 i; i < numTokens; ) {
+            tokenBalance = IERC20(currentRewardTokens[i]).balanceOf(
+                address(this)
+            );
+
+            if (tokenBalance > 0) {
+                SafeTransferLib.safeTransfer(
+                    currentRewardTokens[i],
+                    newFeeAccumulator,
+                    tokenBalance
+                );
+            }
+
+            unchecked {
+                ++i;
+            }
+        }
+
+        tokenBalance = IERC20(feeToken).balanceOf(address(this));
+
+        // Send remaining fee token to new fee accumulator, if any.
+        if (tokenBalance > 0) {
+            SafeTransferLib.safeTransfer(
+                feeToken,
+                newFeeAccumulator,
+                tokenBalance
+            );
+        }
+    }
+```
+
+Which of the following statements is true?
+
+<ul>
+  <li><input type="checkbox" /> A. There contract code above works as intended </li>
+  <li><input type="checkbox" /> B. There is loss of funds here </li>
+  <li><input type="checkbox" /> C. The token balance calculation is incorrect </li>
+  <li><input type="checkbox" /> D. There is a re-entrancy bug here </li>
+</ul>
+
+<HiddenSolution>
+**Correct is B.**
+
+As described by the `migrateFeeAccumulator()` function it should be possible to move all funds to a new `FeeAccumulator` contract. The migration function is currently only handling ERC20 tokens, but as indicated by the payable `receive` function, the contract may also receive native ether. This will cause ether funds being stuck and therefore lost during a migration. 
+</HiddenSolution>
+
+---
+
+<Callout type="warning">
+  **Point of no Return**: The next Question will be a spoiler to the previous one.
+</Callout>
+
+---
+
+### Question 7 of 8
+
+The issue in the above code is that Native gas tokens gets stuck in the contract and are not transferred during migration to towards new fee accumulator
+
+Which of the following statements is true?
+
+<ul>
+  <li><input type="checkbox" /> A. This a High severity issue </li>
+  <li><input type="checkbox" /> B. This is a High likelihood issue </li>
+  <li><input type="checkbox" /> C. This is a Medium severity issue </li>
+  <li><input type="checkbox" /> D. This is a Low severity issue </li>
+</ul>
+
+<HiddenSolution>
+**Correct is C.**
+
+Migrating to a new `FeeAccumulator` is an event that should rarely happen and therefore has a Low Likelihood. But when it does happen it will cause a total loss of all native tokens, which would have a High Impact.
+
+Hence, the issue is of Medium Severity. You may check Cantina's official [Severity Matrix](https://docs.cantina.xyz/cantina-docs/cantina-competitions/judging-process/finding-severity-criteria) for further explanations.
+</HiddenSolution>
+
+---
+
+### Question 8 of 8
+
+Here is the summary of a finding of a permissionless lending protocol:
+
+> Because of highly volatile collateral, an attacker can execute a “sandwich” around a single Oracle price update. Specifically:
+>
+>Create a loan at the minimum collateralization right before the Oracle updates (tx1).
+>After the Oracle price change, which makes the loan under-collateralized, the attacker immediately triggers liquidation and withdraws the collateral (tx3).
+>The protocol’s liquidation system pays out a fixed bonus, and any shortfall (bad debt) gets socialized among other participants. Hence, if the collateral price moves enough in one Oracle update cycle, the attacker can profit from the difference between the debt and the (now-changed) collateral value, leaving the protocol with bad debt.
+>
+>Even if the Liquidate-Loan-to-Value (LTV) or other parameters were initially fine for volatility, if the collateral becomes more volatile over time, this exploit can still be used—there is no mechanism to stop using the originally set LTV once enabled.
+
+Which of the following statements is true?
+
+<ul>
+  <li><input type="checkbox" /> A. This is expected behaviour </li>
+  <li><input type="checkbox" /> B. This is a High Severity Issue </li>
+  <li><input type="checkbox" /> C. This is a High Impact Issue </li>
+  <li><input type="checkbox" /> D. This is a Medium Severity issue </li>
+</ul>
+
+<HiddenSolution>
+**Correct is C, D.**
+
+The event described has a Low Likelihood due to requiring a highly volatile collateral and strong price movement within a single oracle update cycle. Though, when this happens it indeed results in bad debt, which has a High Impact on the protocol.
+
+Hence, the severity of the described issue is Medium. You may check Cantina's official [Severity Matrix](https://docs.cantina.xyz/cantina-docs/cantina-competitions/judging-process/finding-severity-criteria) for further explanations.
+</HiddenSolution>
+
+---
+
+import { Card, Cards } from 'nextra/components'
+import { NewsletterIcon } from '@components/icons'
+
+<Cards>
+  <Card
+    icon={<NewsletterIcon />}
+    title="← RACE #36 Of The Secureum Bootcamp Epoch∞"
+    href="/posts/2025/1/10/race-36-of-the-secureum-bootcamp-epoch-infinity/"
+  />
+</Cards>

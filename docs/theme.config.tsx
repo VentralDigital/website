@@ -93,7 +93,7 @@ const config: DocsThemeConfig = {
           <i>All security/hacking related information on this website is for educational purposes. In no event shall the authors or copyright holders be held liable for any effects arising from the usage of the information. Do not use the information against devices or services that are not your own property or without permission of the owner.</i>
         </p>
         <p className="mt-6 text-xs">
-          © {new Date().getFullYear()} Ventral Digital LLC
+          © <a href="https://creativecommons.org/licenses/by/4.0/deed.en">CC BY 4.0</a> {new Date().getFullYear()} Ventral Digital LLC
         </p>
       </div>
     )

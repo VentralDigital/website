@@ -1,6 +1,6 @@
 # Ventral.Digital website
 
-Based on the [Nextra Docs](https://github.com/shuding/nextra/tree/main/docs), adjusted to be exported and deployed to IPFS.
+Based on the [Nextra Docs](https://github.com/shuding/nextra/tree/main/docs).
 
 ## First-Time Setup
 

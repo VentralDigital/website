@@ -48,156 +48,457 @@ export function HiddenSolution({ children }) {
 ---
 
 ```plaintext showLineNumbers filename="CrossChainToken.sol"
+// SPDX-License-Identifier: UNLICENSED
+pragma solidity ^0.8.22;
 
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {OApp, MessagingFee, Origin} from "@layerzerolabs/oapp-evm/contracts/oapp/OApp.sol";
+
+interface ILayerZeroComposer {
+    /**
+     * @notice Composes a LayerZero message from an OApp.
+     * @param _from The address initiating the composition, typically the OApp where the lzReceive was called.
+     * @param _guid The unique identifier for the corresponding LayerZero src/dst tx.
+     * @param _message The composed message payload in bytes. NOT necessarily the same payload passed via lzReceive.
+     * @param _executor The address of the executor for the composed message.
+     * @param _extraData Additional arbitrary data in bytes passed by the entity who executes the lzCompose.
+     */
+    function lzCompose(
+        address _from,
+        bytes32 _guid,
+        bytes calldata _message,
+        address _executor,
+        bytes calldata _extraData
+    ) external payable;
+}
+
+interface ISwapper {
+    function swap(uint256 amountIn, uint256 minAmountOut, address to, uint256 deadline) external;
+
+}
+
+contract CrossChainToken is OApp, ERC20, ILayerZeroComposer {
+    error InvalidLocalDecimals();
+    error SlippageExceeded(uint256 amountLD, uint256 minAmountLD);
+
+    uint256 public immutable decimalConversionRate;
+
+    uint16 private feeNumerator = 115; // Default fee numerator
+    uint64 private constant FEE_DENOMINATOR = 10000; // Fee denominator is constant
+
+    constructor(string memory _name, string memory _symbol, address _lzEndpoint, address _delegate)
+        OApp(_lzEndpoint, _delegate)
+        ERC20(_name, _symbol)
+        Ownable(_delegate)
+    {
+        if (decimals() < sharedDecimals()) revert InvalidLocalDecimals();
+        decimalConversionRate = 10 ** (decimals() - sharedDecimals());
+    }
+
+    // @notice Sets the fee numerator.
+    function setFeeNumerator(uint16 _feeNumerator) external onlyOwner {
+        require(_feeNumerator < FEE_DENOMINATOR, "Fee numerator must be less than the denominator");
+        feeNumerator = _feeNumerator;
+    }
+
+    /**
+     * @dev Sends a message to the destination chain.
+     * @param to The destination address.
+     * @param dstEid The destination endpoint ID.
+     * @param refundAddress The address to refund the fee to.
+     * @param amount The amount to send.
+     * @param minAmountLD The minimum amount to receive.
+     * @param composeMsg The composed message.
+     * @param options The executor options.
+     * @param fee The calculated fee for the send() operation.
+     *      - nativeFee: The native fee.
+     *      - lzTokenFee: The lzToken fee.
+     */
+    function send(
+        bytes32 to,
+        uint32 dstEid,
+        address refundAddress,
+        uint256 amount,
+        uint256 minAmountLD,
+        bytes calldata composeMsg,
+        bytes calldata options,
+        MessagingFee memory fee
+    ) external payable {
+        // @dev Remove the dust so nothing is lost on the conversion between chains with different decimals for the token.
+        uint256 amountSentLD = _removeDust(amount);
+
+        // Calculate the fee amount based on the percentage
+        uint256 feeAmount = (amountSentLD * feeNumerator) / (FEE_DENOMINATOR);
+
+        // Deduct the fee amount from the amount to be sent
+        uint256 amountReceivedLD = amountSentLD - feeAmount;
+
+        // @dev Check for slippage.
+        if (amountReceivedLD < minAmountLD) {
+            revert SlippageExceeded(amountReceivedLD, minAmountLD);
+        }
+
+        // Transfer the remaining amount to the contract
+        if (feeAmount > 0) {
+            require(transfer(owner(), feeAmount), "Fee transfer failed");
+        }
+
+        _burn(msg.sender, amountReceivedLD);
+
+        bytes memory message = composeMsg.length > 0
+            ? abi.encodePacked(to, _toSD(amountReceivedLD), addressToBytes32(msg.sender), composeMsg)
+            : abi.encodePacked(to, _toSD(amountReceivedLD));
+
+        _lzSend(dstEid, message, options, fee, refundAddress);
+    }
+
+    /**
+     * @dev Internal function to handle the receive on the LayerZero endpoint.
+     * @param _origin The origin information.
+     *  - srcEid: The source chain endpoint ID.
+     *  - sender: The sender address from the src chain.
+     *  - nonce: The nonce of the LayerZero message.
+     * @param _guid The unique identifier for the received LayerZero message.
+     * @param _message The encoded message.
+     * @dev _executor The address of the executor.
+     * @dev _extraData Additional data.
+     */
+    function _lzReceive(
+        Origin calldata _origin,
+        bytes32 _guid,
+        bytes calldata _message,
+        address _executor,
+        bytes calldata _extraData
+    ) internal virtual override {
+        address toAddress = bytes32ToAddress(bytes32(_message[:32]));
+        uint256 amountReceivedLD = _toLD(uint64(bytes8(_message[32:40])));
+        _mint(toAddress, amountReceivedLD);
+
+        // message is composed, execute lzCompose in a separate tx
+        if (_message.length > 40) {
+            bytes memory composeMsg = abi.encodePacked(_origin.nonce, _origin.srcEid, amountReceivedLD, _message[40:]);
+            endpoint.sendCompose(toAddress, _guid, 0, /* the index of the composed message*/ composeMsg);
+        }
+    }
+
+    // @inheritdoc ILayerZeroComposer
+    function lzCompose(
+        address _from,
+        bytes32 _guid,
+        bytes calldata _message,
+        address _executor,
+        bytes calldata _extraData
+    ) external payable {
+        require(msg.sender == address(endpoint), "!endpoint");
+
+        uint256 amountReceived = uint256(bytes32(_message[12:20]));
+
+        address recipient;
+        uint256 minCollateralOut; // minAmountOut
+        address swapFacility;
+
+        try this.decodeInput(_message[76:]) returns (address _recipient, uint256 _minCollateralOut, address _swapFacility) {
+            recipient = _recipient;
+            minCollateralOut = _minCollateralOut;
+            swapFacility = _swapFacility;
+        } catch {
+            address receiver = bytes32ToAddress(bytes32(_message[44:76]));
+            transfer(receiver, amountReceived);
+            return;
+        }
+
+        approve(swapFacility, amountReceived);
+
+        try ISwapper(swapFacility).swap(
+            amountReceived, minCollateralOut, recipient, block.timestamp
+        ) {} catch {
+            // Swap failed - need to revoke approval since it won't be automatically reverted
+            approve(address(swapFacility), 0);
+            transfer(recipient, amountReceived);
+        }
+    }
+
+    /**
+     * @dev Decodes the input message.
+     * @param message The encoded message.
+     * @return The decoded values.
+     */
+    function decodeInput(bytes calldata message) external pure returns (address, uint256, address) {
+        (address _recipient, uint256 _minCollateralOut, address _swapFacility) = abi.decode(message, (address, uint256, address));
+
+        return (_recipient, _minCollateralOut, _swapFacility);
+    }
+
+    /**
+     * @dev Returns the shared decimals.
+     * @return The shared decimals.
+     */
+    function sharedDecimals() public view virtual returns (uint8) {
+        return 6;
+    }
+
+    /**
+     * @dev Internal function to remove dust from the given local decimal amount.
+     * @param _amountLD The amount in local decimals.
+     * @return amountLD The amount after removing dust.
+     *
+     * @dev Prevents the loss of dust when moving amounts between chains with different decimals.
+     * @dev eg. uint(123) with a conversion rate of 100 becomes uint(100).
+     */
+    function _removeDust(uint256 _amountLD) internal view virtual returns (uint256 amountLD) {
+        return (_amountLD / decimalConversionRate) * decimalConversionRate;
+    }
+
+    /**
+     * @dev Internal function to convert an amount from shared decimals into local decimals.
+     * @param _amountSD The amount in shared decimals.
+     * @return amountLD The amount in local decimals.
+     */
+    function _toLD(uint64 _amountSD) internal view virtual returns (uint256 amountLD) {
+        return _amountSD * decimalConversionRate;
+    }
+
+    /**
+     * @dev Internal function to convert an amount from local decimals into shared decimals.
+     * @param _amountLD The amount in local decimals.
+     * @return amountSD The amount in shared decimals.
+     */
+    function _toSD(uint256 _amountLD) internal view virtual returns (uint64 amountSD) {
+        return uint64(_amountLD / decimalConversionRate);
+    }
+
+    /**
+     * @dev Converts an address to bytes32.
+     * @param _addr The address to convert.
+     * @return The bytes32 representation of the address.
+     */
+    function addressToBytes32(address _addr) internal pure returns (bytes32) {
+        return bytes32(uint256(uint160(_addr)));
+    }
+
+    /**
+     * @dev Converts bytes32 to an address.
+     * @param _b The bytes32 value to convert.
+     * @return The address representation of bytes32.
+     */
+    function bytes32ToAddress(bytes32 _b) internal pure returns (address) {
+        return address(uint160(uint256(_b)));
+    }
+}
 ```
 
 ### Question 1 of 8
 
-
+`CrossChainToken` contract has the following functionality:
 
 <ul>
-  <li><input type="checkbox" /> A.  </li>
-  <li><input type="checkbox" /> B.  </li>
-  <li><input type="checkbox" /> C.  </li>
-  <li><input type="checkbox" /> D.  </li>
+  <li><input type="checkbox" /> A. The contract can be deployed on two or more chains, allowing users to burn tokens on one chain and mint them on another. </li>
+  <li><input type="checkbox" /> B. The `CrossChainToken` transfers ERC20 tokens from the sender's wallet, burns them on the source chain, and mints them on the destination chain. </li>
+  <li><input type="checkbox" /> C. A fee is taken from the amount sent when transferring tokens. </li>
+  <li><input type="checkbox" /> D. A slippage check occurs on the source chain because of the conversion rate between chains. </li>
 </ul>
 
 <HiddenSolution>
-**Correct is .**
+**Correct is A, C.**
 
+**A**: The contract is built using LayerZero's OApp standard and can be deployed on multiple chains. It allows burning tokens on the source chain and minting tokens on the destination chain.
 
+**B**: The contract does not transfer ERC20 tokens from the sender's wallet before burning them. Instead, it directly burns tokens on the source chain and then mints them on the destination chain.
+
+**C**: The fee is taken from `amountSentLD` before burning the tokens.
+
+**D**: Slippage check is not directly related to conversion rates between chains. Instead, it ensures that after the fee is deducted, the `amountReceivedLD` is still at least the `minAmountLD` before the transaction is executed.
 </HiddenSolution>
 
 ---
 
 ### Question 2 of 8
 
-
-
+Why is dust removed and the amount converted to shared decimals?
 
 <ul>
-  <li><input type="checkbox" /> A.  </li>
-  <li><input type="checkbox" /> B.  </li>
-  <li><input type="checkbox" /> C.  </li>
-  <li><input type="checkbox" /> D.  </li>
+  <li><input type="checkbox" /> A. To prevent value loss when transferring tokens between chains with different decimals for the token. </li>
+  <li><input type="checkbox" /> B. Because non-EVM chains like Solana use `uint64` for token balances, limiting the maximum amount that can be sent across chains. </li>
+  <li><input type="checkbox" /> C. Dust is removed to adjust the amount for fee calculation. </li>
+  <li><input type="checkbox" /> D. Shared decimal conversion is done to improve transaction efficiency and reduce gas fees. </li>
 </ul>
 
 <HiddenSolution>
-**Correct is .**
+**Correct is A, B.**
 
+**A**: Different chains can use various decimal formats, removing dust and converting amounts to shared decimals prevents rounding errors. This ensures users don't lose token value when moving between chains with mismatched decimals.
 
+**B**: Non-EVM chains like Solana use `uint64` for token balances, meaning any amount sent must fit within that limit. Dust is removed to ensure the amount can be properly represented.
+
+**C**: Dust removal has nothing to do with fee calculation; it's done to ensure accurate token representation across chains with different decimal formats.
+
+**D**: Converting to shared decimals does not improve transaction efficiency or reduce gas fees.
 </HiddenSolution>
+
+---
 
 ### Question 3 of 8
 
-
+The fee calculation is wrong because:
 
 <ul>
-  <li><input type="checkbox" /> A.  </li>
-  <li><input type="checkbox" /> B.  </li>
-  <li><input type="checkbox" /> C.  </li>
-  <li><input type="checkbox" /> D.  </li>
+  <li><input type="checkbox" /> A. The fee calculation is correct. </li>
+  <li><input type="checkbox" /> B. Dust is only removed from the sending amount, but it should also be removed from the `feeAmount`. </li>
+  <li><input type="checkbox" /> C. `amountReceivedLD` can still contain dust after the fee is deducted, which leads to additional losses when it's converted to shared decimals. </li>
+  <li><input type="checkbox" /> D. The fee isn’t calculated in shared decimals. </li>
 </ul>
 
 <HiddenSolution>
-**Correct is .**
+**Correct is C.**
 
+**A**: The fee calculation is incorrect. See answer C for how it should be implemented.
 
+**B**: `feeAmount` should contain dust. The fee is transferred to the owner on the source chain, so there’s no reason to remove dust from it. Dust removal is only necessary for the amount being sent cross-chain to ensure consistency in shared decimals.
+
+**C**: Dust is removed first, then the fee is deducted, which can still leave `amountReceivedLD` with some dust. This amount is burned on the source chain, and before being sent to the destination chain, it's converted to shared decimals using `_toSD(amountReceivedLD)`. Since `_toSD` rounds down to fit the shared decimal, any leftover dust is lost, causing a loss of tokens. The correct way to implement this would be:
+
+```solidity
+uint256 amountSentLD = _removeDust(amount);
+uint256 amountReceivedLD = _removeDust(amountSentLD - (amountSentLD * FEE_NUMERATOR) / (FEE_DENOMINATOR)));
+uint256 fee = amountSentLD - amountReceivedLD
+```
+
+**D**: The fee should be applied in local decimals, not shared decimals. Since the fee is transferred before sending tokens cross-chain, it needs to be deducted in the same decimal system the contract operates in.
 </HiddenSolution>
 
 ---
 
 ### Question 4 of 8
 
-
+The access control logic in `lzCompose` is insufficient because:
 
 <ul>
-  <li><input type="checkbox" /> A.  </li>
-  <li><input type="checkbox" /> B.  </li>
-  <li><input type="checkbox" /> C.  </li>
-  <li><input type="checkbox" /> D.  </li>
+  <li><input type="checkbox" /> A. The from address isn't verified. </li>
+  <li><input type="checkbox" /> B. The `_executor` address isn't checked. </li>
+  <li><input type="checkbox" /> C. `extraData` isn't validated. </li>
+  <li><input type="checkbox" /> D. None of the above. </li>
 </ul>
 
 <HiddenSolution>
-**Correct is .**
+**Correct is A.**
 
+**A**: Since the from address isn't verified, anyone can call `sendCompose` and set the to address as the `CrossChainToken` contract. Because `CrossChainToken` mints tokens to itself in `_lzReceive` and then uses them in `lzCompose`, an attacker could arbitrarily invoke `lzCompose` and steal those tokens. Checking from would prevent unauthorized calls and protect the contract from this exploit.
 
+**B**: `_executor` is not used anywhere in the `lzCompose` function, so checking it would not improve security or access control. The function is meant to be called by anyone. 
+
+**C**: extraData is not used in the `lzCompose` function. Since it has no impact on the function's behavior, validating it would not change the security of the function.
 </HiddenSolution>
 
 ---
 
 ### Question 5 of 8
 
-
+The `amountReceived` value in `lzCompose` is:
 
 <ul>
-  <li><input type="checkbox" /> A.  </li>
-  <li><input type="checkbox" /> B.  </li>
-  <li><input type="checkbox" /> C.  </li>
-  <li><input type="checkbox" /> D.  </li>
+  <li><input type="checkbox" /> A. Correct because it's the amount received in shared decimals. </li>
+  <li><input type="checkbox" /> B. Incorrect because the amount is in local decimals and is too big to fit in 8 bytes. </li>
+  <li><input type="checkbox" /> C. Incorrect because the amount was encoded starting from position 0. </li>
+  <li><input type="checkbox" /> D. Incorrect because `nonce` and `srcEid` come before the amount in the encoded message, so the amount should start at position 64. </li>
 </ul>
 
 <HiddenSolution>
-**Correct is .**
+**Correct is B.**
+
+**A**: The `amountReceived` value is not in shared decimals, it is in local decimals, meaning it has a larger value. Since the function extracts only 8 bytes, but the amount in local decimals requires 32 bytes, the extracted value is incorrect and incomplete.
+
+**B**: In the `lzCompose` function, `amountReceived` is extracted from `composeMsg` like this:
+
+```solidity
+uint256 amountReceived = uint256(bytes32(composeMsg[12:20]));
+```
+
+* `_origin.nonce (uint64)` takes 8 bytes
+* `_origin.srcEid (uint32)` takes 4 bytes
+* `amountReceivedLD` starts at byte 12 and should take 32 bytes because it's stored as uint256 in local decimals.
 
 
+Function is incorrectly assuming `amountReceived` can be stored in 8 bytes when it actually requires 32.
+
+**C**: The amount was not encoded starting from position 0. The encoded message first includes `nonce` (8 bytes) and srcEid (4 bytes), meaning the amount starts at position 12.
+
+**D**: This would only be true if `nonce` and `srcEid` were uint256, each taking 32 bytes. However, `nonce` is a uint64 (8 bytes) and `srcEid` is a uint32 (4 bytes), so the amount actually starts at byte 12, not 64.
 </HiddenSolution>
 
 ---
 
 ### Question 6 of 8
 
-
+What happens if decoding fails in `lzCompose`?
 
 <ul>
-  <li><input type="checkbox" /> A.  </li>
-  <li><input type="checkbox" /> B.  </li>
-  <li><input type="checkbox" /> C.  </li>
-  <li><input type="checkbox" /> D.  </li>
+  <li><input type="checkbox" /> A. The tokens are correctly sent to the sender from the source chain. </li>
+  <li><input type="checkbox" /> B. The original `composeMsg` passed to send function doesn't start at position 76. </li>
+  <li><input type="checkbox" /> C. The entire `lzCompose` call will fail. </li>
+  <li><input type="checkbox" /> D. The receiver address is the `msg.sender` from the source chain, but they might not own the same address on the destination chain. </li>
 </ul>
 
 <HiddenSolution>
-**Correct is .**
+**Correct is D.**
 
+**A**: See the explanation in D. 
 
+**B**: The `composeMsg` does start at position 76.
+
+**C**: The `lzCompose` function does not revert if decoding fails. Instead, it catches the error and transfers tokens to the extracted fallback address.
+
+**D**: If decoding fails, the contract sends the tokens to an address extracted from `_message[44:76]`, which corresponds to `msg.sender` from the source chain. However, the sender's address on one chain might not be controlled by the same user on the destination chain, which is frequently the case with smart contract wallets. This can result in the tokens being sent to an address the user does not control, leading to a loss of funds.
 </HiddenSolution>
 
 ---
 
 ### Question 7 of 8
 
-
+Is it safe to mint tokens in `_lzReceive` and then use them in `lzCompose`?
 
 <ul>
-  <li><input type="checkbox" /> A.  </li>
-  <li><input type="checkbox" /> B.  </li>
-  <li><input type="checkbox" /> C.  </li>
-  <li><input type="checkbox" /> D.  </li>
+  <li><input type="checkbox" /> A. No, because the tokens are minted to the `CrossChainToken` contract and could be stolen before `lzCompose` is executed. </li>
+  <li><input type="checkbox" /> B. Yes, because the tokens remain in the contract and are available when `lzCompose` is called. </li>
+  <li><input type="checkbox" /> C. Yes, everything is executed in the same transaction, so there is no way an attacker can steal the tokens. </li>
+  <li><input type="checkbox" /> D. Yes, because `lzCompose` is only called by the LayerZero endpoint, ensuring secure execution. </li>
 </ul>
 
 <HiddenSolution>
-**Correct is .**
+**Correct is B.**
 
+**A**: Even though the tokens stay in the contract until `lzCompose` runs, they can only be used by the rightful owner. The amount is encoded in the message, so no one else can take them.
 
+**B**: The tokens remain in the contract until `lzCompose` is called, but this isn't a security risk. Since the amount is encoded in the message, users can only access their own tokens, making the process safe.
+
+**C**: `_lzReceive` and `lzCompose` are not executed in the same transaction.
+
+**D**: This isn't the main reason why it's safe. Even though `sendCompose` can be triggered within the `lzReceive` call after tokens are minted to the contract, the message data ties those tokens to their rightful owner.
 </HiddenSolution>
 
 ---
 
 ### Question 8 of 8
 
-
+What is the potential issue with the try/catch block in the `lzCompose` function when calling `ISwapper(swapFacility).swap(){:solidity}`?
 
 <ul>
-  <li><input type="checkbox" /> A.  </li>
-  <li><input type="checkbox" /> B.  </li>
-  <li><input type="checkbox" /> C.  </li>
-  <li><input type="checkbox" /> D.  </li>
+  <li><input type="checkbox" /> A. The function should check `gasleft()` to ensure there is enough gas to complete the swap, even in the worst-case scenario. If the swap fails, there should still be enough gas left to properly execute the catch block. </li>
+  <li><input type="checkbox" /> B. The try/catch block prevents any out-of-gas (OOG) attack, so no additional checks are needed. </li>
+  <li><input type="checkbox" /> C. The contract automatically refunds the user's gas if `swap()` fails, so this is not a concern. </li>
+  <li><input type="checkbox" /> D. If `swap()` runs out of gas, the catch block might still have enough gas to revoke approval and transfer tokens. </li>
 </ul>
 
 <HiddenSolution>
-**Correct is .**
+**Correct is A, D.**
 
+**A**: The `gasleft()` check before the external call should account for the worst-case scenario of gas consumption during the external call and in case of revert have enough gas to finish the catch block while taking into account the gas cost of catch block execution and the 1/64 gas that is left after the external call due to EIP-150. 
 
+**B**: The try/catch block does not fully prevent out-of-gas (OOG) attacks. If `swap()` runs out of gas, the entire call may fail before reaching the catch block. While the catch block might still execute due to EIP-150's 63/64 gas rule.
+
+**C**: The contract does not automatically refund gas if `swap()` fails. Gas is spent as the transaction runs, and if `swap()` fails due to an OOG error, the user cannot recover the gas already used.
+
+**D**: EIP-150 also guarantees that after a failed external call, the calling contract keeps at least 1/64 of the original gas. If `ISwapper(swapFacility).swap()` runs out of gas, execution will continue in the catch block, which might still have enough gas to run `approve()` and `transfer()`. This is risky because an attacker could intentionally trigger an out-of-gas (OOG) failure inside `swap()`, while making sure the catch block still executes.
 </HiddenSolution>
 
 ---

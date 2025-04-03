@@ -355,9 +355,9 @@ The security concern(s) in `transferFrom` include
 
 
 <HiddenSolution>
-**Correct is A, B, C.**
+**Correct is B, C.**
 
-The `transferFrom()` function does not check ownership of the NFT. This allows any `msg.sender` to overwrite the current owner, basically allowing a transfer of any NFT.
+The `transferFrom()` function checks ownership of the NFT. This prevents `msg.sender` to transfer any NFT.
 
 The `safeTransferFrom()` function ensures that NFTs will not be stuck in recipient contracts that don't communicate that they are able to handle them. This issue still exists for the normal `transferFrom()` function though for backwards compatibility reasons.
 

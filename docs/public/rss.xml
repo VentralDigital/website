@@ -3,7 +3,7 @@
     <title>Ventral Digital</title>
     <link>https://ventral.digital/</link>
     <description>Ventral Digital LLC is a research and consultancy firm specializing in Information Security and Privacy.</description>
-    <lastBuildDate>Mon, 03 Mar 2025 00:00:00 GMT</lastBuildDate>
+    <lastBuildDate>Mon, 07 Apr 2025 00:00:00 GMT</lastBuildDate>
     <docs>https://validator.w3.org/feed/docs/rss2.html</docs>
     <generator>brain.exe</generator>
     <image>
@@ -12,6 +12,17 @@
       <link>https://ventral.digital/</link>
     </image>
     <atom:link href="https://ventral.digital/rss.xml" rel="self" type="application/rss+xml"/>
+    <item>
+      <title>
+      <![CDATA[ RACE #39 Of The Secureum Bootcamp Epoch∞ ]]>
+      </title>
+      <link>https://ventral.digital/posts/2025/4/7/race-39-of-the-secureum-bootcamp-epoch-infinity/</link>
+      <guid>https://ventral.digital/posts/2025/4/7/race-39-of-the-secureum-bootcamp-epoch-infinity/</guid>
+      <pubDate>Mon, 07 Apr 2025 00:00:00 GMT</pubDate>
+      <description>
+      <![CDATA[This is a mirror of trocher's solution of RACE-39 which was centered around Vyper. ]]>
+      </description>
+    </item>
     <item>
       <title>
       <![CDATA[ RACE #38 Of The Secureum Bootcamp Epoch∞ ]]>

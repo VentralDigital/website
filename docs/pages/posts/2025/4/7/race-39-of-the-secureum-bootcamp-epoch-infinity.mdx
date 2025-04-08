@@ -1,0 +1,607 @@
+# RACE #39 Of The Secureum Bootcamp Epoch∞
+
+import { Callout } from 'nextra/components'
+import Head from 'next/head'
+import banner from '../../../../secureum-banner.jpg'
+
+<Head>
+  <meta property="og:image" content={'https://ventral.digital' + banner.src} />
+  <meta name="twitter:image" content={'https://ventral.digital' + banner.src} />
+</Head>
+<Callout type="info">
+  This is a mirror of a Write-Up on RACE-39, Quiz of the [Secureum Bootcamp](https://twitter.com/0xRajeev/status/1470910752085065731) for Ethereum Smart Contract Auditors. It was designed by Secureum Mentor [Tanguy (aka trocher)](https://x.com/trooocher), a Security Researcher at ChainSecurity, contributor and reviewer of the Vyper compiler.
+
+  The original version of this document can be found at https://hackmd.io/@trocher/ByQK9Vlnkx
+
+  Participants of this quiz had to **answer 8 questions within the strict time limit of _16 minutes_**. If you’re reading this in preparation for participating yourself, it’s best to give it a try under the same time limit!
+
+  **Note that this race is focussed on the [Vyper](https://vyperlang.org/) language.** In the following questions, assume all contracts are deployed on Ethereum Mainnet. Each question has at least one correct answer, though some may have more than one. Whenever the module ownable is referenced, it is assumed to be the following module:
+
+  ```plaintext showLineNumbers copy
+    # pragma version 0.4.1
+
+    # simplified version of https://github.com/pcaversaccio/snekmate/blob/main/src/snekmate/auth/ownable.vy
+
+    owner: public(address) 
+
+    @deploy 
+    @payable 
+    def __init__(): 
+        self._transfer_ownership(msg.sender) 
+
+    @external 
+    def transfer_ownership(new_owner: address): 
+        self._check_owner() 
+        assert new_owner != empty(address) 
+        self._transfer_ownership(new_owner) 
+
+    @internal 
+    def _check_owner(): 
+        assert msg.sender == self.owner 
+
+    @internal 
+    def _transfer_ownership(new_owner: address): 
+        old_owner: address = self.owner 
+        self.owner = new_owner
+  ```
+</Callout>
+
+<style jsx>{`
+  input[type=checkbox] {
+    width: 15px;
+    height: 15px;
+  }
+  li {
+    padding: 0.5em;
+  }
+`}</style>
+
+export function HiddenSolution({ children }) {
+  return (
+    <details closed className="last-of-type:mb-0 rounded-lg bg-neutral-50 dark:bg-neutral-800 p-2 mt-4">
+      <summary>
+        <strong className="text-lg">Solution</strong>
+      </summary>
+      <div className="nx-p-2">{children}</div>
+    </details>
+  )
+}
+
+---
+
+### Question 1 of 8
+
+Given the following contract, and a call to `foo()` with `gas=100_000` (assuming the sender has enough ETH to cover the message value), which of the following statements are true?
+
+```plaintext showLineNumbers copy
+# pragma version 0.4.1
+
+
+@payable
+@external
+def foo():
+    send(self, msg.value)
+
+
+@payable
+@external
+def __default__():
+    pass
+```
+
+<ul>
+  <li><input type="checkbox" /> A. The call will never fail </li>
+  <li><input type="checkbox" /> B. The call will always fail </li>
+  <li><input type="checkbox" /> C. The call might fail </li>
+  <li><input type="checkbox" /> D. The contract does not compile </li>
+</ul>
+
+<HiddenSolution>
+**Correct Answers: C.**
+
+- The contract contains two functions: `foo()` and a fallback (`__default__`).  
+- The `foo()` function is marked as `@payable` and uses the `send()` builtin to transfer `msg.value` back to the contract via the fallback function.
+- **Key Point:** According to [EVM specifications](https://github.com/ethereum/execution-specs/blob/9c58cc8553ec3a59e732e81d5044c35aa480fbbb/src/ethereum/cancun/vm/gas.py#L227), when a call transfers a non-zero amount of ETH, the EVM adds 2300 gas (`GAS_STIPEND`) to the sub-context.  
+- In Vyper, the `send()` builtin performs a call with `gas=0` (unlike specified otherwise with a kwarg). That is, when transferring **zero ETH**, the `send()` builtin does **not** add a gas stipend (unlike what Solidity's `transfer()` would do).
+- Therefore, if `msg.value` is zero, no gas is forwarded, and the call will fail.
+
+Thus:
+
+- **A.** Incorrect - because the call may fail when `msg.value` is zero.
+- **B.** Incorrect - the call may succeed when `msg.value` is non-zero.
+- **C.** Correct.
+- **D.** Incorrect - the contract compiles successfully.
+
+</HiddenSolution>
+
+---
+
+### Question 2 of 8
+
+Assuming you are making an external call with `IERC20(token).transfer(dst, 100)` to an arbitrary ERC-20 token, what should you definitely add to the call?
+
+<ul>
+  <li><input type="checkbox" /> A. `skip_contract_check=True` </li>
+  <li><input type="checkbox" /> B. `default_return_value=True` </li>
+  <li><input type="checkbox" /> C. `value=0` </li>
+  <li><input type="checkbox" /> D. `gas=2300` </li>
+</ul>
+
+<HiddenSolution>
+**Correct Answers: B.**
+
+
+- When calling an ERC-20 token's `transfer()` function, you must account for variations in implementations.
+- Some tokens (like Tether/USDT) do not return a boolean as specified by the ERC-20 standard.  
+- By specifying `default_return_value=True`, the call will treat a missing return value as `True` by default, preventing a revert due to non-standard behavior.
+
+Thus:
+
+- **A.** Incorrect - skipping the contract check is not recommended.
+- **B.** Correct.
+- **C.** Incorrect - `value=0` is the default behavior.
+- **D.** Incorrect
+    Providing only 2300 gas might be insufficient for a call to an ERC-20 token. Furthermore, even if it was enough, hard-coding the gas value is not recommended as future hard forks might change the gas cost of certain operations.
+
+</HiddenSolution>
+
+---
+
+### Question 3 of 8
+
+Given the following contract, what is a correct way of checking if a user has the `Moderator` or `Admin` role?
+
+```plaintext showLineNumbers copy
+# pragma version 0.4.1
+
+flag Access:
+    User
+    Admin
+    Moderator
+
+accessOf: HashMap[address, Access]
+
+def only_admin_or_moderator_A():
+    if self.accessOf[msg.sender] == Access.User:
+        raise "User access denied"
+
+
+def only_admin_or_moderator_B():
+    if not (
+        self.accessOf[msg.sender] == Access.Admin
+        or self.accessOf[msg.sender] == Access.Moderator
+    ):
+        raise "User access denied"
+
+
+def only_admin_or_moderator_C():
+    if not (self.accessOf[msg.sender] in (Access.Admin | Access.Moderator)):
+        raise "User access denied"
+```
+
+<ul>
+  <li><input type="checkbox" /> A. `only_admin_or_moderator_A` </li>
+  <li><input type="checkbox" /> B. `only_admin_or_moderator_B` </li>
+  <li><input type="checkbox" /> C. `only_admin_or_moderator_C` </li>
+  <li><input type="checkbox" /> D. All of the above </li>
+</ul>
+
+<HiddenSolution>
+**Correct Answers: C.**
+
+- Vyper's `flag` work similarly to flag enums in other languages (each value represents a bit). The `Access` type above is represented as:
+
+  ```
+  User     : 0b001
+  Admin    : 0b010
+  Moderator: 0b100
+  ```
+
+- Because any combination (and even `empty(Access) == 0b000`) is valid, the check must verify that at least one of the desired bits is set.
+
+Thus:
+
+- A. Incorrect.
+
+    This function only checks that the caller is not just a `User` but does not verify the presence of `Admin` or `Moderator` flags.  
+- B. Incorrect.
+
+    This function checks that the caller have the `Admin` role XOR the `Moderator` role, but it would incorrectly fail if:
+    1. The caller has both roles: `( Access.Admin | Access.Moderator) = 0b110`.
+    2. The caller is an Admin or a Moderator but is also a User, for example: `( Access.Admin | Access.User) = 0b011`.
+- C. Correct.
+
+    In vyper the keyword `in` checks that any of the flags on two operands are simultaneously set, `self.accessOf[msg.sender] in (Access.Admin | Access.Moderator)` is equivalent to `(self.accessOf[msg.sender] & 0b110) != 0b000`.
+- D. Incorrect.
+
+    Only answer C is correct.
+
+</HiddenSolution>
+
+---
+
+### Question 4 of 8
+
+Given the following contract:
+
+```plaintext showLineNumbers copy
+flag E:
+    a
+
+@external
+def hello_vyper_world(a: E, b: Bytes[4] = b'1234') -> Bytes[4]:
+    return slice(msg.data, 0, 4)
+```
+
+Which of the following are valid function selectors for the function `hello_vyper_world`?
+
+<ul>
+  <li><input type="checkbox" /> A. `0xdbae851a` </li>
+  <li><input type="checkbox" /> B. `0x41aa4785` </li>
+  <li><input type="checkbox" /> C. `0x6acbda94` </li>
+  <li><input type="checkbox" /> D. `0x986a9642` </li>
+</ul>
+
+<HiddenSolution>
+**Correct Answers: A, D.**
+
+- In Vyper:
+  1. Flags (like `E`) are converted to the ABI type `uint256`.
+  2. `Bytes[N]` types are converted to the ABI type `bytes`.
+  3. When a function has default arguments, Vyper generates one entry point per overload.
+  
+- Therefore, the two canonical representations for the function signature are:
+  - `hello_vyper_world(uint256)`
+  - `hello_vyper_world(uint256,bytes)`
+  
+- Taking the first 4 bytes of the keccak256 hash of these canonical representations yields:
+  - `method_id(hello_vyper_world(uint256)): 0xdbae851a`
+  - `method_id(hello_vyper_world(uint256,bytes)): 0x986a9642`
+  
+- Alternatively, an easy way to check the method identifiers of a vyper contract is `vyper -f method_identifiers foo.vy`.
+
+Thus, **A** and **D** are the valid selectors.
+
+</HiddenSolution>
+
+---
+
+### Question 5 of 8
+
+Given the following contract, which of the following statements are true?
+
+(The module ownable is defined at the top of the RACE)
+
+```plaintext showLineNumbers copy
+# pragma version 0.4.1
+
+import ownable
+from ethereum.ercs import IERC20
+
+initializes: ownable
+
+receivers: DynArray[Receiver, max_value(uint32)]
+BPS: constant(uint256) = 10_000
+token_whitelist: HashMap[IERC20, bool]
+token_balances: public(HashMap[IERC20, HashMap[address, uint256]])
+token_balance_tracked: public(HashMap[IERC20, uint256])
+struct Receiver:
+    addr: address
+    weight: uint256
+
+
+@deploy
+def __init__(initial_receivers: address[4]):
+    ownable.__init__()
+    for receiver: address in initial_receivers:
+        self.receivers.append(Receiver(addr=receiver, weight=BPS // 4))
+
+
+@external
+def set_token_whitelist(token: IERC20, status: bool):
+    ownable._check_owner()
+    self.token_whitelist[token] = status
+
+
+@internal
+def _set_receivers(_receivers: DynArray[Receiver, max_value(uint32)]):
+    total_weight: uint256 = 0
+    for receiver: Receiver in _receivers:
+        assert receiver.addr != empty(address), "receiver is the zero address"
+        assert receiver.weight > 0, "receiver weight is zero"
+        assert receiver.weight <= BPS, "receiver weight is too high"
+        total_weight += receiver.weight
+    assert total_weight == BPS, "total weight is not 100%"
+    self.receivers = _receivers
+
+
+@internal
+def transfer_in(token: IERC20, amount: uint256) -> uint256:
+    assert self.token_whitelist[token]
+    if amount > 0:
+        extcall token.transferFrom(msg.sender, self, amount)
+    return amount
+
+
+@external
+def set_receivers(_receivers: DynArray[Receiver, max_value(uint32)]):
+    ownable._check_owner()
+    self._set_receivers(_receivers)
+
+
+@payable
+def deposit(token: address, amount: uint256):
+    if token == empty(address):
+        assert msg.value == amount
+    else:
+        assert msg.value == 0
+        self.transfer_in(IERC20(token), amount)
+
+
+@external
+def distribute_tokens(token: IERC20, amount: uint256 = 0):
+    balance: uint256 = unsafe_add(
+        staticcall token.balanceOf(self), self.transfer_in(token, amount)
+    )
+
+    new_balance: uint256 = balance - self.token_balance_tracked[token]
+    
+    # Leave dust due to rounding errors in the untracked balance, to be distributed next time
+    for receiver: Receiver in self.receivers:
+        receiver_amount: uint256 = new_balance * receiver.weight // BPS
+        self.token_balance_tracked[token] += receiver_amount
+        self.token_balances[token][receiver.addr] += receiver_amount
+    
+
+@external
+def claim_tokens(token: IERC20, to: address, amount: uint256):
+    assert self.token_whitelist[token]
+    assert self.token_balances[token][msg.sender] >= amount
+
+    self.token_balances[token][msg.sender] -= amount
+    self.token_balance_tracked[token] -= amount
+    extcall token.transfer(to, amount)
+
+
+@external
+def recover(token: IERC20, to: address, amount: uint256, force: bool = False):
+    if token.address == empty(address):
+        ownable._check_owner()
+        assert force, "force required"
+        send(to, amount)
+    else:
+        # Anyone can recover non-whitelisted tokens from the contract
+        assert not self.token_whitelist[token]
+    
+        success: bool = raw_call(
+            token.address,
+            abi_encode(
+                to,
+                amount,
+                method_id=method_id("transfer(address,uint256)"),
+            ),
+            revert_on_failure=False,
+        )
+```
+
+<ul>
+  <li><input type="checkbox" /> A. The owner can transfer ownership to any address except the zero address </li>
+  <li><input type="checkbox" /> B. The initial owner is the deployer of the contract </li>
+  <li><input type="checkbox" /> C. Anyone can take ownership of the contract without the owner's consent </li>
+  <li><input type="checkbox" /> D. None of the above </li>
+</ul>
+
+<HiddenSolution>
+**Correct Answers: B.**
+
+- In Vyper, external functions from an imported module (such as `transfer_ownership` from `ownable`) are **not** automatically exposed in the compiling contract.  
+- To expose such a function, you would need an explicit statement (e.g., `exports: ownable.transfer_ownership`).
+
+Thus:
+
+
+- A. Incorrect
+
+    The `transfer_ownership` function is not exposed externally, so the owner cannot transfer ownership to any address.
+- B. Correct.
+
+    The `ownable.__init__` function is called by the constructor of the contract and transfers ownership to the deployer of the contract.
+- C. Incorrect.
+
+    `_transfer_ownership()` is unreachable from the outside and only called in the constructor.
+- D. Incorrect.
+Hence, only **B** is correct.
+
+</HiddenSolution>
+
+---
+
+### Question 6 of 8
+
+Given the code from Question 5, which of the following statements are true?
+
+<ul>
+  <li><input type="checkbox" /> A. It is not possible to set the receivers </li>
+  <li><input type="checkbox" /> B. The sum of receivers' `weight` might be larger than BPS in some cases </li>
+  <li><input type="checkbox" /> C. No easy way to deposit ETH is implemented </li>
+  <li><input type="checkbox" /> D. None of the above </li>
+</ul>
+
+<HiddenSolution>
+**Correct Answers: A, C.**
+
+- **A. Correct.**  
+  Vyper allocates memory statically. For a dynamic array defined as `DynArray[Receiver, max_value(uint32)]`, the extremely large upper bound forces the reservation of a vast amount of memory (of size `max_value(uint32) * 32 * 2 + 32` bytes). When any variable allocated after this block is written to, the memory expansion  of the block is triggered and charged. As its cost is much greater than Ethereum block gas limit, the execution will run out of gas. This prohibitively high gas costs effectively make setting receivers impossible.
+    
+- **B. Incorrect.**  
+  The `_set_receivers` function ensures that the sum of all receiver weights equals `BPS`, so the total cannot exceed `BPS`.
+
+- **C. Correct.**  
+  The `deposit()` function is marked only as `@payable` (and not as `@external`), meaning it is not accessible externally. Although ETH could be forced into the contract via other means (e.g., selfdestruct), there is no intended method for depositing ETH.
+    
+- **D.** Incorrect.
+
+</HiddenSolution>
+
+---
+
+### Question 7 of 8
+
+Given the code from Question 5, and assuming all tokens used by the system are trusted, ERC-20 compliant, with no unusual behaviors (e.g., rebasing, transfers a diffent amount than requested, fee-on-transfer, double entry points, non-compliant interface, or hooks) — for example, tokens like DAI — which of the following statements are true?
+
+<ul>
+  <li><input type="checkbox" /> A. ERC20 tokens might be stuck forever in the contract </li>
+  <li><input type="checkbox" /> B. Some receivers could get more tokens than they should </li>
+  <li><input type="checkbox" /> C. A user who is not a receiver nor the admin could steal whitelisted tokens from the contract </li>
+  <li><input type="checkbox" /> D. None of the above </li>
+</ul>
+
+<HiddenSolution>
+**Correct Answers: B.**
+
+- **A. Incorrect.**  
+  Non-whitelisted tokens can be recovered via the `recover` function, and whitelisted tokens are properly managed through `distribute_tokens`.
+  
+- **B. Correct.**  
+    According to `GHSA-g2xh-c426-v8mf `, Vyper evaluates the argument of several expressions from right to left. This includes `unsafe_add()`.
+    When computing
+
+    ```python
+    balance: uint256 = unsafe_add(
+        staticcall token.balanceOf(self), self.transfer_in(token, amount)
+    )
+    ```
+
+    This means that the call to `transfer_in` will be performed before reading `token.balanceOf(self)`.
+
+    - `self.transfer_in(token, amount)` returns `amount` 
+    - `token.balanceOf(self)` returns `initial_balance + amount`.
+
+    As a result, the computed `balance` becomes `initial_balance + 2 * amount` instead of the intended `initial_balance + amount`. This means that all receivers will be allocated too much tokens and the contract will be insolvent. The first receivers to call `claim_tokens()` will be stealing tokens from the others.
+
+- **C. Incorrect.**  
+  The `recover` function prevents non-authorized recovery of whitelisted tokens.
+  
+- **D. Incorrect.**
+
+Thus, only **B** is correct.
+
+</HiddenSolution>
+
+---
+
+### Question 8 of 8
+
+Given the following contract, what storage slot(s) are written to when calling `set()`? (Note that **no** storage layout override is being used)
+
+```plaintext showLineNumbers copy
+# pragma version 0.4.1
+# pragma evm-version cancun
+
+import ownable
+initializes: ownable
+
+
+struct A:
+    a: uint128
+    b: bool
+
+
+a: A
+b: transient(address)
+c: HashMap[uint256, DynArray[uint256, 5]]
+
+
+@deploy
+def __init__():
+    ownable.__init__()
+    self.c[4] = [1, 2]
+
+
+@nonreentrant
+@external
+def set():
+    assert len(self.c[4]) == 2
+    self.c[4].append(12)
+```
+
+<ul>
+  <li><input type="checkbox" />  A. `0` </li>
+  <li><input type="checkbox" />  B. `1` </li>
+  <li><input type="checkbox" />  C. `keccak256(concat(convert(3,bytes32),convert(3,bytes32)))` </li>
+  <li><input type="checkbox" />  D. `keccak256(concat(convert(4,bytes32),convert(3,bytes32)))` </li>
+  <li><input type="checkbox" />  E. `keccak256(concat(convert(3,bytes32),convert(4,bytes32)))` </li>
+  <li><input type="checkbox" />  F. `convert(convert(keccak256(concat(convert(3,bytes32),convert(3,bytes32))),uint256)+3,bytes32)` </li>
+  <li><input type="checkbox" />  G. `convert(convert(keccak256(concat(convert(4,bytes32),convert(3,bytes32))),uint256)+3,bytes32)` </li>
+  <li><input type="checkbox" />  H. `convert(convert(keccak256(concat(convert(3,bytes32),convert(4,bytes32))),uint256)+3,bytes32)` </li>
+  <li><input type="checkbox" />  I. `convert(convert(keccak256(concat(convert(3,bytes32),convert(3,bytes32))),uint256)+2,bytes32)` </li>
+  <li><input type="checkbox" />  J. `convert(convert(keccak256(concat(convert(4,bytes32),convert(3,bytes32))),uint256)+2,bytes32)` </li>
+  <li><input type="checkbox" />  K. `convert(convert(keccak256(concat(convert(3,bytes32),convert(4,bytes32))),uint256)+2,bytes32)` </li>
+  <li><input type="checkbox" />  L. `convert(convert(keccak256(keccak256(concat(convert(3,bytes32),convert(3,bytes32)))),uint256)+2,bytes32)` </li>
+  <li><input type="checkbox" />  M. `convert(convert(keccak256(keccak256(concat(convert(4,bytes32),convert(3,bytes32)))),uint256)+2,bytes32)` </li>
+  <li><input type="checkbox" />  N. `convert(convert(keccak256(keccak256(concat(convert(3,bytes32),convert(4,bytes32)))),uint256)+2,bytes32)` </li>
+</ul>
+
+<HiddenSolution>
+**Correct Answers: E, H.**
+
+The storage slot written to during a call to `set()` are:
+
+- The value at the index `2` of the Dynamic array `self.c[4]`, as it is set to `12`.
+- The length of the Dynamic array `self.c[4]`, as it is updated by the `append` function.
+
+Having `cancun` as the EVM version means that the `@nonreentrant` key is stored in the transient storage and not in the regular storage.
+
+The storage layout of the contract can be obtained with `vyper -f layout foo.vy` and is as follows:
+
+```
+0x00: ownable.owner
+0x01: a.a
+0x02: a.b
+0x03: c
+```
+
+Key points to consider here are:
+
+1. The storage of the `ownable` module is inserted where the statement `initializes: ownable` is declared.
+2. The fields of the struct `A` are not tightly packed as Vyper never pack storage variables.
+3. The variable `b` is transient and does not occupy a storage slot.
+
+Given that value corresponding to a mapping key `k` is located at `keccak256(slot || k)` (when k is a value type), the storage slot of `self.c[4]` is:
+
+```python
+s0 = keccak256(concat(convert(3,bytes32),convert(4,bytes32)))
+```
+
+Note that this differs from Solidity, which would do `keccak256(k || slot)`.
+
+Vyper does not store dynamic arrays in the same way as Solidity, because a maximum bound is known at compile time, the length is stored in the first slot, and all elements are stored in subsequent consecutive slots. In the case of the array at `self.c[4]`, this would lead to the following layout:
+
+```
+s0  : length
+s0+1: array[0]
+...
+s0+5: array[4]
+```
+
+Thus:
+
+- **E.** Correct - length is stored at `keccak256(concat(convert(3,bytes32),convert(4,bytes32)))`.
+- **H.** Correct - the element value is stored at `convert(convert(keccak256(concat(convert(3,bytes32),convert(4,bytes32))),uint256)+3,bytes32)`.
+
+All other options are incorrect.
+
+</HiddenSolution>
+
+---
+
+import { Card, Cards } from 'nextra/components'
+import { NewsletterIcon } from '@components/icons'
+
+<Cards>
+  <Card
+    icon={<NewsletterIcon />}
+    title="← RACE #38 Of The Secureum Bootcamp Epoch∞"
+    href="/posts/2025/3/3/race-38-of-the-secureum-bootcamp-epoch-infinity/"
+  />
+</Cards>

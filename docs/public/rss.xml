@@ -3,7 +3,7 @@
     <title>Ventral Digital</title>
     <link>https://ventral.digital/</link>
     <description>Ventral Digital LLC is a research and consultancy firm specializing in Information Security and Privacy.</description>
-    <lastBuildDate>Mon, 07 Apr 2025 00:00:00 GMT</lastBuildDate>
+    <lastBuildDate>Mon, 12 May 2025 00:00:00 GMT</lastBuildDate>
     <docs>https://validator.w3.org/feed/docs/rss2.html</docs>
     <generator>brain.exe</generator>
     <image>
@@ -12,6 +12,17 @@
       <link>https://ventral.digital/</link>
     </image>
     <atom:link href="https://ventral.digital/rss.xml" rel="self" type="application/rss+xml"/>
+    <item>
+      <title>
+      <![CDATA[ RACE #40 Of The Secureum Bootcamp Epoch∞ ]]>
+      </title>
+      <link>https://ventral.digital/posts/2025/5/12/race-40-of-the-secureum-bootcamp-epoch-infinity/</link>
+      <guid>https://ventral.digital/posts/2025/5/12/race-40-of-the-secureum-bootcamp-epoch-infinity/</guid>
+      <pubDate>Mon, 12 May 2025 00:00:00 GMT</pubDate>
+      <description>
+      <![CDATA[This is a Write-Up of RACE-37, Quiz of the Secureum Bootcamp for Ethereum Smart Contract Auditors. This month's RACE was designed by Pablo (a.k.a cbym)... ]]>
+      </description>
+    </item>
     <item>
       <title>
       <![CDATA[ RACE #39 Of The Secureum Bootcamp Epoch∞ ]]>
@@ -42,7 +53,7 @@
       <guid>https://ventral.digital/posts/2025/2/14/race-37-of-the-secureum-bootcamp-epoch-infinity/</guid>
       <pubDate>Fri, 14 Feb 2025 00:00:00 GMT</pubDate>
       <description>
-      <![CDATA[his is a Write-Up of RACE-37, Quiz of the Secureum Bootcamp for Ethereum Smart Contract Auditors. This month's RACE was designed by Hrishi a Secureum Mentor and Head of Competitions & Bounties at Cantina... ]]>
+      <![CDATA[This is a Write-Up of RACE-37, Quiz of the Secureum Bootcamp for Ethereum Smart Contract Auditors. This month's RACE was designed by Hrishi a Secureum Mentor and Head of Competitions & Bounties at Cantina... ]]>
       </description>
     </item>
     <item>

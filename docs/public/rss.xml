@@ -14,13 +14,24 @@
     <atom:link href="https://ventral.digital/rss.xml" rel="self" type="application/rss+xml"/>
     <item>
       <title>
+      <![CDATA[ RACE #41 Of The Secureum Bootcamp Epoch∞ ]]>
+      </title>
+      <link>https://ventral.digital/posts/2025/6/19/race-41-of-the-secureum-bootcamp-epoch-infinity/</link>
+      <guid>https://ventral.digital/posts/2025/6/19/race-41-of-the-secureum-bootcamp-epoch-infinity/</guid>
+      <pubDate>Thu, 19 Jun 2025 00:00:00 GMT</pubDate>
+      <description>
+      <![CDATA[This is a Write-Up of RACE-41, Quiz of the Secureum Bootcamp for Ethereum Smart Contract Auditors. This month's RACE was designed by Dimitri Kamenski (aka kamensec)... ]]>
+      </description>
+    </item>
+    <item>
+      <title>
       <![CDATA[ RACE #40 Of The Secureum Bootcamp Epoch∞ ]]>
       </title>
       <link>https://ventral.digital/posts/2025/5/12/race-40-of-the-secureum-bootcamp-epoch-infinity/</link>
       <guid>https://ventral.digital/posts/2025/5/12/race-40-of-the-secureum-bootcamp-epoch-infinity/</guid>
       <pubDate>Mon, 12 May 2025 00:00:00 GMT</pubDate>
       <description>
-      <![CDATA[This is a Write-Up of RACE-37, Quiz of the Secureum Bootcamp for Ethereum Smart Contract Auditors. This month's RACE was designed by Pablo (a.k.a cbym)... ]]>
+      <![CDATA[This is a Write-Up of RACE-40, Quiz of the Secureum Bootcamp for Ethereum Smart Contract Auditors. This month's RACE was designed by Pablo (a.k.a cbym)... ]]>
       </description>
     </item>
     <item>

@@ -15,7 +15,7 @@ This is a write-up for RACE-41, Quiz of the [Secureum Bootcamp](https://twitter.
   Participants of this quiz had a single attempt to **answer 8 questions within the strict time limit of 16 minutes**. If you’re reading this in preparation for participating yourself, it’s best to give it a try under the same time limit!
 </Callout>
 
-<p className="text-xs text-right">June XX, 2025 by [patrickd](/about/#patrickd)</p>
+<p className="text-xs text-right">June 19, 2025 by [patrickd](/about/#patrickd)</p>
 
 <style jsx>{`
   input[type=checkbox] {
@@ -384,6 +384,29 @@ What low level ‘tactic(s) or technical issue(s)’ might an attacker lean-on t
 <HiddenSolution>
 **Correct is C.**
 
+As `slashingFactor` goes down, the `depositScalingFactor` proportionately goes up. Effectively, `slashingFactor` cancels with `depositScalingFactor` resulting in 1 (WAD) at the time of deposit.
+
+```solidity
+depositScalingFactor[_operator] = divWad(depositScalingFactor[_operator], slashingFactor[_operator]); // depositScalingFactor[_operator] * WAD / slashingFactor[_operator]
+```
+
+The formula for withdrawal is
+
+```solidity
+_slashedScaledShares = _sharesToRemove * (depositScalingFactor[_operator] / WAD) * (slashingFactor[_operator] / WAD)
+```
+
+which means that, if we reset the `slashingFactor` out of sync with `depositScalingFactor` decreases, we end up increasing deposit value at withdrawal.
+
+Exploiting this vulnerability involves the following steps:
+
+1. Make a deposit of some very small amount.
+2. Get nearly entirely slashed.
+3. Make another deposit with some larger value, increasing `depositScalingFactor` due to the large `slashingFactor` decrease.
+4. Then get fully slashed.
+5. Reset the `slashingFactor`.
+6. Queue a withdrawal, which will overestimate `_slashedScaledShares` since `depositScalingFactor` isn't matched with the correct `slashingFactor`.
+7. On completion of withdrawal, we obtain a larger amount of `sharesToWithdraw`.
 </HiddenSolution>
 
 ---
@@ -394,7 +417,7 @@ import { NewsletterIcon } from '@components/icons'
 <Cards>
   <Card
     icon={<NewsletterIcon />}
-    title="← RACE #39 Of The Secureum Bootcamp Epoch∞"
-    href="/posts/2025/4/7/race-39-of-the-secureum-bootcamp-epoch-infinity/"
+    title="← RACE #40 Of The Secureum Bootcamp Epoch∞"
+    href="/posts/2025/5/12/race-40-of-the-secureum-bootcamp-epoch-infinity/"
   />
 </Cards>

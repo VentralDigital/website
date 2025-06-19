@@ -35,7 +35,7 @@ code.text-\[\.9em\] {
   }
 }
 
-/* Severities */
+/* Issue Severities */
 span[s="0"] code { /* Fixed */
   color: white;
   background: mediumseagreen;
@@ -55,4 +55,96 @@ span[s="3"] code { /* Major */
 span[s="4"] code { /* Critical */
   color: white;
   background: red;
+}
+
+/* Scientific Paper Styling */
+
+/* Font and general layout */
+.scientific-style {
+  font-family: "Times New Roman", Times, serif;
+  line-height: 1.5;
+  color: #000;
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 0 1rem;
+}
+
+/* Centered heading */
+.scientific-style h1,
+.scientific-style h2,
+.scientific-style h3,
+.scientific-style .nx-font-semibold.nx-tracking-tight.nx-text-slate-900 {
+  text-align: center;
+  font-weight: bold;
+  margin: 2rem 0 1.5rem;
+}
+
+/* Blockquote in abstract style */
+.scientific-style blockquote,
+.scientific-style .nx-mt-6.nx-border-gray-300.nx-italic.nx-text-gray-700 {
+  margin: 1.5rem 2rem;
+  position: relative;
+  font-style: italic;
+}
+
+/* Remove default left border and padding from blockquote */
+.scientific-style .ltr\:nx-border-l-2,
+.scientific-style .ltr\:nx-pl-6 {
+  border-left: none !important;
+  padding-left: 0 !important;
+}
+
+/* Full-width paragraphs with justified text and indentation */
+.scientific-style p,
+.scientific-style .nx-mt-6.nx-leading-7 {
+  text-align: justify;
+  text-indent: 2em;
+  margin-bottom: 1rem;
+  word-spacing: 0.05em;
+}
+
+/* Paragraphs inside abstract shouldn't be indented */
+.scientific-style blockquote p,
+.scientific-style .nx-mt-6.nx-border-gray-300.nx-italic.nx-text-gray-700 p {
+  text-indent: 0;
+}
+
+/* First level list items: 1, 2, 3... */
+.scientific-style ol,
+.scientific-style .nx-mt-6.nx-list-decimal {
+  list-style-type: decimal;
+  margin: 1rem 0;
+  padding-left: 2rem;
+}
+
+/* Second level list items: a, b, c... */
+.scientific-style ol ol,
+.scientific-style .nx-mt-6.nx-list-decimal .nx-mt-6.nx-list-decimal {
+  list-style-type: lower-alpha;
+}
+
+/* Third level list items: i, ii, iii... */
+.scientific-style ol ol ol,
+.scientific-style .nx-mt-6.nx-list-decimal .nx-mt-6.nx-list-decimal .nx-mt-6.nx-list-decimal {
+  list-style-type: lower-roman;
+}
+
+/* List item spacing and justification */
+.scientific-style li,
+.scientific-style .nx-my-2 {
+  margin-bottom: 0.5rem;
+  text-align: justify;
+}
+
+/* Make sure margins and list spacing is appropriate */
+.scientific-style .nx-mt-6.nx-list-decimal,
+.scientific-style .ltr\:nx-ml-6 {
+  margin-top: 1rem;
+  margin-bottom: 1rem;
+}
+
+/* Preserve italic styling */
+.scientific-style em,
+.scientific-style .nx-italic {
+  font-style: italic;
 }

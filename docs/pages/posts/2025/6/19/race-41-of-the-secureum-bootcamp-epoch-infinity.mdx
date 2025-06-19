@@ -1,0 +1,400 @@
+# RACE #41 Of The Secureum Bootcamp Epoch∞
+
+import { Callout } from 'nextra/components'
+import Head from 'next/head'
+import banner from '../../../../secureum-banner.jpg'
+
+<Head>
+  <meta property="og:image" content={'https://ventral.digital' + banner.src} />
+  <meta name="twitter:image" content={'https://ventral.digital' + banner.src} />
+</Head>
+
+This is a write-up for RACE-41, Quiz of the [Secureum Bootcamp](https://twitter.com/0xRajeev/status/1470910752085065731) for Ethereum Smart Contract Auditors. It was designed by [Dimitri Kamenski (aka kamensec)](https://x.com/kamensec), an Independent Security Researcher, contract auditor at Zellic and judge at Cantina.
+
+<Callout type="info">
+  Participants of this quiz had a single attempt to **answer 8 questions within the strict time limit of 16 minutes**. If you’re reading this in preparation for participating yourself, it’s best to give it a try under the same time limit!
+</Callout>
+
+<p className="text-xs text-right">June XX, 2025 by [patrickd](/about/#patrickd)</p>
+
+<style jsx>{`
+  input[type=checkbox] {
+    width: 15px;
+    height: 15px;
+  }
+  li {
+    padding: 0.5em;
+  }
+`}</style>
+
+export function HiddenSolution({ children }) {
+  return (
+    <details className="last-of-type:mb-0 rounded-lg bg-neutral-50 dark:bg-neutral-800 p-2 mt-4">
+      <summary>
+        <strong className="text-lg">Solution</strong>
+      </summary>
+      <div className="nx-p-2">{children}</div>
+    </details>
+  )
+}
+
+---
+
+### Code
+
+>This staking contract is a slimmed down and buggy version of Eigenlayer’s Delegation manager contract. The contract allows for deposits, withdrawals and slashing of operators. An operator is essentially someone who runs a validator, in Eigenlayer normal stakers can delegate to an operator, here that logic was removed. 
+>
+>We have used ERC4626 to track token in vs token out, later at some point we would want to add rewards to ensure users who stake, then gain some reward for that stake (similar to yield bearing vault design). However, in the meantime we want to focus on the slashing and withdrawal logic.
+>
+>Slashing is tracked through slashingFactor for each individual operator, whilst deposits are supposed to cancel out with prior slashing through use of depositScalingFactor. The idea is that as slashingFactor goes down, depositScalingFactor goes up proportionately.
+>
+>We have had multiple vibe audits but we think your funds should be fine, use at your own risk.
+
+```plaintext showLineNumbers copy filename="VulnStake.sol"
+// SPDX-License-Identifier: UNLICENSED
+pragma solidity ^0.8.13;
+
+import {ERC4626} from "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/utils/math/Math.sol";
+import "forge-std/console.sol";
+
+contract VulnStake is ERC4626 {
+   using Math for uint256;
+   //
+   address public underlying;
+
+   // ACCESS CONTROL
+   mapping(address operator => bool approved) public approvedOperators;
+
+   // Stake & Shareholder Accounting Storage
+   uint64 constant WAD = 1e18;
+   uint32 public MIN_WITHDRAWAL_DELAY_BLOCKS = 56736;
+   uint32 internal SLASHABLE_UNTIL = 50000;
+
+   mapping(address operator => uint256 shares) public operatorShares;
+   mapping(address operator => uint256 scalingFactor) public depositScalingFactor;
+   mapping(address operator => uint256 scalingFactor) public slashingFactor;
+   mapping(address operator => uint256 blockSlashableUntil) public slashableUntil;
+
+   // Withdrawal Storage & Structs
+   struct Withdrawal {
+       address staker;
+       uint32 startBlock;
+       uint256 scaledShares;
+       uint256 slashingFactorAtWithdrawal;
+   }
+
+   mapping(bytes32 withdrawalRoot => Withdrawal withdrawal) internal queuedWithdrawals;
+
+   constructor(IERC20 _underlying, address[] memory _operators) ERC4626(_underlying) ERC20("vuln Stake", "VLNSTAKE") {
+       underlying = address(_underlying);
+
+
+       for(uint256 i = 0; i < _operators.length; i++) {
+           approvedOperators[_operators[i]] = true;
+       }
+   }
+
+   function registerOperator() public {
+       address _operator = msg.sender;
+       require(approvedOperators[_operator]);
+       if(slashingFactor[_operator] == 0) {
+           slashingFactor[_operator] = 1e18;
+       }
+   }
+
+   function stake(uint256 assetAmount) public {
+       address _operator = msg.sender;
+       // set operator max magnitude and scaling factor
+       if(operatorShares[_operator] == 0) {
+           depositScalingFactor[_operator] = 1e18;
+       }
+
+       // calculate share
+       uint256 shares = deposit(assetAmount, address(this));
+       require(shares != 0, "non zero shares required");
+
+       // Adjust DSF
+       depositScalingFactor[_operator] = divWad(depositScalingFactor[_operator], slashingFactor[_operator]); // depositScalingFactor[_operator] * WAD / slashingFactor[_operator]
+
+       // Increment operatorShares
+       operatorShares[_operator] += shares;
+   }
+
+   function queueWithdrawal(uint256 _sharesToRemove) public {
+       address _operator = msg.sender;
+       require(_sharesToRemove <= operatorShares[_operator]);
+
+       uint256 _slashedShares = mulWad(_sharesToRemove, slashingFactor[_operator]);
+       uint256 _slashedScaledShares = mulWad(_slashedShares, depositScalingFactor[_operator]);
+
+       Withdrawal memory _withdrawal = Withdrawal({
+           staker: _operator,
+           startBlock: uint32(block.number),
+           scaledShares: _slashedScaledShares,
+           slashingFactorAtWithdrawal: slashingFactor[_operator]
+       });
+
+       bytes32 _withdrawalRoot = calculateWithdrawalRoot(_withdrawal);
+
+       queuedWithdrawals[_withdrawalRoot]  = _withdrawal;
+
+       operatorShares[_operator] -= _sharesToRemove;
+
+       if(operatorShares[_operator] == 0) slashableUntil[_operator] = block.number + SLASHABLE_UNTIL;
+   }
+
+   function completeWithdrawal(bytes32 _withdrawalRoot) public {
+       Withdrawal memory _withdrawal = queuedWithdrawals[_withdrawalRoot];
+       address withdrawer = _withdrawal.staker;
+
+       require(withdrawer == msg.sender, "only withdrawable by staker");
+       require(_withdrawal.startBlock != 0, "Already withdrawn");
+       require(_withdrawal.startBlock + MIN_WITHDRAWAL_DELAY_BLOCKS > uint32(block.number), "MIN WITHDRAW NOT SATISFIED");
+
+       // check slashing again
+       uint256 slashingDelta = _withdrawal.slashingFactorAtWithdrawal - slashingFactor[withdrawer];
+       uint256 sharesToWithdraw = slashingDelta == 0 ? _withdrawal.scaledShares : mulWad(_withdrawal.scaledShares, slashingDelta) ;
+
+       // Prevent queued withdrawal running again
+       queuedWithdrawals[_withdrawalRoot].startBlock  = 0;
+
+       // burn withdrawable shares
+       redeem(sharesToWithdraw, withdrawer, address(this));
+   }
+
+   function slash(uint256 wadsToSlash, address _operator) public {
+       // check slashable until
+       uint256 _slashableUntil = slashableUntil[_operator];
+
+       if(_slashableUntil != 0) {
+           require(_slashableUntil > block.number, "no longer slashable");
+       }
+
+       // decrement the slashing index
+       slashingFactor[_operator] -= wadsToSlash;
+   }
+
+   function calculateWithdrawalRoot(
+       Withdrawal memory withdrawal
+   ) public pure returns (bytes32) {
+       return keccak256(abi.encode(withdrawal));
+   }
+
+   function mulWad(uint256 x, uint256 y) internal pure returns (uint256) {
+       return x.mulDiv(y, WAD);
+   }
+
+   function divWad(uint256 x, uint256 y) internal pure returns (uint256) {
+       return x.mulDiv(WAD, y);
+   }
+}
+```
+
+### Question 1 of 8
+
+What risks should be considered in contracts like the one presented?
+
+<ul>
+  <li><input type="checkbox" /> A. Staker gets over or under slashed  </li>
+  <li><input type="checkbox" /> B. Deposits go missing or get diluted/socialised </li>
+  <li><input type="checkbox" /> C. Withdrawals are permanently stuck before completion </li>
+  <li><input type="checkbox" /> D. Preventing Liquidations or health checks </li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, B, C.**
+
+A quick scan of the provided code tells us that there's logic related to staking, slashing, deposits, and withdrawals. That makes all of the first 3 options completely reasonable risks that should be considered during a review.
+
+On the other hand, there's no mention of liquidations or health checks within the code. This does not appear to be a lending protocol of that sort, so considering risks along the lines of option D make little sense.
+
+
+Note that this is a warm-up question that isn't referring to the specifics of the provided code, but is instead concerned about what auditors should be paying attention to when reviewing a contract of this type.
+</HiddenSolution>
+
+---
+
+### Question 2 of 8
+
+What improvements to the default use of ERC4626 could be added?
+
+<ul>
+  <li><input type="checkbox" /> A. Operator should be blocked from transferring their share tokens, which stops the `operatorShares` from being misrepresented </li>
+  <li><input type="checkbox" /> B. Add internal accounting for underlying token, which prevents direct deposits / stealth attacks </li>
+  <li><input type="checkbox" /> C. Increase decimal offset used, which makes it harder to conduct share rounding attacks </li>
+  <li><input type="checkbox" /> D. All of the above </li>
+</ul>
+
+<HiddenSolution>
+**Correct is B, C.**
+
+What option B suggests is considered a standard counter measure against direct deposit attacks. Option C also reduces the likelihood, though technically, the code would require changing the accounting logic to factor in for virtual shares.
+
+Although OpenZeppelin's ERC4626 implementation has put some measures in place, it can still suffer from issues in practice:
+
+>Even if virtual shares are implemented default offset is always 0 so its not that much more costly to inflate (as say with an offset of 3). The internal accounting just prevents direct transfers, that also doesn't stop rounding in many cases (ie actual yield can cause the same rounding) but still a worthwhile improvement.
+
+</HiddenSolution>
+
+---
+
+### Question 3 of 8
+
+What low level ‘tactic(s) or technical issue(s)’ might an attacker lean-on to compromise the `stake()` function?
+
+<ul>
+  <li><input type="checkbox" /> A. Through careful direct deposit able to round future depositors down fully, where the value then gets socialized to all existing stakers </li>
+  <li><input type="checkbox" /> B. Anyone is able to be an operator without registering </li>
+  <li><input type="checkbox" /> C. Scale deposits with which increases reward % and drains protocol </li>
+  <li><input type="checkbox" /> D. Through careful direct deposit able to round shareholder deposits down in value by at most 50%, where the value then gets socialized to all existing stakers </li>
+</ul>
+
+<HiddenSolution>
+**Correct is D.**
+
+Due to the `require(shares != 0, "non zero shares required");` check, the correct answer is D and not A. We can achieve rounding down 1.99 shares to 1, but rounding down to 0 shares is explicitly prevented.
+
+Regarding option B, note that while it indeed looks as if access controls are missing, if you take a closer look you'll notice that they exist implicitly. This option is intended to be a red herring, though it's likely you'll indeed run into something similar in practice. Although it's a good practice to make important parts of the code as explicit as possible, in this case by adding explicit access controls, it is an unfortunate reality that gas is expensive and projects will try to save it where they can.
+</HiddenSolution>
+
+---
+
+### Question 4 of 8
+
+What low level ‘tactic(s) or technical issue(s)’ might an attacker lean-on to compromise the `slash()` function?
+
+<ul>
+  <li><input type="checkbox" /> A. Lack of access control </li>
+  <li><input type="checkbox" /> B. Slashing fails to burn correct amount of shares </li>
+  <li><input type="checkbox" /> C. Rounding on slashing factor causes extraneous losses for operator </li>
+  <li><input type="checkbox" /> D. Slashable until can be bypassed </li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, D.**
+
+**A**: In this case we indeed have neither explicit nor implicit access controls. Allowing anyone to slash can have severe consequences.
+
+**D**: The slashable-until check can indeed be bypassed. Specifically, `slashableUntil` is not reset on `stake()`. So if a full withdrawal is followed by a staking event, slashing will not be possible.
+
+</HiddenSolution>
+
+---
+
+### Question 5 of 8
+
+The `completeWithdrawal()` is ironically incomplete. What error will be thrown when running this function?
+
+<ul>
+  <li><input type="checkbox" /> A. `panic: division or modulo by zero` </li>
+  <li><input type="checkbox" /> B. `ERC20InsufficientAllowance` </li>
+  <li><input type="checkbox" /> C. `Out of gas` </li>
+  <li><input type="checkbox" /> D. `panic: arithmetic underflow or overflow` </li>
+</ul>
+
+<HiddenSolution>
+**Correct is B, D.**
+
+**B**: Currently, the `redeem()` function is called internally, that means that it's called within the context of the same call as `completeWithdrawal()`. The problem with this is that the staking contract holds the shares that should be redeemed, not the caller of the staking contract.
+
+```solidity
+redeem(sharesToWithdraw, withdrawer, address(this));
+```
+
+For this to actually work, we either have to make it an external call
+
+```solidity
+this.redeem(sharesToWithdraw, withdrawer, address(this));
+```
+
+or we have to give the staking contract's callee an approval to make use of its shares.
+
+
+**D**: An operator can reset their slashing factor once it hits 0. In this case the `slashingFactorAtWithdrawal` would be smaller than the current `slashingFactor`, causing an arithmetic underflow panic.
+
+```solidity
+_withdrawal.slashingFactorAtWithdrawal - slashingFactor[withdrawer];
+```
+</HiddenSolution>
+
+---
+
+### Question 6 of 8
+
+What other issue(s) might be present in `completeWithdrawal()`?
+
+<ul>
+  <li><input type="checkbox" /> A. Inability to start another withdrawal even if enough shares exist </li>
+  <li><input type="checkbox" /> B. Loss of funds due to burned operatorShares and no reversal mechanism </li>
+  <li><input type="checkbox" /> C. Withdrawal is blocked due to invalid time conditional </li>
+  <li><input type="checkbox" /> D. None of the above </li>
+</ul>
+
+<HiddenSolution>
+**Correct is B, C.**
+
+**B**: Effectively, there's an issue of lost funds due to multiple places where attempting to complete the withdrawal reverts.
+
+**C**: The code appears to intend delaying a withdrawal by a certain amount of blocks. Due to a flaw in the conditional expression it does instead the opposite: It prevents withdrawal once the delay has passed, but allows immediate withdrawal before that.
+
+```diff
+- require(_withdrawal.startBlock + MIN_WITHDRAWAL_DELAY_BLOCKS > uint32(block.number), "MIN WITHDRAW NOT SATISFIED");
++ require(_withdrawal.startBlock + MIN_WITHDRAWAL_DELAY_BLOCKS < uint32(block.number), "MIN WITHDRAW NOT SATISFIED");
+```
+
+</HiddenSolution>
+
+---
+
+### Question 7 of 8
+
+What low level ‘tactic(s) or technical issue(s)’ might an attacker lean-on to compromise the `queueWithdrawal()` function?
+
+<ul>
+  <li><input type="checkbox" /> A. Rounding issues can create loss of shares </li>
+  <li><input type="checkbox" /> B. Withdrawal root calculation error causes locked funds that cannot be completely withdrawn </li>
+  <li><input type="checkbox" /> C. Lack of nonce in root causes loss of funds </li>
+  <li><input type="checkbox" /> D. Re-entrancy causes error in key accounting values </li>
+</ul>
+
+<HiddenSolution>
+**Correct is A, C.**
+
+**A**: There's indeed a rounding issue when `slashingFactor * _sharesToRemove < WAD` which causes some shares to go missing when no slashings have been reported since the last deposit.
+
+**C**: Two exact same withdrawals done within the same block will not be differentiated, instead both would use the same withdrawal root – but these are only usable to complete a withdrawal once.
+</HiddenSolution>
+
+---
+
+### Question 8 of 8
+
+What low level ‘tactic(s) or technical issue(s)’ might an attacker lean-on to compromise the `stake()` and `registerStaker()` together?
+
+<ul>
+  <li><input type="checkbox" /> A. Through staking larger amounts, our depositScalingFactor increases, if we reset our slashingFactor we can effectively increase our operator shares </li>
+  <li><input type="checkbox" /> B. When slashed, our depositScalingFactor increases on subsequent deposits. If we then reset our slashingFactor we can effectively increase our operator shares </li>
+  <li><input type="checkbox" /> C. When slashed, our depositScalingFactor increases on subsequent deposits. When fully slashed we then reset our slashingFactor. Then when withdrawing our deposits will receive more underlying balance. </li>
+  <li><input type="checkbox" /> D. When slashed, our depositScalingFactor decreases on subsequent deposits. When fully slashed we then reset our slashingFactor. Then when withdrawing our deposits will receive more underlying balance.  </li>
+</ul>
+
+<HiddenSolution>
+**Correct is C.**
+
+</HiddenSolution>
+
+---
+
+import { Card, Cards } from 'nextra/components'
+import { NewsletterIcon } from '@components/icons'
+
+<Cards>
+  <Card
+    icon={<NewsletterIcon />}
+    title="← RACE #39 Of The Secureum Bootcamp Epoch∞"
+    href="/posts/2025/4/7/race-39-of-the-secureum-bootcamp-epoch-infinity/"
+  />
+</Cards>

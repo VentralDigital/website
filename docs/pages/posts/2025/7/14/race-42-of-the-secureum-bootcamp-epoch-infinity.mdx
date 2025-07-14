@@ -110,6 +110,25 @@ Which of the above assembly blocks are memory safe?
 <HiddenSolution>
 **Correct is B, C, D.**
 
+You're probably already aware of two things: Solidity makes use of the Memory that the EVM offers, and the Solidity compiler has an integrated optimizer that may make use of said memory. The problem is that inline assembly allows using memory in an incompatible way. Therefore, by default, in the presence of any inline assembly block that contains a memory operation or assigns to Solidity variables in memory, the compiler's memory optimizations are globally disabled.
+
+Annotating inline assembly blocks as "memory-safe" indicates that Solidity's memory model is respected and optimizations will remain active. The [Solidity documentation](https://docs.soliditylang.org/en/latest/assembly.html#memory-safety) describes that doing so requires the assembly block to only access memory ranges that (1) were already allocated by Solidity, those (2) allocated manually using the free memory pointer, as well as (3) the scratch space.
+
+| First Offset | Last Offset | Size     | Description  |
+|--------------|-------------|----------|--------------|
+| `0x00`       | `0x3f`      | 64 bytes | **Scratch Space**, temporary memory used for hashing opcodes. |
+| `0x40`       | `0x5f`      | 32 bytes | **Free Memory Pointer**, points to the first unallocated byte in memory. Also represents the currently allocated memory size. |
+| `0x60`       | `0x7f`      | 32 bytes | The **Zero Slot**, should always be the zero-value. |
+
+The documentation's _Advanced Safe Use of Memory_ section describes circumstances under which using more than 64 bytes of scratch space from offset `0x00` until `0x7f` is permissible: Either when by the end of the assembly block both the free memory pointer and the zero slot are restored. Or when the assembly block terminates and execution could never return to high-level Solidity code in the first place.
+
+**A**: The `memSafe0` function overwrites memory starting at offset `0x00`, until `0x63`, with the parameter values passed to the function. Finally, it restores the free memory pointer to its original value. However, it does not reset the Zero Slot, of which some bytes have been overwritten, back to the zero value. Therefore, the inline assembly block does not respect Solidity's memory model and cannot be annotated as "memory-safe".
+
+**B**: The `memSafe1` function overwrites memory starting at offset `0x00`, until `0x43`, with the parameter values passed to the function. This means the left-most 4 bytes of the Free Memory Pointer are overwritten. At the end of the function we see that the memory range from `0x24` to `0x43` is overwritten with the zero-value. Which, in turn, means that the bytes of the Free Memory Pointer, that had been overwritten, are reset to zero. Due to [memory expansion costs](https://www.evm.codes/about#memoryexpansion), it's safe to assume that these bytes were zero to begin with.
+
+**C**: The `memSafe2` function only, and exactly, overwrites the Scratch Space, then makes use of the [keccak256 opcode,](https://www.evm.codes/?fork=cancun#20) which hashes the Scratch Space and puts the resulting hash on top of the stack. This perfectly stays within the Solidity memory model without any tricks.
+
+**D**: The `memSafe3` function does not respect Solidity's memory layout, but in this case it's permissible as it always reverts and therefore never returns execution back to Solidity within the current EVM call context.
 
 </HiddenSolution>
 
@@ -148,7 +167,18 @@ Which high level built-in function has the same resulting memory as the logic in
 <HiddenSolution>
 **Correct is B.**
 
+The given inline assembly block puts the values of the parameters passed to the function into memory starting from the offset returned by loading the current Free Memory Pointer's value at `0x40`.
 
+* `let m := mload(0x40)`: Loads the Free Memory Pointer value to allocate memory for storing the passed parameter values in memory.
+* `mstore(add(m, 0x18), a)`: Parameter `a` is written into memory from `m + 0x18` until `m + 0x37`, but as it is of address type, only the right-most 20 bytes will contain the expected address. Therefore the address will be located from `m + 0x24` until `m + 0x37`.
+* `mstore(add(m, 0x04), shr(224, selector))`: The selector parameter, consisting only of 4 bytes aligned to the left-most side, is right-shifted by 224 bits (28 bytes) moving the value all the way to the right. This is then written from `m + 0x04` until `m + 0x23` – although, the actual value will only occupy `m + 0x20` until `m + 0x23`.
+* `mstore(add(m, 0x38), b)`: Parameter `b` is written to occupy the full 32 bytes slot from `m + 0x38` to `m + 0x57` as it is a `uint256` type, the value of which may use the entire slot.
+* `mstore(m, 0x38)`: Then, the static value `0x38` (56 in decimal) is written into the full 32 bytes starting at `m`, until `m + 0x1f`. 4 bytes + 20 bytes + 32 bytes = 56 bytes – therefore, this is the length of all parameters combined without padding, ie. packed.
+* `mstore(0x40, add(m, add(0x38, 0x20)))`: Finally, the allocation of memory is completed by adding the length of the packed parameter values, as well as the size of the slot storing that length, to the Free Memory Pointer.
+
+Based on this, it appears that this function is most similar to [`abi.encodePacked`](https://docs.soliditylang.org/en/latest/abi-spec.html#non-standard-packed-mode). You might have assumed that it was [`encodeWithSelector`](https://docs.soliditylang.org/en/latest/units-and-global-variables.html#abi-encoding-and-decoding-functions) instead due to the mention of a `selector`, but this function returns the values ABI-encoded, where they stay padded to each take a full 32 bytes-slot in memory.
+
+You can validate the result in [chisel](https://getfoundry.sh/chisel/overview/) and check the resulting memory with `!memdump`.
 </HiddenSolution>
 
 ---

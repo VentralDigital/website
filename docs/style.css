@@ -148,3 +148,13 @@ span[s="4"] code { /* Critical */
 .scientific-style .nx-italic {
   font-style: italic;
 }
+
+.scientific-style a,
+.scientific-style .nx-underline {
+  text-decoration-line: none;
+}
+
+.scientific-style a:hover,
+.scientific-style .nx-underline:hover {
+  text-decoration-line: underline;
+}

@@ -1,0 +1,350 @@
+# RACE #42 Of The Secureum Bootcamp Epoch∞
+
+import { Callout } from 'nextra/components'
+import Head from 'next/head'
+import banner from '../../../../secureum-banner.jpg'
+
+<Head>
+  <meta property="og:image" content={'https://ventral.digital' + banner.src} />
+  <meta name="twitter:image" content={'https://ventral.digital' + banner.src} />
+</Head>
+
+This is a write-up for RACE-42, Quiz of the [Secureum Bootcamp](https://twitter.com/0xRajeev/status/1470910752085065731) for Ethereum Smart Contract Auditors. It was designed by [Kaden](https://x.com/0xkaden), an EVM Security Researcher currently specializing in assembly and automated market makers at [Spearbit](https://x.com/spearbit) and [Cantina](https://x.com/cantinaxyz).
+
+<Callout type="info">
+  Participants of this quiz had a single attempt to **answer 8 questions within the strict time limit of 16 minutes**. If you’re reading this in preparation for participating yourself, it’s best to give it a try under the same time limit!
+</Callout>
+
+<p className="text-xs text-right">July 14, 2025 by [patrickd](/about/#patrickd)</p>
+
+<style jsx>{`
+  input[type=checkbox] {
+    width: 15px;
+    height: 15px;
+  }
+  li {
+    padding: 0.5em;
+  }
+`}</style>
+
+export function HiddenSolution({ children }) {
+  return (
+    <details className="last-of-type:mb-0 rounded-lg bg-neutral-50 dark:bg-neutral-800 p-2 mt-4">
+      <summary>
+        <strong className="text-lg">Solution</strong>
+      </summary>
+      <div className="nx-p-2">{children}</div>
+    </details>
+  )
+}
+
+---
+
+### Question 1 of 8
+
+```plaintext showLineNumbers copy filename="MemSafe.sol"
+pragma solidity ^0.8.0;
+
+contract MemSafe {
+    function memSafe0(bytes4 selector, uint256 a, uint256 b, uint256 c) external pure {
+        assembly ("memory-safe") {
+            let fmp := mload(0x40)
+
+            mstore(0x00, selector)
+            mstore(0x04, a)
+            mstore(0x24, b)
+            mstore(0x44, c)
+
+            let hash := keccak256(0x00, 0x64)
+
+            mstore(0x40, fmp)
+        }
+    }
+
+    function memSafe1(bytes4 selector, uint256 a, uint256 b) external pure {
+        assembly ("memory-safe") {
+            mstore(0x00, selector)
+            mstore(0x04, a)
+            mstore(0x24, b)
+
+            let hash := keccak256(0x00, 0x44)
+
+            mstore(0x24, 0x00)
+        }
+    }
+
+    function memSafe2(uint256 a, uint256 b) external pure {
+        assembly ("memory-safe") {
+            mstore(0x00, a)
+            mstore(0x20, b)
+
+            let hash := keccak256(0x00, 0x40)
+        }
+    }
+
+    function memSafe3(uint256 a, uint256 b, uint256 c, uint256 d) external pure {
+        assembly ("memory-safe") {
+            mstore(0x00, a)
+            mstore(0x20, b)
+            mstore(0x40, c)
+            mstore(0x60, d)
+
+            let hash := keccak256(0x00, 0x80)
+
+            mstore(0x00, hash)
+            revert(0x00, 0x20)
+        }
+    }
+}
+```
+
+Which of the above assembly blocks are memory safe?
+
+<ul>
+  <li><input type="checkbox" /> A. `memSafe0` </li>
+  <li><input type="checkbox" /> B. `memSafe1` </li>
+  <li><input type="checkbox" /> C. `memSafe2` </li>
+  <li><input type="checkbox" /> D. `memSafe3` </li>
+</ul>
+
+<HiddenSolution>
+**Correct is B, C, D.**
+
+
+</HiddenSolution>
+
+---
+
+### Question 2 of 8
+
+```plaintext showLineNumbers copy filename="WhichFunc.sol"
+pragma solidity ^0.8.0;
+
+contract WhichFunc {
+    function whichFunc(bytes4 selector, address a, uint256 b) external pure {
+        assembly {
+            let m := mload(0x40)
+
+            mstore(add(m, 0x18), a)
+            mstore(add(m, 0x04), shr(224, selector))
+            mstore(add(m, 0x38), b)
+            mstore(m, 0x38)
+
+            mstore(0x40, add(m, add(0x38, 0x20)))
+        }
+    }
+}
+```
+
+Which high level built-in function has the same resulting memory as the logic in `WhichFunc.whichFunc` when provided with the same parameters?
+
+<ul>
+  <li><input type="checkbox" /> A. `abi.encode` </li>
+  <li><input type="checkbox" /> B. `abi.encodePacked` </li>
+  <li><input type="checkbox" /> C. `abi.encodeWithSelector` </li>
+  <li><input type="checkbox" /> D. `abi.decode` </li>
+</ul>
+
+<HiddenSolution>
+**Correct is B.**
+
+
+</HiddenSolution>
+
+---
+
+### Question 3 of 8
+
+Which of the following has the greatest absolute value?
+
+<ul>
+  <li><input type="checkbox" /> A. `type(int160).min` </li>
+  <li><input type="checkbox" /> B. `type(int160).max` </li>
+  <li><input type="checkbox" /> C. `type(int256).min` </li>
+  <li><input type="checkbox" /> D. `type(int256).max` </li>
+</ul>
+
+<HiddenSolution>
+**Correct is C.**
+
+</HiddenSolution>
+
+---
+
+### Question 4 of 8
+
+```
+0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00
+```
+
+Which int256 value corresponds to this underlying low-level decimal value?
+
+<ul>
+  <li><input type="checkbox" /> A. $`115792089237316195423570985008687907853269984665640564039457584007913129639680`$ </li>
+  <li><input type="checkbox" /> B. $`-452312848583266388373324160190187140051835877600158453279131187530910662400`$ </li>
+  <li><input type="checkbox" /> C. $`256`$ </li>
+  <li><input type="checkbox" /> D. $`-256`$ </li>
+</ul>
+
+<HiddenSolution>
+**Correct is D.**
+
+
+</HiddenSolution>
+
+---
+
+### Question 5 of 8
+
+```plaintext showLineNumbers copy filename="WhichRange.sol"
+pragma solidity ^0.8.0;
+
+contract WhichRange {
+    function whichRange(uint32 selector, bytes16 a) external pure {
+        assembly {
+            mstore(0x00, selector)
+            mstore(0x20, a)
+        }
+    }
+}
+```
+
+Which byte range in memory contains the values in their packed representation in `WhichRange.whichRange` (excluding unused bytes)?
+
+<ul>
+  <li><input type="checkbox" /> A. $`["0x00", "0x40"]`$ </li>
+  <li><input type="checkbox" /> B. $`["0x1c", "0x30"]`$ </li>
+  <li><input type="checkbox" /> C. $`["0x00", "0x40")`$ </li>
+  <li><input type="checkbox" /> D. $`["0x1c", "0x30")`$ </li>
+</ul>
+
+<HiddenSolution>
+**Correct is D.**
+
+</HiddenSolution>
+
+---
+
+### Question 6 of 8
+
+```plaintext showLineNumbers copy filename="KeccakInput.sol"
+pragma solidity ^0.8.0;
+
+contract KeccakInput {
+    function keccakInput() external pure {
+        bytes4 selector = 0xefefefef;
+        address addr = 0x3111327EdD38890C3fe564afd96b4C73e8101747;
+        uint256 num = 123;
+
+        assembly {
+            let m := mload(0x40)
+
+            mstore(0x00, selector)
+            mstore(0x20, addr)
+            mstore(0x40, num)
+
+            let hash := keccak256(0x1c, 0x44)
+
+            mstore(0x40, m)
+        }
+    }
+}
+```
+
+What is the input of the keccak256 in `KeccakInput.keccakInput`?
+
+<ul>
+  <li><input type="checkbox" /> A. `0xefefefef0000000000000000000000003111327edd38890c3fe564afd96b4c73e81017470000000000000000000000000000000000000000000000000000000000000123` </li>
+  <li><input type="checkbox" /> B. `0x000000000000000000000000000000003111327edd38890c3fe564afd96b4c73e81017470000000000000000000000000000000000000000000000000000000000000123` </li>
+  <li><input type="checkbox" /> C. `0xefefefef0000000000000000000000003111327edd38890c3fe564afd96b4c73e8101747000000000000000000000000000000000000000000000000000000000000007b` </li>
+  <li><input type="checkbox" /> D. `0x000000000000000000000000000000003111327edd38890c3fe564afd96b4c73e8101747000000000000000000000000000000000000000000000000000000000000007b` </li>
+</ul>
+
+<HiddenSolution>
+**Correct is D.**
+
+
+</HiddenSolution>
+
+---
+
+### Question 7 of 8
+
+```plaintext showLineNumbers copy filename="FuncSel.sol"
+pragma solidity ^0.8.0;
+
+contract FuncSel {
+    function funcSel(
+        string memory str, 
+        uint256[] memory b, 
+        address addr, 
+        uint256 num
+    ) external pure {}
+}
+```
+
+What is the function selector for `FuncSel.funcSel`
+
+<ul>
+  <li><input type="checkbox" /> A. `“funcSel(string,uint256[],address,uint256)”` </li>
+  <li><input type="checkbox" /> B. `“funcSel(string, uint256[], address, uint256)”` </li>
+  <li><input type="checkbox" /> C. `0xe833c93d` </li>
+  <li><input type="checkbox" /> D. `0x37ce562a` </li>
+</ul>
+
+<HiddenSolution>
+**Correct is C.**
+
+
+</HiddenSolution>
+
+---
+
+### Question 8 of 8
+
+```plaintext showLineNumbers copy filename="WhichCalldata.sol"
+pragma solidity ^0.8.0;
+
+contract WhichCalldata {
+    function a(
+        address[3] memory addrs, 
+        uint256 val
+    ) external pure {}
+
+    function b(
+        address addr0,
+        address addr1,
+        address addr2,
+        uint256 val
+    ) external pure {}
+}
+```
+
+Given the following calldata (initial 4 bytes hidden) used to call the `WhichCalldata` contract, which function and parameters are being provided?
+
+`0xffffffff0000000000000000000000003111327edd38890c3fe564afd96b4c73e8101747000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2000000000000000000000000d8da6bf26964af9d7eed9e03e53415d37aa960450000000000000000000000000000000000000000000000000000000000000123`
+
+<ul>
+  <li><input type="checkbox" /> A. `b(0x3111327EdD38890C3fe564afd96b4C73e8101747, 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2, 0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045, 0x123)` </li>
+  <li><input type="checkbox" /> B. `a([0x3111327EdD38890C3fe564afd96b4C73e8101747, 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2, 0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045], 0x123)` </li>
+  <li><input type="checkbox" /> C. `b(0x3111327EdD38890C3fe564afd96b4C73e8101747, 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2, 0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045, 123)` </li>
+  <li><input type="checkbox" /> D. Cannot determine </li>
+</ul>
+
+<HiddenSolution>
+**Correct is D.**
+
+</HiddenSolution>
+
+---
+
+import { Card, Cards } from 'nextra/components'
+import { NewsletterIcon } from '@components/icons'
+
+<Cards>
+  <Card
+    icon={<NewsletterIcon />}
+    title="← RACE #41 Of The Secureum Bootcamp Epoch∞"
+    href="/posts/2025/6/19/race-41-of-the-secureum-bootcamp-epoch-infinity/"
+  />
+</Cards>

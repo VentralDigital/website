@@ -197,6 +197,17 @@ Which of the following has the greatest absolute value?
 <HiddenSolution>
 **Correct is C.**
 
+In absolute terms, ie. ignoring the sign, `Math.abs(type(int256).min) > type(int256).max` by 1:
+
+```
+> Math.abs(type(int256).min)
+57896044618658097711785492504343953926634992332820282019728792003956564819968
+> type(int256).max
+57896044618658097711785492504343953926634992332820282019728792003956564819967
+```
+
+You can validate this yourself in [chisel](https://getfoundry.sh/chisel/overview/).
+
 </HiddenSolution>
 
 ---
@@ -219,7 +230,15 @@ Which int256 value corresponds to this underlying low-level decimal value?
 <HiddenSolution>
 **Correct is D.**
 
+You might remember what happens with unsigned integers when subtracting 1 from 0? They wrap back to the highest possible value. This remains true for signed integers, therefore
 
+`0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff`
+
+is equivalent to $`-1`$.
+
+Based on the fact that this is only 255 subtractions by 1 away from the hexdecimal string given in the question, we can assert that its value must be $`-255`$
+
+You can validate this yourself in [chisel](https://getfoundry.sh/chisel/overview/).
 </HiddenSolution>
 
 ---
@@ -251,6 +270,9 @@ Which byte range in memory contains the values in their packed representation in
 <HiddenSolution>
 **Correct is D.**
 
+The bytes of an uintNN type are always right-aligned, while the bytes of a byteNN type are always left-aligned. That means `selector` is padded on the left, with its actual value starting at `0x1c`. The `a` parameter is padded on the right, with its actual value starting at `0x20` but going only until `0x2f`.
+
+According to the interval-notation in math, $`[`$ and $`]`$ include the value next to them in the defined range. While $`(`$ and $`)`$ include everything up to, but excluding, the value next to them.
 </HiddenSolution>
 
 ---
@@ -293,7 +315,13 @@ What is the input of the keccak256 in `KeccakInput.keccakInput`?
 <HiddenSolution>
 **Correct is D.**
 
+For this question, it's important to notice that, although the memory from `0x00` until `0x5f` was written to, the actual range specified as input of the keccak256 opcode is from `0x1c` until `0x5f` (Note that the second parameter `0x44` is the length). That means that the first 28 bytes are skipped.
 
+Additionally, take into account that `selector`, by virtue of being of `bytes4` type, has its actual value left-aligned, and its zero-padding on the right. This means that its value (`0xefefefef`) is actually being skipped, and only 4 bytes of the variable's padding are included as the input for the hashing.
+
+With this, we have already eliminated A and C as possible solutions.
+
+The final difference is that one of the hexdecimal strings ends with `123`, while the other ends with `7b`. Although `123` matches with what the code contains, here it's important to notice that this number was actually specified as decimal within the code. Converting $`123`$ into its hexdecimal equivalent results in `0x7b`.
 </HiddenSolution>
 
 ---
@@ -325,7 +353,13 @@ What is the function selector for `FuncSel.funcSel`
 <HiddenSolution>
 **Correct is C.**
 
+Although the terms "function selector"  and "function signature" are often used interchangeably, here we actually need to differentiate between them properly in order to answer the question.
 
+Fortunately, we don't need to know which is which by heart, instead can find the answer within the previous questions of the quiz: All throughout the previous questions, the variables and parameters called `selector` referred to a 4-byte value. With this, we can eliminate options A and B.
+
+Note that A is actually the correct function signature for the given code. By keccak hashing it, and disposing of everything but the first 4 bytes of the hash, we obtain the function selector we're looking for. In this case, we end up with the selector given in option C.
+
+There's many ways how you could've come up with this answer. I personally really like using [eth-toolbox.com](https://eth-toolbox.com/) for quick things like this.
 </HiddenSolution>
 
 ---
@@ -364,6 +398,9 @@ Given the following calldata (initial 4 bytes hidden) used to call the `WhichCal
 <HiddenSolution>
 **Correct is D.**
 
+Fixed length arrays of a set length cannot be distinguished from multiple items of the same type and count when ABI-encoded. If this were a dynamic length array we'd instead have a pointer and a slot for the array length, making them distinguishable.
+
+To really understand the difference, I'd recommend looking at the resulting ABI-encoding of various structures containing types such as `bytes`, `bytes32`, `uint256[1]`, and `uint256[]`.
 </HiddenSolution>
 
 ---

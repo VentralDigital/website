@@ -57,8 +57,8 @@
     "title": ""
   },
   "posts": {
-    "type": "page",
-    "display": "hidden"
+    "type": "doc",
+    "display": "Posts"
   },
   "components": {
     "type": "page",

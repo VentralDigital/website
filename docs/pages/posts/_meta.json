@@ -1,6 +1,6 @@
 {
   "*": {
-    "display": "hidden",
-    "type": "page"
+    "display": "doc",
+    "type": "Post"
   }
 }

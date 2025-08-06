@@ -305,7 +305,6 @@ function Menu({
   className,
   onlyCurrentDocs
 }: MenuProps): ReactElement {
-  return (
     return (
     <ul className={cn(classes.list, className)}>
       {directories.map(item =>

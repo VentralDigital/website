@@ -308,14 +308,16 @@ function Menu({
   return (
     <ul className={cn(classes.list, className)}>
       {directories.map(item =>
-        !onlyCurrentDocs || item.isUnderCurrentDocsTree ? (
-          item.type === 'menu' ||
+        // Exclude items marked as hidden, mirroring navbar behavior.
+        item.display === 'hidden' || (onlyCurrentDocs && !item.isUnderCurrentDocsTree)
+        ? null
+        : (item.type === 'menu' ||
           (item.children && (item.children.length || !item.withIndexPage)) ? (
             <Folder key={item.name} item={item} anchors={anchors} />
           ) : (
             <File key={item.name} item={item} anchors={anchors} />
           )
-        ) : null
+        )
       )}
     </ul>
   )

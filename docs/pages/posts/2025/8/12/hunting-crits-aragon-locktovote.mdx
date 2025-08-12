@@ -1,0 +1,810 @@
+# Hunting Crits: Aragon's LockToVote Plugin
+
+<Callout type="info">
+  This write-up is a result of the security review at [Spearbit](https://cantina.xyz/guilds/spearbitlabs) in July 2025. It was led by [Emanuele aka StErMi](https://cantina.xyz/u/StErMi), working together with [Om Parikh](https://cantina.xyz/u/hack3r-0m) and [Patrick Drotleff](https://cantina.xyz/u/patrickd).
+</Callout>
+
+<p className="text-xs text-right">August 12, 2025 by [patrickd](/about#patrickd)</p>
+
+import { Callout } from 'nextra/components'
+import { Tabs } from 'nextra/components'
+import { OptionTable } from 'components/table'
+
+[Aragon OSx](https://www.aragon.org/osx) offers a modular governance framework for creating DAOs that are customizable via plugins. In Aragon, multiple governance bodies, consisting of members grouped by their difference in skills, incentives and interests, may create and vote on proposals. Such proposals can then go through multiple stages in which the relevant stakeholders can have their say. A common example is having curators making proposals for implementing new DeFi strategies using funds deposited to a vault, which are optimistically accepted unless the actual providers of that liquidity veto the proposal.
+
+How much voting power a single member has, is often determined by the balance of how much of a governance token a member holds. Typically, a [snapshot is taken](https://github.com/OpenZeppelin/openzeppelin-contracts/blob/release-v4.9/contracts/token/ERC20/extensions/ERC20Snapshot.sol) of the token holdings at a specific point in time to prevent the same tokens from being used to vote multiple times. The new [LockToVote](https://github.com/aragon/lock-to-vote-plugin/tree/b3c5503c4243db4fc52ab9cf8227f3cac9bb18e8) Plugin eliminates the need for governance tokens implementing snapshotting, and simply requires the user to have the tokens locked while they're being utilized for voting.
+
+<Callout>
+  Note that, at the time of writing, **the contracts mentioned here were still under development. What follows does not represent the final state of the plugin**. Aragon has been eager to resolve the identified issues, the fixes of which will be reviewed by us once again.
+
+  If you'd like to take a look at the contracts in the state they were in during this review, check out the commit [`b3c5503c4243db4fc52ab9cf8227f3cac9bb18e8`](https://github.com/aragon/lock-to-vote-plugin/tree/b3c5503c4243db4fc52ab9cf8227f3cac9bb18e8).
+</Callout>
+
+## Reviewing Token Transfers
+
+Without having to look too deeply into the code, we already know that we'll have a contract here that will be holding funds in the form of ERC20 tokens. Which implies some potentially critical risks: Can an attacker withdraw more tokens than they deposited? Are users giving allowances to a contract that an attacker could steal from their wallet?
+
+To find out we'll start by taking a look at the [`LockManagerERC20`](https://github.com/aragon/lock-to-vote-plugin/blob/b3c5503c4243db4fc52ab9cf8227f3cac9bb18e8/src/LockManagerERC20.sol) contract that, according to the [README](https://github.com/aragon/lock-to-vote-plugin/blob/b3c5503c4243db4fc52ab9cf8227f3cac9bb18e8/README.md), holds custody of locked tokens. Within this relatively short contract we find two functions of interest:
+
+```solidity filename="src/LockManagerERC20.sol (Abridged)" showLineNumbers {6,13}
+contract LockManagerERC20 is ILockManager, LockManagerBase {
+  
+    /// @notice Triggers the transfer needed in order to complete the token locking flow.
+    ///     Reverts if the requested amount cannot be locked.
+    function _doLockTransfer(uint256 _amount) internal virtual override {
+        erc20Token.transferFrom(msg.sender, address(this), _amount);
+    }
+
+    /// @notice Transfers the requested amount of tokens to the recipient
+    /// @param _recipient The address that will receive the locked tokens back
+    /// @param _amount The amount of tokens that the recipient will get
+    function _doUnlockTransfer(address _recipient, uint256 _amount) internal virtual override {
+        erc20Token.transfer(_recipient, _amount);
+    }
+
+}
+```
+
+These two internal functions are respectively called during the lock and unlock process of funds within the [`LockManagerBase`](https://github.com/aragon/lock-to-vote-plugin/blob/b3c5503c4243db4fc52ab9cf8227f3cac9bb18e8/src/base/LockManagerBase.sol) contract.
+
+### Lock → TransferFrom
+
+<Callout>
+To get a better overview through the various internal function calls, it's always helpful to flatten down a contract's code from its externally callable function to the critical logic in question.
+</Callout>
+
+```solidity filename="src/base/LockManagerBase.sol (Abridged and Flattened)" showLineNumbers {7, 18}
+abstract contract LockManagerBase is ILockManager {
+
+  function lock(uint256 _amount) public virtual {
+      if (_amount == 0) revert NoBalance();
+
+      /// @dev Reverts if not enough balance is approved
+      erc20Token.transferFrom(msg.sender, address(this), _amount);
+
+      lockedBalances[msg.sender] += _amount;
+      emit BalanceLocked(msg.sender, _amount);
+  }
+
+  function lockAndVote(uint256 _proposalId, IMajorityVoting.VoteOption _voteOption, uint256 _amount) public virtual {
+      if (settings.pluginMode != PluginMode.Voting) revert InvalidPluginMode();
+      if (_amount == 0) revert NoBalance();
+
+      /// @dev Reverts if not enough balance is approved
+      erc20Token.transferFrom(msg.sender, address(this), _amount);
+
+      lockedBalances[msg.sender] += _amount;
+      emit BalanceLocked(msg.sender, _amount);
+
+      uint256 _currentVotingPower = lockedBalances[msg.sender];
+
+      /// @dev The voting power value is checked within plugin.vote()
+      ILockToVote(address(plugin)).vote(_proposalId, msg.sender, _voteOption, _currentVotingPower);
+  }
+
+}
+```
+
+We find the only explicit call to `transferFrom()` within the `_doLockTransfer()` function, with the arguments hardcoded to do the following: Sending a specified `_amount` from `msg.sender` to the `LockManagerERC20` contract. Aside from this, there are no arbitrary external calls (eg. made through a low-level `call()`) and no external calls with a function selector clashing with that of `transferFrom()`. Therefore, although it is indeed possible for users to give the contract a greater allowance than they might actually end up using, an attacker has no apparent way to transfer it to himself.
+
+<Callout emoji="👾">
+  - _~Steal funds approved to a contract by other users?~_
+  - _Drain the funds that other users have deposited?_
+</Callout>
+
+**Non-Reverting Token Transfers**
+
+There's a more subtle issue here regarding the following assumption though: `/// @dev Reverts if not enough balance is approved{:solidity}`. The code directly calls the `transferFrom()` function of the token, expecting it to revert when the transfer of the specified `_amount` fails for any reason. But for some tokens, such as [Basic Attention Token (BAT)](https://etherscan.io/token/0x0d8775f648430679a709e98d2b0cb6250d2887ef) and [0x Protocol Token (ZRX)](https://etherscan.io/token/0xe41d2489571d322189246dafa5ebde1f4699f498), this is not the case: They will return the boolean value `false` on failure, but the `_doLockTransfer()` function does not check the return value and would continue on as if it was successful.
+
+Consequently, if the configured `erc20Token` token does not revert on failed transfers, an attacker can lock and vote with arbitrary `_amounts` without actually having sent any tokens to the `LockManagerERC20` contract at all. But this bug doesn't make halt at providing unlimited voting power, after all, the contract now believes that the attacker has made a deposit – therefore, he will also be allowed to withdraw the same amount, effectively enabling him to drain funds that other users have deposited.
+
+Note that, although the impact of this issue is very severe, the likelihood of it actually occurring is quite low as tokens that do not revert on failure are rare. The issue can be easily prevented by making use of the [SafeERC20](https://docs.openzeppelin.com/contracts/2.x/api/token/erc20#SafeERC20) library. 
+
+### Unlock → Transfer
+
+Having dealt with `transferFrom()` calls and how they can be reached, we'll now apply the same flattening process to the code to see how we can reach calls to `transfer()`.
+
+```solidity filename="src/base/LockManagerBase.sol (Abridged and Flattened)" showLineNumbers {36}
+abstract contract LockManagerBase is ILockManager {
+
+  /// @notice Keeps track of the known active proposal ID's
+  /// @dev NOTE: Executed proposals will be actively reported, but defeated proposals will need to be garbage collected over time.
+  EnumerableSet.UintSet internal knownProposalIds;
+
+  function unlock() public virtual {
+      uint256 _refundableBalance = lockedBalances[msg.sender];
+      if (_refundableBalance == 0) revert NoBalance();
+
+      /// @dev The plugin may decide to revert if its voting mode doesn't allow for it
+      uint256 _proposalCount = knownProposalIds.length();
+      for (uint256 _i; _i < _proposalCount; _i++) {
+          uint256 _proposalId = knownProposalIds.at(_i);
+          if (!plugin.isProposalOpen(_proposalId)) {
+              knownProposalIds.remove(_proposalId);
+              _proposalCount = knownProposalIds.length();
+
+              // Were we at the last element?
+              if (_i == _proposalCount) return;
+
+              // Recheck the same index (now, another proposalId)
+              continue;
+          }
+
+          if (plugin.usedVotingPower(_proposalId, msg.sender) > 0) {
+              ILockToVote(address(plugin)).clearVote(_proposalId, msg.sender);
+          }
+      }
+
+      // All votes clear
+
+      lockedBalances[msg.sender] = 0;
+
+      // Withdraw
+      erc20Token.transfer(msg.sender, _refundableBalance);
+      emit BalanceUnlocked(msg.sender, _refundableBalance);
+  }
+
+}
+```
+
+With `msg.sender` hardcoded for `lockedBalances` there's no obvious way to unlock the funds of other users. And unless a token that does not revert on failed transfers is used, there's no other apparent way to artificially inflate one's own balance. Furthermore, the contract is fortunately following the Checks-Effects-Interactions pattern by placing the external `transfer()` call at the bottom of the function where the balance has already been reset to `0`. If this had not been the case, and the configured `erc20Token` implemented [ERC777](https://eips.ethereum.org/EIPS/eip-777)-like receive-hooks (see [AMP Token](https://etherscan.io/token/0xff20817765cb7f73d4bde2e66e067e58d11095c2#code)), an attacker would be able to reenter the `unlock()` function and obtain their `_refundableBalance` multiple times.
+
+**Locking Mechanism Bypass**
+
+Token transfer logic aside, within this function we have encountered part of the actual locking logic of the contract: The contract is keeping track of `knownProposalIds` in order to be able to check whether the user is actively participating in any of them with his voting power. If so, it attempts clearing his vote, which, according to the comments, may fail (and revert) depending on the configured "voting mode". Proposals that are no longer open will be removed from the list of `knownProposalIds` and no longer checked for in the future.
+
+```solidity filename="src/LockToVotePlugin.sol (Abridged and Flattened)" showLineNumbers {6,7}
+contract LockToVotePlugin is ILockToVote, MajorityVotingBase, LockToGovernBase {
+
+    function isProposalOpen(uint256 _proposalId) external view returns (bool) {
+        Proposal storage proposal_ = proposals[_proposalId];
+        uint64 currentTime = block.timestamp.toUint64();
+        return proposal_.parameters.startDate <= currentTime && currentTime < proposal_.parameters.endDate
+            && !proposal_.executed;
+    }
+
+}
+```
+
+A proposal is considered to be "open" when its `startDate` is right now or in the past while the `endDate` is still in the future, and the proposal has not been executed yet. We'll go into the details of the proposal creation logic later, but for now: Consider that the `startDate` of a new proposal is allowed to be set in the future.
+
+This is a problem because a proposal that has not yet started is not considered to be open according to the above logic. Proposals that are not open are removed from the set of `knownProposalIds`, and, once removed, any votes made for the proposal when it opens will no longer be enforced by the lock.
+
+A malicious actor who seeks to have a proposal pass that is set to start in the future, begins exploiting this issue by making a deposit that he immediately withdraws. He withdraws it by calling the `unlock()` function which will remove that proposal's identifier from the list of `knownProposalIds`. Later, once the proposal has actually opened, the attacker can repeatedly execute deposit, vote, and withdraw, without his previous vote being cleared. He's therefore capable of reusing the same tokens to vote on a proposal multiple times, defeating the lock's purpose.
+
+<Callout type="info">
+  This bug was noticed by Aragon developer Jordi while discussing the code in question in the early stages of the audit.
+</Callout>
+
+**OOG Denial of Service**
+
+Whenever you encounter a loop iterating over a storage variable that can grow without limits, you should check whether this can cause an issue for users other than the one who made that particular storage variable get so large. In this case, the growing storage variable is shared between all users, and iterated over whenever someone attempts to `unlock()` their funds. So, wouldn't a malicious actor be able to create so many proposals, that iterating over all of them will no longer fit within the block gas limit, thereby, blocking everyone from unlocking their funds?
+
+<Callout type="info">
+  Note that this was a known issue identified by a previous audit. At this time, the project had not decided how to best resolve this yet.
+</Callout>
+
+```solidity filename="src/base/LockManagerBase.sol (Abridged and Flattened)" showLineNumbers {13}
+abstract contract LockManagerBase is ILockManager {
+
+    /// @notice Called by the lock to vote plugin whenever a proposal is created.
+    /// It instructs the manager to start tracking the given proposal.
+    /// @param proposalId The ID of the proposal that msg.sender is reporting as
+    /// created.
+    function proposalCreated(uint256 _proposalId) public virtual {
+        if (msg.sender != address(plugin)) revert InvalidPluginAddress();
+
+        // @dev Not checking for duplicate proposalId's
+        // @dev Both plugins already enforce unicity
+
+        knownProposalIds.add(_proposalId);
+    }
+}
+```
+
+We find only one place where the `knownProposalIds` storage variable is increased, and this happens only after a proposal has been created via the [`LockToVotePlugin`'s `createProposal()`](https://github.com/aragon/lock-to-vote-plugin/blob/b3c5503c4243db4fc52ab9cf8227f3cac9bb18e8/src/LockToVotePlugin.sol#L77-L126) function.
+
+<Callout emoji="👾">
+  - _~Steal funds approved to a contract by other users?~_
+  - _Drain the funds that other users have deposited? (Yes, for rare tokens)_
+  - _Withdraw tokens although they're supposed to be locked? (Yes, for scheduled proposals)_
+  - _Cause a Denial of Service preventing users from withdrawing?_
+</Callout>
+
+## Reviewing Proposal Creation
+
+There wouldn't be anything stopping us from creating a whole batch of proposals within a single transaction as long as we make sure the resulting `proposalId`s of each are unique – if it weren't for that `auth(CREATE_PROPOSAL_PERMISSION_ID)` modifier call.
+
+```solidity filename="src/LockToVotePlugin.sol (Abridged and Flattened)" showLineNumbers {58} /auth(CREATE_PROPOSAL_PERMISSION_ID)/
+contract LockToVotePlugin is ILockToVote, MajorityVotingBase, LockToGovernBase {
+
+    bytes32 public constant CREATE_PROPOSAL_PERMISSION_ID = keccak256("CREATE_PROPOSAL_PERMISSION");
+
+    function createProposal(
+        bytes calldata _metadata,
+        Action[] memory _actions,
+        uint64 _startDate,
+        uint64 _endDate,
+        bytes memory _data
+    ) external auth(CREATE_PROPOSAL_PERMISSION_ID) returns (uint256 proposalId) {
+        uint256 _allowFailureMap;
+        if (_data.length != 0) (_allowFailureMap) = abi.decode(_data, (uint256));
+
+        if (IERC20(lockManager.token()).totalSupply() == 0) revert NoVotingPower();
+
+        /// @dev `minProposerVotingPower` is checked at the the permission condition behind auth(CREATE_PROPOSAL_PERMISSION_ID)
+
+        uint64 currentTimestamp = block.timestamp.toUint64();
+
+        if (_startDate == 0) {
+            _startDate = currentTimestamp;
+        } else {
+            _startDate = _startDate;
+            if (_startDate < currentTimestamp) revert DateOutOfBounds({limit: currentTimestamp, actual: _startDate});
+        }
+        // Since `proposalDuration` is limited to 1 year,
+        // `startDate + proposalDuration` can only overflow if the `startDate` is after `type(uint64).max - proposalDuration`.
+        // In this case, the proposal creation will revert and another date can be picked.
+        uint64 earliestEndDate = startDate + votingSettings.proposalDuration;
+        if (_endDate == 0) {
+            _endDate = earliestEndDate;
+        } else {
+            _endDate = _endDate;
+            if (_endDate < earliestEndDate) revert DateOutOfBounds({limit: earliestEndDate, actual: _endDate});
+        }
+  
+        proposalId = uint256(keccak256(abi.encode(block.chainid, block.number, address(this), keccak256(abi.encode(_actions, _metadata)))));
+        if (proposals[proposalId].parameters.startDate != 0) revert ProposalAlreadyExists(proposalId);
+
+        // Store proposal related information
+        Proposal storage proposal_ = proposals[proposalId];
+        proposal_.parameters.votingMode = votingSettings.votingMode;
+        proposal_.parameters.supportThresholdRatio = votingSettings.supportThresholdRatio;
+        proposal_.parameters.startDate = _startDate;
+        proposal_.parameters.endDate = _endDate;
+        proposal_.parameters.minParticipationRatio = votingSettings.minParticipationRatio;
+        proposal_.parameters.minApprovalRatio = votingSettings.minApprovalRatio;
+        proposal_.targetConfig = (currentTargetConfig.target != address(0)) ? currentTargetConfig : TargetConfig({target: address(dao()), operation: Operation.Call});
+
+        // Reduce costs
+        if (_allowFailureMap != 0) proposal_.allowFailureMap = _allowFailureMap;
+
+        for (uint256 i; i < _actions.length; i++) proposal_.actions.push(_actions[i]);
+
+        emit ProposalCreated(proposalId, msg.sender, _startDate, _endDate, _metadata, _actions, _allowFailureMap);
+
+        lockManager.proposalCreated(proposalId);
+    }
+
+}
+```
+
+We can find the authentication modifier's code by tracing it up the inheritance hierarchy via [`MajorityVotingBase`](https://github.com/aragon/lock-to-vote-plugin/blob/b3c5503c4243db4fc52ab9cf8227f3cac9bb18e8/src/base/MajorityVotingBase.sol#L13), [`PluginUUPSUpgradeable`](https://github.com/aragon/osx-commons/blob/c66603f2db78333d85d6fc5751f4ccc73f704aef/contracts/src/plugin/PluginUUPSUpgradeable.sol#L12), to finally [`DaoAuthorizableUpgradeable`](https://github.com/aragon/osx-commons/blob/c66603f2db78333d85d6fc5751f4ccc73f704aef/contracts/src/permission/auth/DaoAuthorizableUpgradeable.sol). There, we find that all authentication checks are forwarded to the DAO as calls to its `hasPermission()` function:
+
+```solidity filename="lib/osx-commons/contracts/src/permission/auth/DaoAuthorizableUpgradeable.sol (Abridged and Flattened)" showLineNumbers {16}
+abstract contract DaoAuthorizableUpgradeable is ContextUpgradeable {
+    IDAO private dao_;
+
+    /// @notice A modifier to make functions on inheriting contracts authorized.
+    /// Permissions to call the function are checked through the associated DAO's
+    /// permission manager.
+    /// @param _permissionId The permission identifier required to call the method
+    /// this modifier is applied to.
+    modifier auth(bytes32 _permissionId) {
+        IDAO _dao,
+        address _where = dao_
+        address _who = msg.sender;
+        bytes32 _permissionId = _permissionId;
+        bytes calldata _data = msg.data;
+
+        if (!_dao.hasPermission(_where, _who, _permissionId, _data)) revert DaoUnauthorized({ dao: address(_dao), where: _where, who: _who, permissionId: _permissionId });
+
+        _;
+    }
+}
+```
+
+### DAO Permissions
+
+The DAO's external `hasPermission()` function in turn calls `isGranted()` which it inherited from the [`PermissionManager`](https://github.com/aragon/osx/blob/e0ba7b60b08fa1665ecac92dc12ea89e4245e7dc/packages/contracts/src/core/permission/PermissionManager.sol).
+
+```solidity filename="lib/osx/packages/contracts/src/core/permission/PermissionManager.sol (Abridged)" showLineNumbers /ANY_ADDR/ /UNSET_FLAG/ /ALLOW_FLAG/ /permissionsHashed/
+abstract contract PermissionManager is Initializable {
+    using AddressUpgradeable for address;
+
+    /// @notice The ID of the permission required to call the `grant`, `grantWithCondition`, `revoke`, and `bulk` function.
+    bytes32 public constant ROOT_PERMISSION_ID = keccak256("ROOT_PERMISSION");
+
+    /// @notice A special address encoding permissions that are valid for any address `who` or `where`.
+    address internal constant ANY_ADDR = address(type(uint160).max);
+
+    /// @notice A special address encoding if a permissions is not set and therefore not allowed.
+    address internal constant UNSET_FLAG = address(0);
+
+    /// @notice A special address encoding if a permission is allowed.
+    address internal constant ALLOW_FLAG = address(2);
+
+    /// @notice A mapping storing permissions as hashes (i.e., `permissionHash(where, who, permissionId)`) and their status encoded by an address (unset, allowed, or redirecting to a `PermissionCondition`).
+    mapping(bytes32 => address) internal permissionsHashed;
+
+    /// @notice Checks if the caller address has permission on the target contract via a permission identifier and relays the answer to a condition contract if this was declared during the granting process.
+    /// @param _where The address of the target contract for which `_who` receives permission.
+    /// @param _who The address (EOA or contract) for which the permission is checked.
+    /// @param _permissionId The permission identifier.
+    /// @param _data Optional data to be passed to the set `PermissionCondition`.
+    /// @return Returns true if `_who` has the permissions on the target contract via the specified permission identifier.
+    function isGranted(
+        address _where,
+        address _who,
+        bytes32 _permissionId,
+        bytes memory _data
+    ) public view virtual returns (bool) {
+        // Omitted due to complexity.
+    }
+
+}
+```
+
+It'll be easier to explain Aragon's permission system in words than having you read long and repetitive-looking lines of code. Basically, all permissions that have been configured within the DAO are stored in the `permissionsHashed` mapping `bytes32 => address{:solidity}` with the key being a hash and the address being `UNSET_FLAG` (`0x0`) by default, and, if set, either `ALLOW_FLAG` (`0x2`) or an actual contract's address.
+
+One after another, the value of the following keys are fetched from the mapping:
+
+* `permissionHash({_where: _where, _who: _who, _permissionId: _permissionId}){:solidity}` <br/> If the mapped value is `ALLOW_FLAG`, the caller (`_who`) has explicitly been given a certain permission (`_permissionId`) to interact with a specific contract (`_where`).
+* `permissionHash({_where: _where, _who: ANY_ADDR, _permissionId: _permissionId}){:solidity}` <br/> If the mapped value is `ALLOW_FLAG`, anyone calling (`ANY_ADDR`) has been given a certain permission (`_permissionId`) to interact with a specific contract (`_where`).
+* `permissionHash({_where: ANY_ADDR, _who: _who, _permissionId: _permissionId}){:solidity}` <br/> If the mapped value is not `UNSET_FLAG`, the caller (`_who`) might have explicitly been given a certain permission (`_permissionId`) to interact with any contract (`ANY_ADDR`) belonging to the DAO.
+
+If the mapped value is neither `UNSET_FLAG` nor `ALLOW_FLAG`, the permission system asserts that it is the address of a contract implementing the `IPermissionCondition` interface. The final judgement whether the caller may proceed to, eg. create a proposal, is then left up to the response of the condition contract's `isGranted()` function.
+
+The LockToVote Plugin's repository actually comes with such a condition called `MinVotingPowerCondition`, which, thanks to its naming, is rather self-explanatory in function.
+
+```solidity filename="src/conditions/MinVotingPowerCondition.sol (Abridged)" showLineNumbers {10}
+contract MinVotingPowerCondition is PermissionCondition {
+
+    /// @dev The function checks both the voting power and token balance to
+    /// ensure `_who` meets the minimum voting threshold defined in the
+    /// `TokenVoting` plugin. Returns `false` if the minimum requirement is unmet.
+    function isGranted(address _where, address _who, bytes32 _permissionId, bytes calldata _data) public view override returns (bool) {
+        uint256 _currentBalance = token.balanceOf(_who) + lockManager.getLockedBalance(_who);
+        uint256 _minProposerVotingPower = plugin.minProposerVotingPower();
+
+        return _currentBalance >= _minProposerVotingPower;
+    }
+}
+```
+
+<Callout>
+  Though the condition intends to demand the proposal creator has some "skin-in-the-game", its requirements are rather weak: It only checks the user's token balance outside and inside the lock contract, but at no point does it actually require any of these tokens to be inaccessible by the owner. So the proposal creator could have simply temporarily flash loaned them in order to bypass this condition.
+</Callout>
+
+At the end of the day, how the proposal-creation permission will be configured, will be up to each specific DAO. Some of them might be unaware of the Denial of Service risk and end up being generous with the permission (`_who: ANY_ADDR`) allowing anyone to create proposals. Chances are high that at some point a malicious actor will be attracted, who ends up making it permanently impossible for anyone to withdraw locked funds.
+
+**Unlock via Whitehack**
+
+Or, how permanent is it really? After all, the size of `knownProposalIds` can be reduced by having the LockToVote plugin call the lock manager's `proposalEnded()` function. Although, normally this is only done after a proposal has been executed successfully, don't forget that the plugin uses the UUPS pattern to allow for upgrades.
+
+After the DAO has found a way to prevent the malicious actor from opening further proposals, they may "whitehack" themselves by upgrading the LockToVote plugin to a version that allows for bulk-calls to `lockManager.proposalEnded(_proposalId);{:solidity}`. Once enough proposal IDs have been removed from storage, the `unlock()` function becomes usable again.
+
+<Callout emoji="👾">
+  - _~Steal funds approved to a contract by other users?~_
+  - _Drain the funds that other users have deposited? (Yes, for rare tokens)_
+  - _Withdraw tokens although they're supposed to be locked? (Yes, for scheduled proposals)_
+  - _Cause a Denial of Service preventing users from withdrawing? (Yes, temporarily)_
+  - _Force the execution of proposals?_
+</Callout>
+
+Having reached code related to the execution of proposals, we might as well continue by looking into whether we can force the execution of a proposal, bypassing the intended vetting by the community.
+
+## Reviewing Proposal Execution
+
+Once again flattening down all the various internal function calls proves helpful for analyzing the execution paths from the contract's entry point down to the external (delegate-)call that we want to reach to cause mischief. Note that, although the `execute()` function too requires a permission (`EXECUTE_PROPOSAL_PERMISSION_ID`), in the majority of cases it will be configured to allow anyone (`_who: ANY_ADDR`) to call it. The function is supposed to make sure that the DAO had already agreed to have the proposal executed anyway, and who ends up actually doing it isn't supposed to matter.
+
+<Callout>
+  Interestingly, even if the DAO decided to only give execution permission to specific trusted addresses, this can currently be bypassed if the proposal's voting mode is set to `EarlyExecution`: This is caused by the plugin's `vote()` function attempting to immediately execute the proposal if possible, while requiring the execution permission from the lock manager contract, not the person who actually voted, thereby triggering the execution attempt.
+</Callout>
+
+```solidity filename="src/base/MajorityVotingBase.sol (Abridged & Flattened)" showLineNumbers /auth(EXECUTE_PROPOSAL_PERMISSION_ID)/ {63-65,80}
+abstract contract MajorityVotingBase is IMajorityVoting, Initializable, ERC165Upgradeable, MetadataExtensionUpgradeable, PluginUUPSUpgradeable, ProposalUpgradeable {
+
+  function execute(uint256 _proposalId) public auth(EXECUTE_PROPOSAL_PERMISSION_ID) {
+    Proposal storage proposal_ = proposals[_proposalId];
+    uint64 currentTime = block.timestamp.toUint64();
+    uint256 currentTokenSupply = IERC20(lockManager.token()).totalSupply();
+
+    // Verify that the vote has not been executed already.
+    if (proposal_.executed) revert ProposalExecutionForbidden();
+
+    // Support threshold, depending on the status and mode
+    if (proposal_.parameters.startDate <= currentTime
+      && currentTime < proposal_.parameters.endDate
+      && !proposal_.executed)
+    {
+      // If the proposal is still open and the voting mode is not EarlyExecution,
+      // success cannot be determined until the voting period ends.
+      if (proposal_.parameters.votingMode != VotingMode.EarlyExecution) revert ProposalExecutionForbidden();
+
+      // For EarlyExecution, check if the support threshold
+      // has been reached early to determine success while proposal is still open.
+      uint256 noVotesWorstCase = currentTokenSupply - proposal_.tally.yes - proposal_.tally.abstain;
+
+      // The code below implements the formula of the
+      // early execution support criterion explained in the top of this file.
+      // `(1 - supportThreshold) * N_yes > supportThreshold *  N_no,worst-case`
+      if ((RATIO_BASE - proposal_.parameters.supportThresholdRatio) * proposal_.tally.yes
+          <= proposal_.parameters.supportThresholdRatio * noVotesWorstCase) revert ProposalExecutionForbidden(); 
+    } else {
+      // Normal execution (isSupportThresholdReached)
+      // The code below implements the formula of the support criterion explained in the top of this file.
+      // `(1 - supportThresholdRatio) * N_yes > supportThresholdRatio *  N_no`
+      if ((RATIO_BASE - proposal_.parameters.supportThresholdRatio) * proposal_.tally.yes
+          <= proposal_.parameters.supportThresholdRatio * proposal_.tally.no) revert ProposalExecutionForbidden();
+    }
+
+    // Check isMinVotingPowerReached
+    uint256 _minVotingPower = _applyRatioCeiled(currentTokenSupply, proposal_.parameters.minParticipationRatio);
+    // The code below implements the formula of the
+    // participation criterion explained in the top of this file.
+    // `N_yes + N_no + N_abstain >= minVotingPower = minParticipationRatio * N_total`
+    if (proposal_.tally.yes + proposal_.tally.no + proposal_.tally.abstain < _minVotingPower) revert ProposalExecutionForbidden();
+
+    // Check isMinApprovalReached
+    uint256 _minApprovalPower = _applyRatioCeiled(currentTokenSupply, proposal_.parameters.minApprovalRatio);
+    if (proposal_.tally.yes < _minApprovalPower) revert ProposalExecutionForbidden();
+
+
+    /// @dev Handling the case of Standard and VoteReplacement voting modes
+    /// @dev Enforce waiting until endDate, which was not covered above
+    if (proposal_.parameters.votingMode != VotingMode.EarlyExecution
+      && block.timestamp.toUint64() < proposal_.parameters.endDate
+    ) revert ProposalExecutionForbidden();
+
+    // _execute()
+    proposal_.executed = true;
+
+    if (proposal_.targetConfig.operation == Operation.DelegateCall) {
+        bool success;
+        bytes memory data;
+
+        // solhint-disable-next-line avoid-low-level-calls
+        (success, data) = proposal_.targetConfig.target.delegatecall(
+            abi.encodeCall(IExecutor.execute, (bytes32(_proposalId), proposal_.actions, proposal_.allowFailureMap))
+        );
+
+        if (!success) {
+            if (data.length > 0) {
+                // solhint-disable-next-line no-inline-assembly
+                assembly {
+                    let returndata_size := mload(data)
+                    revert(add(32, data), returndata_size)
+                }
+            } else {
+                revert DelegateCallFailed();
+            }
+        }
+        (execResults, failureMap) = abi.decode(data, (bytes[], uint256));
+    } else {
+        (execResults, failureMap) = IExecutor(proposal_.targetConfig.target).execute(bytes32(_proposalId), proposal_.actions, proposal_.allowFailureMap);
+    }
+
+    emit ProposalExecuted(_proposalId);
+
+    // Notify the LockManager to stop tracking this proposal ID
+    lockManager.proposalEnded(_proposalId);
+  }
+
+}
+```
+
+### Constraining Variables
+
+Looking at the proposal execution logic can be quite overwhelming. Although the function only has a single parameter, whether we actually reach the point where the external (delegate)call is made, is constrained by the state of various storage variables that it accesses. Let's take a look at each of them in order of occurrence, while investigating how we can influence their value.
+
+<OptionTable
+  options={[
+    [
+      'currentTime',
+      'uint64',
+      'Current block timestamp. Validators have slight control over this value and may manipulate it by a few seconds.'
+    ],
+    [
+      'currentTokenSupply',
+      'uint256',
+      'Current total supply of the locked token. Is manipulatable depending on the token, for example: Flash minting, wrapping, burning, etc.'
+    ],
+    [
+      'proposal_.executed',
+      'bool',
+      'Whether the proposal has been executed or not. Default initialized to false, set to true only after all execution checks have passed and execution is attempted.'
+    ],
+    [
+      'proposal_.parameters.startDate',
+      'uint64',
+      'Vote start date. Can be set once during proposal creation, to the current or a future timestamp.'
+    ],
+    [
+      'proposal_.parameters.endDate',
+      'uint64',
+      'Vote end date. Can be set once during proposal creation, to a timestamp that ensures that, after the vote started, it will last at least as long as the configured proposal duration (in voting settings).'
+    ],
+    [
+      'proposal_.parameters.votingMode',
+      'VotingMode',
+      'Enum of Standard, EarlyExecution, VoteReplacement. Is set once according to what is configured in the voting settings during proposal creation.'
+    ],
+    [
+      'proposal_.tally.yes',
+      'uint256',
+      'The number of yes votes cast. Can only be influenced by using the functions for making or clearing a vote.'
+    ],
+    [
+      'proposal_.tally.abstain',
+      'uint256',
+      'The number of abstain votes cast. Can only be influenced by using the functions for making or clearing a vote.'
+    ],
+    [
+      'proposal_.tally.no',
+      'uint256',
+      'The number of no votes cast. Can only be influenced by using the functions for making or clearing a vote.'
+    ],
+    [
+      'proposal_.parameters.supportThresholdRatio',
+      'uint32',
+      'The support threshold ratio. Is set once according to what is configured in the voting settings during proposal creation.'
+    ],
+    [
+      'proposal_.parameters.minParticipationRatio',
+      'uint256',
+      'The minimum voting power ratio needed for a proposal to reach minimum participation. Is set once according to what is configured in the voting settings during proposal creation.'
+    ],
+    [
+      'proposal_.parameters.minApprovalRatio',
+      'uint256',
+      'Minimum ratio of allocated YES votes. Is set once according to what is configured in the voting settings during proposal creation.'
+    ],
+    [
+      'proposal_.targetConfig.operation',
+      'Operation',
+      'Enum of either Call or DelegateCall. Is set once according to the target config during proposal creation.'
+    ],
+    [
+      'proposal_.targetConfig.target',
+      'address',
+      'The address of the target contract. Defaults to the associated DAO when no custom custom executor has been set. Is set once according to the target config during proposal creation.'
+    ],
+    [
+      'proposal_.actions',
+      'Action[]',
+      'The actions to be executed when the proposal passes. Passed through as-is from proposal creation to (delegate)call. Influences proposalId hash.'
+    ],
+    [
+      'proposal_.allowFailureMap',
+      'uint256',
+      'A bitmap allowing the proposal to succeed, even if individual actions might revert. Passed through as-is from proposal creation to (delegate)call.'
+    ],
+  ]}
+/>
+
+**Voting Settings**
+
+The `proposal_.parameters` values of `endDate`, `votingMode`, `supportThresholdRatio`, `minParticipationRatio`, and `minApprovalRatio	` are set, or at least influenced, by the current `votingSettings`. These are set once during the plugin initialization, and can then be changed via [`updateVotingSettings()`](https://github.com/aragon/lock-to-vote-plugin/blob/b3c5503c4243db4fc52ab9cf8227f3cac9bb18e8/src/base/MajorityVotingBase.sol#L584-L615) by addresses who have been given the `UPDATE_SETTINGS_PERMISSION_ID` permission.
+
+The setter function enforces some sanity checks, the ensure the following constraints:
+
+* `_votingSettings.supportThresholdRatio <= RATIO_BASE - 1{:solidity}` <br/> "Require the support threshold value to be in the interval $`[0, 10^6-1]`$, because $`>`$ comparison is used in the support criterion and $`>100%`$ could never be reached."
+* `_votingSettings.minParticipationRatio <= RATIO_BASE{:solidity}` <br/> "Require the minimum participation value to be in the interval $`[0, 10^6]`$, because $`>=`$ comparison is used in the participation criterion."
+* `_votingSettings.minApprovalRatio <= RATIO_BASE{:solidity}` <br/> "Require the minimum approval value to be in the interval $`[0, 10^6]`$, because $`>=`$ comparison is used in the participation criterion."
+* `60 minutes <= _votingSettings.proposalDuration <= 365 days{:solidity}`
+
+**Target Config**
+
+A proposal's `proposal_.targetConfig` is set during the plugin initialization, and can be changed via [`setTargetConfig()`](https://github.com/aragon/osx-commons/blob/c66603f2db78333d85d6fc5751f4ccc73f704aef/contracts/src/plugin/PluginUUPSUpgradeable.sol#L130-L145) by addresses who have been given the `SET_TARGET_CONFIG_PERMISSION_ID` permission.
+
+It's worth mentioning that there's an explicit check making sure that the `targetConfig.target` is not a DAO if `targetConfig.operation` is to be set as `DelegateCall`. That's because it's a likely mistake and would end up bricking the plugin due to storage slot clashes.
+
+Though no matter whether the target address is the DAO or some other contract, it is expected to implement the `IExecutor` interface. In case you have been wondering what that implies, take a look at Aragon's [simple `Executor`](https://github.com/aragon/osx-commons/blob/c66603f2db78333d85d6fc5751f4ccc73f704aef/contracts/src/executors/Executor.sol) where each of the actions are executed as a truly arbitrary external call. Each action is defined by its `to` address which will be called, the ether `value` to send to it as part of the call, and the `data` bytes that will be used as calldata.
+
+<Callout>
+**This is what makes executing proposals powerful, and dangerous.** If the configured executor is the DAO itself, a malicious proposal would be able to make arbitrary external calls in the name of that DAO. If the execution of such a proposal could be forced, the attacker could gain access to administrative functions of DeFi protocol contracts as well as to funds managed. This much should be obvious.
+
+More interestingly though, what if the `targetConfig` is not set to call a DAO but to delegatecall an `Executor`? We could have the `LockToVotePlugin` plugin call the `LockManagerERC20` contract and have it exploit the special privileges it has with it. It is edge cases like these that are rarely considered.
+</Callout>
+
+**Vote Tally**
+
+The values of `proposal_.tally.yes`, `proposal_.tally.no`, and `proposal_.tally.abstain` are solely written to in the `vote()` and `clearVote()` functions of the [`LockToVotePlugin`](https://github.com/aragon/lock-to-vote-plugin/blob/b3c5503c4243db4fc52ab9cf8227f3cac9bb18e8/src/LockToVotePlugin.sol#L145-L235) contract. Both of these functions can only be used while the proposal is open, in other words, while the current block time is within the `startDate` and `endDate` timestamp.
+
+The `vote()` function increases the tallies based on the amount of voting power, at a 1:1 ratio to the amount of tokens that were registered as deposited to a contract implementing [`LockManagerBase`](https://github.com/aragon/lock-to-vote-plugin/blob/b3c5503c4243db4fc52ab9cf8227f3cac9bb18e8/src/base/LockManagerBase.sol#L213-L219). If the configured `votingMode` is `VoteReplacement` the user is allowed to change their mind on the option (`Yes`, `No`, `Abstain`) they're voting for.
+
+
+The `clearVote()` function is only callable if the configured `votingMode` is `VoteReplacement`. It removes the user's entire voting power from the tally of his active vote option.
+
+<Callout>
+**Code Asymmetry** is something you should look out for whenever you have functions that are likely supposed to be symmetric in functionality. If you have a `withdraw()` function it should probably do the reverse of what `deposit()` is doing. If you have a `vote()` function that changes the vote option from `None` to `Yes`, `No`, or `Abstain`, then the `clearVote()` function should probably do the opposite. This was indeed missing in the [`clearVote()`](https://github.com/aragon/lock-to-vote-plugin/blob/b3c5503c4243db4fc52ab9cf8227f3cac9bb18e8/src/LockToVotePlugin.sol#L222-L232) function's logic, and, while it fortunately wouldn't have caused any obvious issues, ensuring symmetry is still a good practice.
+</Callout>
+
+### Tally Evaluation
+
+In the NatSpec comment of the [`MajorityVotingBase`](https://github.com/aragon/lock-to-vote-plugin/blob/b3c5503c4243db4fc52ab9cf8227f3cac9bb18e8/src/base/MajorityVotingBase.sol#L24-L122) contract we find an explanation for the ratios in the voting settings where, as you might have guessed, `supportThresholdRatio` is a threshold for the proposal's `support`, while `minParticipationRatio` is a minimum for the proposal's vote `participation`.
+
+**Support**
+
+Considering all voting power that was used to vote either Yes or No, what ratio voted Yes?
+
+$$
+\texttt{supportThresholdRatio} \lt \texttt{support} = \frac{N_\text{yes}}{N_\text{yes} + N_\text{no}} \in [0,1]
+$$
+
+Example: $`" "" " (24) / (24 + 0) = 1 " , "" " (24) / (24 + 12) = 2/3" , "" " (24) / (24 + 24) = 1/2" , "" " (12) / (12 + 24) = 1/3" , "" " (0) / (0 + 24) = 0`$
+
+**Participation**
+
+Considering all voting power that exists, how much was used to actually vote at all?
+
+$$
+\texttt{minParticipationRatio} \le \texttt{participation} = \frac{N_\text{yes} + N_\text{no} + N_\text{abstain}}{N_\text{total}} \in [0,1]
+$$
+
+Example: $`" "" "(24 + 12 + 6) / (480) = 7/80 = 8.75%`$
+
+<Callout>
+**Design Deviation** happens whenever the actual implementation, the actual code, deviates from what the specification intended. According to the specification, $`N_"total"`$ is supposed to be _the total voting power available at proposal creation time_. But it's clear that this information is not stored during proposal creation, and what the `execute()` function's actual implementation ends up using is the current total voting power, as represented by the token's total supply at the present moment. Deviations like this should always be pointed out and their impact investigated.
+</Callout>
+
+**Approval**
+
+The specification in this file only talks about the first two parameters, omitting `approval`, the parameter coupled with `minApprovalRatio`. But it's simple to reproduce from the code: Considering all voting power that exists, how much was used to vote Yes?
+
+$$
+\texttt{minApprovalRatio} \le \texttt{approval} = \frac{N_\text{yes}}{N_\text{total}} \in [0,1]
+$$
+
+**Early Execution**
+
+A proposal can be configured to allow for `EarlyExecution`, which, as the name implies, allows executing the proposal before its `endDate` has occurred. If this case, the formula checked against the `supportThresholdRatio` is altered to take into account the worst-case scenario: If all of the remaining voting power voted No, does it still pass the threshold?
+
+$$
+\texttt{supportThresholdRatio} \lt \texttt{support} = \frac{N_\text{yes}}{N_\text{yes} + \underbrace{(N_\text{total} - N_\text{yes} - N_\text{abstain})}_{N_\text{no} + N_\text{remaining}}} \in [0,1]
+$$
+
+### Security Considerations
+
+Now that we've become quite familiar with the code of, and related to the execution of proposals, let's consider what could go wrong here. Starting from assuming that we've somehow managed to fool the DAO into granting the permissions necessary to control the various constraining variables.
+
+**Privileged Attacker**
+
+Being able to call `setTargetConfig()` is, at least by itself, not as exciting as it might seem. Yes, we could do unexpected things like calling `lockManager.proposalEnded()` to bypass the token lock functionality, by setting the target to an `Executor` with `DelegateCall`. But at the end of the day, a proposal with this malicious change still needs to get voted through.
+
+In that sense, being able to set arbitrary thresholds through `updateVotingSettings()` seems a lot more useful: We can set all of the thresholds to zero and the voting mode to `EarlyExecution`. With that, we'll be able to immediately execute any future proposal, preferably our own if we have that permission too, with the tiniest amount of voting power.
+
+**Time Range Issue**
+
+Back in the `unlock()` function we were able to bypass the locking mechanism because the `isProposalOpen()` function was used as if it were a `isProposalStillOpen()` function. There, it was used to clean up expired `knownProposalIds`, but because it would also clean up proposals that hadn't even started yet (and therefore weren't open _yet_), we could vote without our tokens being locked in.
+
+It's not immediately visible above because the code of `execute()` has been flattened down, but we have a very similar misuse of the `isProposalOpen()` function in it.
+
+```solidity filename="src/base/MajorityVotingBase.sol (Abridged & Flattened)" showLineNumbers /_isProposalOpen(proposal_)/
+abstract contract MajorityVotingBase is IMajorityVoting, Initializable, ERC165Upgradeable, MetadataExtensionUpgradeable, PluginUUPSUpgradeable, ProposalUpgradeable {
+
+  function execute(uint256 _proposalId) public auth(EXECUTE_PROPOSAL_PERMISSION_ID) {
+    ...
+
+    // Support threshold, depending on the status and mode
+    if (_isProposalOpen(proposal_)) {
+    {
+      // Threshold check for EarlyExecution using worst case calculations...
+    } else {
+      // Threshold check for Standard/VoteReplacement...
+    }
+
+    ...
+
+    /// @dev Handling the case of Standard and VoteReplacement voting modes
+    /// @dev Enforce waiting until endDate, which was not covered above
+    if (proposal_.parameters.votingMode != VotingMode.EarlyExecution
+      && block.timestamp.toUint64() < proposal_.parameters.endDate
+    ) revert ProposalExecutionForbidden();
+
+    // _execute()
+    ...
+  }
+
+}
+```
+
+A proposal should only be executed before its `endDate` if its voting mode is `EarlyExecution`. The code of the `execute()` function above assumes that a proposal being open is equivalent to it not having yet reached its `endDate`. But this is only true if it has already reached its `startDate`. Therefore, if we attempt executing a proposal that hasn't even started yet, we can bypass the intended threshold checks for `EarlyExecution` and instead only have the standard thresholds applied. Further down we find a second validation of the `endDate`, but it can be bypassed by having the proposal be in the `EarlyExecution` voting mode.
+
+Fortunately, even if all of these conditions are present, and even if the thresholds have been set to all zeros, exploiting this vector would fail because of the strict inequality of the support threshold check. The proposal would need at minimum 1 wei of voting power on Yes, which it shouldn't have as only proposals that have been open should have any votes at all, and for this, the checks appear to have been correctly implemented.
+
+
+**Total Supply Manipulation**
+
+Privileged scenarios aside, it's more likely for the attacker to merely have execution, and possibly proposal creation permissions. Then, considering the possibility to manipulate the locked token's total supply becomes an interesting vector, as the code considers it the amount of total possible voting power.
+
+Decreasing the total supply would be particularly interesting as it would decrease the amount of voting power an attacker needs to make a proposal pass, especially in `EarlyExecution` mode. Though, the possibility for this seems unlikely as it would require the equivalent of a public `burn()` function on the token, which, strangely, still does keep happening somehow, but even so, is a rather unlikely happenstance.
+
+Interestingly, had the implementation followed the specification and used the total voting power at the time of proposal creation, this might have served as a tangible attack vector: A malicious actor could have made, if the token allowed for it, something akin to a huge flash mint while calling the `execute()` function. Before, this wouldn't have had an effect as the total supply would have increased by that same amount, but when using the total voting power at proposal creation instead, it would have been much easier for the attacker to achieve a majority.
+
+But the way it has actually been implemented, flash minting, or flash loaning to temporarily mint, does not seem particularly useful as it would increase the current token supply and make it temporarily harder for a proposal to pass. On the other hand, a powerful whale interested in preventing a proposal from passing may frontrun proposal votes and continuously increase the total supply each time it comes close to actually pass. Doing it this way would allow the whale to minimize the amount of illiquid capital but could cause grief for the other participants.
+
+**Math Issues**
+
+The fact that we're dealing with thresholds of ratios implies we're dealing with rational numbers and possibly truncation division, which is very error prone in Solidity due to the loss of precision and absolute rounding down that happens with it. Fortunately, Aragon has mostly avoided divisions by rearranging the formulas with a little algebra.
+
+The only divisions used are for removing excess scaling of the ratio value decimals. Below, the scaling factor $`10^6`$ (`RATIO_BASE`) is removed through division to adjust it to whole number scaling of the other side of the inequalities. Consider the following example: A $`0.5`$ threshold ratio would be represented by a value of $`500,000`$. Applying the ratio to the number of total voting power in existence, say $`21,000,000 * 500,000 = 10,500,000,000,000`$. Bringing it back to whole numbers via division: $`10,500,000,000,000 div 1,000,000 = 10,500,000`$.
+
+<Callout>
+The math for support threshold checks does not need any downscaling at all since both sides of the inequality have been upscaled. Similarly, the divisions in the other checks could have been avoided completely by upscaling, ie. multiplying the other side by $`10^6`$, as well.
+</Callout>
+
+<br/>_Support Threshold Math_<br/><br/>
+
+$$
+`(obrace(1,000,000)^("RATIO\_BASE") - "supportThresholdRatio") * N_("yes") >"supportThresholdRatio" * N_("no")`
+$$
+
+<br/>_Participation Threshold Math_<br/><br/>
+
+$$
+`N_("yes") + N_("no") + N_("abstain") >= (N_("total") * "minParticipationRatio")/(ubrace(1,000,000)_("RATIO\_BASE"))`
+$$
+
+<br/>_Approval Threshold Math_<br/><br/>
+
+$$
+`N_("yes") >= (N_("total") * "minApprovalRatio")/(ubrace(1,000,000)_("RATIO\_BASE"))`
+$$
+
+<br/>_Early Execution Support Threshold Math_<br/><br/>
+
+$$
+`(obrace(1,000,000)^("RATIO\_BASE") - "supportThresholdRatio") * N_("yes") >"supportThresholdRatio" * (N_("total") - N_("yes") - N_("abstain"))`
+$$
+<br/><br/>
+
+**Impact of Flash Loans**
+
+We've already mentioned how flash loans could bypass the `MinVotingPowerCondition`, potentially allowing anyone to create malicious proposals. But with execution being automatically attempted when the voting mode is `EarlyExecution`, doesn't this allow us to immediately execute those proposals as well?
+
+Assuming there's a pool available that allows us to flash loan large amounts of the `erc20Token` configured in `LockManagerERC20`, nothing is stopping us from giving the contract an allowance and calling `lockAndVote()`.
+
+```solidity
+LockManagerERC20
+├── lockAndVote()
+│   ├── _lock()
+│   │   └── _doLockTransfer()
+│   │       └── ERC20.transferFrom()
+│   └── _vote()
+│       ├── getLockedBalance()
+│       └── LockToVote.vote()
+│           ├── _canVote()
+│           │   └── _isProposalOpen()
+│           └── _attemptEarlyExecution()
+│               ├── _canExecute()
+│               ├── DAO.hasPermission()
+│               └── _execute()
+│                   ├── super._execute()
+│                   │   └── Executor.execute()
+│                   └── LockManagerERC20.proposalEnded()
+└── unlock()
+    ├── getLockedBalance()
+    ├── _withdrawActiveVotingPower()
+    └── _doUnlockTransfer()
+        └── ERC20.transfer()
+```
+
+Naturally, the voting option for this call must be `Yes`, and the amount of flash loaned tokens must be large enough to pass the thresholds for early execution. Once the proposal has been executed, the funds that were locked for the vote are immediately available for withdrawal again, allowing us to repay the flash loan within the same transaction.
+
+<Callout emoji="👾">
+  - _~Steal funds approved to a contract by other users?~_
+  - _Drain the funds that other users have deposited? (Yes, for rare tokens)_
+  - _Withdraw tokens although they're supposed to be locked? (Yes, for scheduled proposals)_
+  - _Cause a Denial of Service preventing users from withdrawing? (Yes, temporarily)_
+  - _Force the execution of proposals? (Yes, with flash loans for early execution)_
+</Callout>
+
+## Conclusion
+
+This article approached the review from a very adversary-centric lens. We thought of things that a malicious actor might want to do and used that as the red string guiding our explorations. Practically, we first identified the lines of code through which we could achieve our mischief, and then we attempted to identify execution paths that would bring us to these lines.
+
+Flattening code down into a single function, in other words, moving all of the code into the public function through which the critical lines of code could be reached, proves particularly useful in projects with deep inheritance trees and many small internal functions.
+
+In this project in specifically, we've seen that mechanics that may be categorized as "helpful" and "convenient" are often those that lead to unexpected and severe issues. Particularly the `EarlyExecution` and attempt-execution-on-vote mechanisms need to be reconsidered, possibly removed for the sake of safety.

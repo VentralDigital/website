@@ -1,9 +1,12 @@
 <mxfile host="app.diagrams.net" agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36" version="28.2.8">
   <diagram name="Page-1" id="7w7r3kvUFcRNMdiOJ8uH">
-    <mxGraphModel dx="1218" dy="722" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+    <mxGraphModel dx="2393" dy="3970" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
+        <mxCell id="ZVY8FTALhbSQle76y_pE-7" value="" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="45" y="780" width="760" height="900" as="geometry" />
+        </mxCell>
         <mxCell id="ZVY8FTALhbSQle76y_pE-8" value="" style="ellipse;shape=cloud;whiteSpace=wrap;html=1;dashed=1;" vertex="1" parent="1">
           <mxGeometry x="80.5" y="980" width="570" height="375" as="geometry" />
         </mxCell>
@@ -22,9 +25,6 @@
         </mxCell>
         <mxCell id="ZVY8FTALhbSQle76y_pE-19" value="" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
           <mxGeometry x="185" y="1090" width="375" height="200" as="geometry" />
-        </mxCell>
-        <mxCell id="ZVY8FTALhbSQle76y_pE-7" value="" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=none;" vertex="1" parent="1">
-          <mxGeometry x="1130" y="680" width="760" height="690" as="geometry" />
         </mxCell>
         <mxCell id="ZYoF0feH29Gr8LBUgofb-40" value="" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=none;" parent="1" vertex="1">
           <mxGeometry x="58" y="40" width="760" height="300" as="geometry" />
@@ -304,25 +304,69 @@
           </mxGeometry>
         </mxCell>
         <mxCell id="ZVY8FTALhbSQle76y_pE-37" value="" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
-          <mxGeometry x="87" y="1450" width="213" height="160" as="geometry" />
+          <mxGeometry x="87" y="1455" width="259.5" height="160" as="geometry" />
         </mxCell>
         <mxCell id="ZVY8FTALhbSQle76y_pE-38" value="&lt;b&gt;EntryPoint&lt;/b&gt; Contract" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" vertex="1" parent="1">
-          <mxGeometry x="130" y="1460" width="120" height="30" as="geometry" />
+          <mxGeometry x="156.75" y="1460" width="120" height="30" as="geometry" />
         </mxCell>
-        <mxCell id="ZVY8FTALhbSQle76y_pE-46" value="" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
-          <mxGeometry x="425" y="1435" width="215" height="130" as="geometry" />
+        <mxCell id="ZVY8FTALhbSQle76y_pE-46" value="" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#6E6E6E;" vertex="1" parent="1">
+          <mxGeometry x="512" y="1430" width="215" height="130" as="geometry" />
         </mxCell>
-        <mxCell id="ZVY8FTALhbSQle76y_pE-48" value="" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
-          <mxGeometry x="440" y="1455" width="215" height="130" as="geometry" />
+        <mxCell id="ZVY8FTALhbSQle76y_pE-48" value="" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#6E6E6E;" vertex="1" parent="1">
+          <mxGeometry x="520" y="1440" width="215" height="130" as="geometry" />
         </mxCell>
-        <mxCell id="ZVY8FTALhbSQle76y_pE-49" value="" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
-          <mxGeometry x="455.5" y="1475" width="215" height="130" as="geometry" />
+        <mxCell id="ZVY8FTALhbSQle76y_pE-49" value="" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#6E6E6E;" vertex="1" parent="1">
+          <mxGeometry x="528.5" y="1455" width="215" height="130" as="geometry" />
         </mxCell>
         <mxCell id="ZVY8FTALhbSQle76y_pE-50" value="" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
-          <mxGeometry x="470" y="1495" width="215" height="130" as="geometry" />
+          <mxGeometry x="540" y="1470" width="215" height="130" as="geometry" />
         </mxCell>
         <mxCell id="ZVY8FTALhbSQle76y_pE-47" value="&lt;b&gt;Wallet&lt;/b&gt; Contract" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" vertex="1" parent="1">
-          <mxGeometry x="509.5" y="1505" width="120" height="30" as="geometry" />
+          <mxGeometry x="584.5" y="1480" width="120" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="ZVY8FTALhbSQle76y_pE-63" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="ZVY8FTALhbSQle76y_pE-51" target="ZVY8FTALhbSQle76y_pE-54">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ZVY8FTALhbSQle76y_pE-51" value="handleOps(operations) {&lt;div&gt;&amp;nbsp; for op in operations {&lt;/div&gt;&lt;div&gt;&amp;nbsp; &amp;nbsp; op.sender.validateUserOp(op)&lt;/div&gt;&lt;div&gt;&amp;nbsp; }&lt;/div&gt;" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;rounded=0;fontFamily=Courier New;" vertex="1" parent="1">
+          <mxGeometry x="92" y="1490" width="258" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="ZVY8FTALhbSQle76y_pE-65" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="ZVY8FTALhbSQle76y_pE-53" target="ZVY8FTALhbSQle76y_pE-55">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ZVY8FTALhbSQle76y_pE-53" value="&lt;div style=&quot;font-family: &amp;quot;Courier New&amp;quot;;&quot;&gt;&amp;nbsp; for op in operations {&lt;/div&gt;&lt;div style=&quot;font-family: &amp;quot;Courier New&amp;quot;;&quot;&gt;&amp;nbsp; &amp;nbsp; op.sender.executeUserOp(op)&lt;/div&gt;&lt;div style=&quot;font-family: &amp;quot;Courier New&amp;quot;;&quot;&gt;&amp;nbsp; }&lt;/div&gt;" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;rounded=0;" vertex="1" parent="1">
+          <mxGeometry x="91.25" y="1536" width="258.75" height="68" as="geometry" />
+        </mxCell>
+        <mxCell id="ZVY8FTALhbSQle76y_pE-64" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.25;exitY=1;exitDx=0;exitDy=0;entryX=1;entryY=0.75;entryDx=0;entryDy=0;" edge="1" parent="1" source="ZVY8FTALhbSQle76y_pE-54" target="ZVY8FTALhbSQle76y_pE-51">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="540" y="1535" />
+              <mxPoint x="540" y="1535" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ZVY8FTALhbSQle76y_pE-68" value="repay gas" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="ZVY8FTALhbSQle76y_pE-64">
+          <mxGeometry x="0.4042" y="-2" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ZVY8FTALhbSQle76y_pE-54" value="&lt;span style=&quot;font-family: &amp;quot;Courier New&amp;quot;;&quot;&gt;validateUserOp(op)&lt;/span&gt;" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;rounded=0;" vertex="1" parent="1">
+          <mxGeometry x="561.5" y="1505" width="190" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="ZVY8FTALhbSQle76y_pE-69" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.25;exitY=1;exitDx=0;exitDy=0;endArrow=none;endFill=0;" edge="1" parent="1" source="ZVY8FTALhbSQle76y_pE-55">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="607" y="1630" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ZVY8FTALhbSQle76y_pE-70" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.25;exitY=1;exitDx=0;exitDy=0;endArrow=none;endFill=0;dashed=1;" edge="1" parent="1" source="ZVY8FTALhbSQle76y_pE-55">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="607.1578947368421" y="1640" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ZVY8FTALhbSQle76y_pE-55" value="&lt;span style=&quot;font-family: &amp;quot;Courier New&amp;quot;;&quot;&gt;executeUserOp(op)&lt;/span&gt;" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;rounded=0;" vertex="1" parent="1">
+          <mxGeometry x="560" y="1555" width="190" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="ZVY8FTALhbSQle76y_pE-66" value="&lt;div style=&quot;font-family: &amp;quot;Courier New&amp;quot;;&quot;&gt;}&lt;/div&gt;" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;rounded=0;" vertex="1" parent="1">
+          <mxGeometry x="92" y="1590" width="200" height="25" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>

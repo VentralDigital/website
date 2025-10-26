@@ -212,7 +212,19 @@ Although the ERC appears to be quite complex, the principle behind the solution 
   </Tabs.Tab>
 </Tabs>
 
-Whether nodes accept and keep track of such operations is up to them, but those that do may participate in bundling multiple `UserOperations` into a single transaction, similar to how Block Builders bundle multiple transactions into a single block to be added to the chain.
+Whether nodes accept and keep track of such operations is up to them, but those that do may participate in bundling multiple `UserOperations` into a single transaction, similar to how Block Builders bundle multiple transactions into a single block to be added to the chain. Since there's no protocol change, this transaction of bundled operations is treated like any other, which has the following implications: 
+
+* The gas overhead for a basic `UserOperation` is around ~42k (though half of it is divided among multiple operations), compared to the ~21k of a basic transaction.
+* The Bundler will pay the transaction's gas cost with the EOA account they submitted it with.
+* The Bundler needs to be compensated for the transaction during the operation's verification.
+* Measures need to be put into place to prevent unpaid work when operations that were valid off-chain suddenly become invalid on-chain.
+  * `UserOperation` must not expire too soon.
+  * The `UserOperation`'s `verificationGasLimit` should be very small, e.g.
+   $`<=200k`$ as larger amounts mean potentially more expensive unpaid work.
+  * The function verifying the `UserOperation` must not use environmental opcodes whose output can change in the meantime, such as: `GASPRICE`, `GASLIMIT`, `DIFFICULTY`, `TIMESTAMP`, `BASEFEE`, `BLOCKHASH`, `NUMBER`, `SELFBALANCE`, `BALANCE`, `ORIGIN`, `GAS`, `CREATE`, `CREATE2`, `COINBASE`.
+  * There may only be one `UserOperation` of the same `sender` within the alt mempool at a time (though replaceable) to prevent the contract containing the validation code from using its storage to make later operations fail.
+
+All operation-bundling transactions call the `handleOps(){:solidity}` function of the `EntryPoint` contract deployed at `0x0000000071727De22E5E9d8BAf0edAc6f37da032`. This contract, being the central trusted manager of all ERC-4337 `UserOperations`, has been audited by OpenZeppelin.
 
 
 ## References

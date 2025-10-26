@@ -1,0 +1,267 @@
+# Ethereum Account Abstraction Security 2025
+
+<p className="text-xs text-right">October 22, 2025 by [patrickd](/about#patrickd)</p>
+
+import { UseCases, UseCase } from '@components/usecases'
+import { Callout } from 'nextra/components'
+import { R, Reference, References } from '@components/references'
+import { OptionTable, Option } from 'components/table'
+import { Tabs } from 'nextra/components'
+
+import Head from 'next/head'
+import banner from './banner.jpg'
+
+<Head>
+  <meta property="og:image" content={'https://ventral.digital' + banner.src} />
+  <meta name="twitter:image" content={'https://ventral.digital' + banner.src} />
+</Head>
+
+After a quick refresher on Ethereum's classical account model, the article explores the use cases of Account Abstraction and the historical attempts that were made to introduce it. Here we'll take a more detailed look at ERC-4337, which introduced interacting with Ethereum via an alternative mempool without requiring EOAs, and EIP-7702, which allows EOAs to become SCAs. After a look at the security aspects of these standards, we'll finish by looking at RIP-7560, which aims to finally introduce Account Abstraction natively.
+
+## Introduction
+
+As you're likely aware, Ethereum has two types of accounts: Externally Owned Accounts (EOA) and Smart Contract Accounts (SCA). Transactions can only originate from EOAs, which can then invoke the execution of an SCA's code. To send a transaction, you must be in possession of an EOA's private key and the account must be sufficiently funded with Ether to pay for the transaction's gas cost.
+
+While the _effects_ of a transaction are fully programmable, the _validity conditions_ of the transaction are fixed. In other words, once you've proven that you are indeed the address's owner, your transaction will be executed causing the programmed effects, incurring a cost up to the amount that you have promised to pay for. A transaction is dismissed as invalid if its ECDSA signature-related fields (`v`, `r`, `s`, `nonce`) don't allow the recovery of an Ethereum address that is sufficiently funded to cover what was promised as maximum gas payment (`gasLimit`, `gasPrice`).
+
+![Diagram: A Transaction's validation of Signature (fixed to ECDSA) and Replay Protection (fixed to using nonces) happens Off-Chain. A transaction always authenticates an EOA account, whose balance will be used to pay for any cost incurred by the execution of a smart contract account's code.](./invocation-model.svg)
+
+Having such fixed validity conditions for block builders is very useful, since it allows verification in constant-time and guarantees that any work done during a transaction's execution will be appropriately paid. Unfortunately, it also means that a user receiving an ERC-20 token cannot do anything with it until he funds his address with Ether, that access to the entirety of his tokens is controlled by a single private key which must be carefully stored, and that, if he loses it by accident or to a scammer, there's little to be done in terms of recovery or revocation of access.
+
+## Use Cases
+
+![Diagram: Above' diagram changed so that now EOAs are migrated to SCAs. Furthermore, authentication, replay protection, and gas payment have been made programmable.](./goal-invocation-model.svg)
+
+Account Abstraction (AA) decouples the relation between _account_ and _signer_, which is causing these user experience impediments. At its best, that means there's no longer a 1-to-1 relationship between a private key and an account. Instead, there can be a variety of ways to authenticate with an account in order to act in its name and make use of the funds it holds. The following is a list of typical use cases that result in consequence of this change.
+
+<UseCases>
+  <UseCase usecase='Signature Abstraction'>
+    Allows usage of custom signature schemes, instead of reliance on a single ECDSA signature for authentication.
+
+    * **Multi-Sig**: Require $`k`$-out-of-$`n`$ valid signatures for the account to execute an action.
+    * **Schnorr Signatures**: The ECDSA Scheme is basically a worse version of Schnorr Signatures, designed to be different enough so as not to infringe on Schnorr's patent. The patent has expired in 2010 allowing us to move to a cryptographically superior signature scheme.
+    * **Quantum-Resistant Signatures**: Whether or not, and when, Quantum-Computers will become a threat to DLP-based cryptography remains to be determined, but with AA we can already switch to signature schemes that are considered resistant to their attacks.
+    * **Secure-Enclave Compatible Signatures**: Ethereum uses the `secp256k1` curve for its ECDSA signatures. With AA we can make use of a signature scheme on the `secp256r1` curve, which basically allows turning any modern phone into a hardware wallet thanks to its secure enclave hardware.
+    * **zk Schemes**: Zero-Knowledge-Proof schemes other than traditional signatures may be used to authenticate with the account. zkEmail, for example, allows cryptographic authentication by proving email address ownership.
+  </UseCase>
+  <UseCase usecase='Gas Abstraction'>
+    Allows decoupling the relation between a transaction's origin and the account responsible for paying the transaction's gas cost.
+
+    * **Pay with Tokens**: Although gas will ultimately still need to be paid in Ether, the user may acquire the necessary Ether as needed in exchange for other tokens.
+    * **Gas Sponsorship**: Gas cost may be covered by sponsors, such as a DeFi project incentivizing usage of its protocol by paying (part of) its user's transactions.
+    * **Private Mixer Withdrawals**: Withdrawal from a privacy mixer protocol like Tornado Cash will no longer require project-specific relayer networks or manually funding the withdrawal address with Ether. With AA users can pay the gas cost using part of the amount withdrawn themselves.
+    * **TradFi Gas Payment**: Wallets may offer users paying their gas cost using the legacy financial system, for example, with a credit card.
+  </UseCase>
+  <UseCase usecase='Recovery Mechanisms'>
+    Allows recovering access to an account other than having to use a securely stored seed phrase.
+
+    * **Social Recovery**: User may appoint a set of trusted parties to recover access to an account when certain conditions have passed, such as, a sufficient number of guardians collaborating.
+    * **Dead Man's Switch**: User may allow a set of trusted parties to gain access to his funds after a certain time of inactivity has passed.
+  </UseCase>
+  <UseCase usecase='Roles & Policies'>
+    Allows limiting access to an account's funds.
+
+    * **Spending Limits**: For example, the same account may be used by multiple devices, but depending on their security they may have different spending limits.
+    * **Automatic Payments**: To implement scheduled and recurring payments, third parties may be authorized to initiate transfers of certain amounts, at certain times, and under certain conditions.
+    * **Delayed Execution**: A user's transaction may be time-delayed to allow timely revocation.
+    * **Traditional 2FA**: Wallets may offer traditional two-factor-authentication to restrict certain actions.
+    * **Ephemeral Keys**: Allows creating temporary "session" keys that are particularly interesting for web3 games, avoiding having to constantly confirm transactions while playing.
+  </UseCase>
+  <UseCase usecase='Call Batching'>
+    Allows the execution of multiple operations within a single transaction.
+
+    * **Multi-Call**: A DeFi project may allow the user to plan multiple actions which are then executed within a single transaction. For example, a user may put multiple NFTs into a basket and pay them all at once.
+    * **Approve & Call**: Avoid having to send separate transactions to approve tokens to a protocol, before that protocol can make use of those tokens.
+    * **Batching Atomicity**: May reduce impact of transactions being sandwiched for MEV profit and allows reverting all actions if a single one fails.
+  </UseCase>
+  <UseCase usecase='Wallet Upgradeability'>
+    Allows completely changing an account's capabilities and authentication schemes.
+
+    * **Key Updates**: If one of the ways to access the account has been compromised, it can be disabled and replaced.
+    * **Scheme Updates**: If a used authentication scheme has been compromised or has become outdated, it can be disabled and replaced.
+    * **Security Updates**: Smart contract upgrades allow users to move to another, more actively maintained and secure wallet when necessary.
+  </UseCase>
+</UseCases>
+
+## History
+
+Discussions on how Account Abstraction is best achieved are as old as Ethereum itself. An observable commonality in approaches is that they attempt to either teach EOAs to execute code, or SCAs to be invoked without requiring the user to have an EOA. Though ultimately, the goal has always been to eventually phase out EOAs completely by migrating them to become invocable SCAs.
+
+There's also a notable crux issue in making a transaction's validity conditions programmable: The threat of Denial of Service (DoS) attacks on the Ethereum network by spamming it with transactions whose validation-program's execution is expensive and purposefully invalid, causing unpaid work for block builders. Before, block builders could always rely on getting paid for spending time executing arbitrary code even if it eventually failed, because at that point it was already ensured the EOA would have sufficient funds to pay for the gas. This is no longer guaranteed when the gas funding validation step itself requires code execution.
+
+#### EIP-101
+
+Even before its 2015 launch, the Ethereum project aimed to be as abstract as possible, to make as few assumptions as it could about how it would be used. We see this in a blogpost by Vitalik Buterin titled "On Abstraction"<R reference='1' /> which discussed how Ethereum could be agnostic about its signature scheme, data structures, and currencies. The approach it suggested was attaching a _verification code_ to EOAs which would be executed whenever a transaction was being processed. Instead of recovering a transaction's sender address from the ECDSA signature in the transaction's `v`, `r`, `s` fields, the sender is specified within a new `sender` field and a new `signature` field now carries an arbitrary byte array that is passed to the verification code.
+
+Before, an account's address was the ECDSA public key's hash. Now, it would be the hash of the verification code attached to a transaction when the account would be first claimed. Each code hash would be unique as the code would contain the public key, though this time the key could be for any arbitrary signature scheme. To prevent DoS, the verification code would be restricted to 50,000 gas, subject to adjustments as needed.
+
+Four months later, these ideas were formally defined within EIP-101<R reference='2' /> which additionally moved Ether up a level of abstraction, allowing it to be treated similar to other "sub-tokens".
+
+#### EIP-86
+
+<Callout>
+  Note regarding numbering: EIP-101 had its number assigned due to being part of proposals belonging to the "Serenity" upgrade, though it was discussed in GitHub issue [#28](https://github.com/ethereum/EIPs/issues/28) in November 2015. On the other hand, EIP-86 had its number given based on its GitHub issue number [#86](https://github.com/ethereum/EIPs/issues/86). Due to this, the numbering is not chronological.
+</Callout>
+
+In January 2017 we saw another attempt at "abstracting out" signature verification and nonce checking with the merge of EIP-86.<R reference='3' /> This time, the _verification code_ would be placed in a "forwarding contract" which is called with transaction fields `r`, `s`, `gasprice`, `nonce`, and `value` set to zero, but with the `v` field set to the chain's ID. The user would specify the forwarding contract as the transaction's recipient, while the actual transaction information (`signature`, `nonce`, `to`, `value`, `gasprice`, and `data`) is send to it as calldata.
+
+The forwarding contract begins with validating whatever signature signature scheme it implements, updates its nonce in storage, pays the miner, executes the main call the user intended, and finally requests a gas refund. To prevent DoS, miners would either use pattern matching to only allow verification codes that are known to be safe, or by restricting how much gas the verification code may consume to perform nonce and signature checks.
+
+#### EIP-859
+
+Same year, in November, Vitalik made a comparison<R reference='4' /> of some of the account abstraction approaches that would get rid of EOAs, moving signature verification, gas payment, and replay protection out of the core protocol and into the EVM. The discussion resulted in an EIP draft that would have become EIP-859<R reference='5' /> though with core devs busy trying to figure out sharding, it never matured into a merged proposal. Even so, discussions on ways to achieve account abstraction continued<R reference='6' /> and we saw the first sophisticated _Smart Contract Wallets_ such as Gnosis Safe and Parity Multisig Wallet emerge.
+
+In case you're curious, the improvement proposal that wasn't meant to be, used, similar to EIP-86, a forwarding contract that verified the signature, payed for gas, and executed a call to the actual destination. It differed in introducing a new transaction type, instead of setting most fields of a normal transaction to zero. It also introduced a new `PAYGAS` opcode for paying the miners with gas, instead of having to make that transfer manually. Once the transaction execution would have reached `PAYGAS`, gas payment would have been guaranteed even if the execution reverted at a later point. The proposal dropped abstracting replay protection (nonces) in favor of preserving the invariant that "each transaction can only appear once in the chain".
+
+#### EIP-2711
+
+In the year 2020 we saw several proposals that offered partial solutions to AA's use cases.
+
+EIP-2711<R reference='7' /> would have introduced a new transaction type adding support for:
+
+* **Sponsored Transactions** by allowing a signature to be signed by both the sender and the gas payer. By recovering the gas payer's address from the additional ECDSA signature, the gas cost would be subtracted from the sponsor's account, rather than the sender. The sender would have needed to submit their transaction to be signed by the sponsor off-chain.
+* **Batch Transactions** by moving the transaction's payload into an array of child-transactions that would be executed in sequence.
+* **Expiring Transactions** by adding an optional `validUntil` field that would cause the transaction to become invalid after a certain point in time.
+
+#### EIP-2803
+
+EIP-2803<R reference='8' /> would have introduced "Rich Transactions", where a transaction send to a special address, one in the range reserved for precompiles, would have its call data treated as EVM bytecode and executed within the context of the signer's EOA.
+
+#### EIP-3074
+
+EIP-3074<R reference='9' /> proposed to introduce the `AUTH` and `AUTHCALL` opcodes which would have temporarily delegated control of an EOA to an existing contract account. In the end, the proposal did not make it because would have further enshrined EOAs, instead of being a step towards moving beyond them.<R reference='10' />
+
+To delegate control of his EOA, a user would first (ECDSA) sign a message containing the contract's address, which is then passed as a function argument to the same contract. That function would invoke the `AUTH` opcode while passing it the signature, proving that the EOA's owner has indeed agreed upon giving its control to the contract.
+
+From this point onward, within the same EVM context, that contract would be able to make external calls, equivalent to the `CALL` opcode, with `AUTHCALL`. The main difference being that `msg.sender` would be set to the EOA's address, instead of the contract's. Furthermore, any `value` sent as part of the `AUTHCALL` would be deducted from the EOA, instead of from the contract. 
+
+#### EIP-2938
+
+Out of all the Account Abstraction proposals that never happened, EIP-2938<R reference='11' /> might have been the most promising one. Prominently, it would have introduced a `PAYGAS` opcode which contracts can use to set the gas price and gas limit they're willing to pay. The opcode would also serve as an execution checkpoint, where the transaction only reverts up to the point right after it was called.
+
+Practically, a user would send a new type of transaction containing only a `nonce`, the `target` address, and a byte array of arbitrary `data`. Lacking abstraction of replay protection, the `target` account's nonce-value would be compared against the transaction's `nonce` and incremented by one if it matched. Next, the code at `target` would be invoked and expected to execute `PAYGAS` to signal the transaction's validity within 90,000 gas.
+
+Until `PAYGAS` is called, the contract's sole concern should have been determining whether the signature, passed within the transaction's `data`, is valid. Though it wouldn't have to be a signature, any arbitrary authentication method would work as long as it doesn't need to make use of environment opcodes, external calls, contract creations, or access to other contract's code. This restriction would be necessary to prevent a transaction from pretending to be valid off-chain, but then making use of state changes to become invalid on-chain, causing unpaid work for the network (DoS vector).
+
+#### ERC-4337
+
+Over time, it became clear that Account Abstraction via protocol changes (EIP) wouldn't happen any time soon, given that they're generally time intensive and most of the core developer's focus was committed to achieving Ethereum's switch to PoS. Instead, we saw ERC-4337<R reference='11' /> emerge as a proposal for introducing AA as an optional, out-of-protocol solution in September 2021, though arguably we've seen first signs of it in 2018 with Justin Drake's _Application-layer account abstraction_<R reference='12' /> post and the ERC-1613 Gas stations network<R reference='13' /> proposal. Since its launch in March 2023 it has been widely integrated with SCA wallets such as Safe, but overall adoption and usage still remains relatively niche compared to the total EVM account base.
+
+![Diagram of ERC-4337](./erc-4337.svg)
+
+Although the ERC appears to be quite complex, the principle behind the solution is actually quite simple and contains many familiar elements of prior proposals: A new type of object called `UserOperation` has been introduced which, similar to a transaction, is send to the Ethereum peer-to-peer (P2P) network (JSON-RPC API `eth_sendUserOperation` call) of nodes keeping track of received operations in an "alternate mempool". This means that `UserOperation`s are kept track of in a mempool separate from the one keeping track of transactions, avoiding changes to Ethereum's consensus protocol.
+
+
+<Tabs items={['UserOperation Fields', 'Gas Payment Fields', 'Gas Abstraction Fields']} defaultIndex="0">
+  <Tabs.Tab>
+    <OptionTable optionTitle="UserOperation Field">
+        <Option option="sender" type="address">
+        The Account making the `UserOperation`.
+        </Option>
+        <Option option="nonce" type="uint256">
+        Anti-replay parameter for "semi-abstracted nonce support".
+        </Option>
+        <Option option="factory" type="address">
+        Account Factory for new Accounts OR `0x7702` flag for EIP-7702 Accounts, otherwise `address(0)`.
+        </Option>
+        <Option option="factoryData" type="bytes">
+        Data for the Account Factory if `factory` is provided OR EIP-7702 initialization data, or empty array.
+        </Option>
+        <Option option="callData" type="bytes">
+        The data to pass to the `sender` during the main execution call.
+        </Option>
+        <Option option="signature" type="bytes">
+        Data passed into the `sender` to verify authorization.
+        </Option>
+    </OptionTable>
+  </Tabs.Tab>
+  <Tabs.Tab>
+    <OptionTable optionTitle="UserOperation Field">
+        <Option option="callGasLimit" type="uint256">
+        The amount of gas to allocate the main execution call.
+        </Option>
+        <Option option="verificationGasLimit" type="uint256">
+        The amount of gas to allocate for the verification step.
+        </Option>
+        <Option option="preVerificationGas" type="uint256">
+        Extra gas to pay the bundler.
+        </Option>
+        <Option option="maxFeePerGas" type="uint256">
+        Maximum fee per gas (similar to EIP-1559 `max_fee_per_gas`).
+        </Option>
+        <Option option="maxPriorityFeePerGas" type="uint256">
+        Maximum priority fee per gas (similar to EIP-1559 `max_priority_fee_per_gas`).
+        </Option>
+    </OptionTable>
+  </Tabs.Tab>
+  <Tabs.Tab>
+    <OptionTable optionTitle="UserOperation Field">
+        <Option option="paymaster" type="address">
+        Address of paymaster contract, (or empty, if the `sender` pays for gas by itself).
+        </Option>
+        <Option option="paymasterVerificationGasLimit" type="uint256">
+        The amount of gas to allocate for the paymaster validation code (only if paymaster exists).
+        </Option>
+        <Option option="paymasterPostOpGasLimit" type="uint256">
+        The amount of gas to allocate for the paymaster post-operation code (only if paymaster exists).
+        </Option>
+        <Option option="paymasterData" type="bytes">
+        Data for paymaster (only if paymaster exists).
+        </Option>
+    </OptionTable>
+  </Tabs.Tab>
+</Tabs>
+
+Whether nodes accept and keep track of such operations is up to them, but those that do may participate in bundling multiple `UserOperations` into a single transaction, similar to how Block Builders bundle multiple transactions into a single block to be added to the chain.
+
+
+## References
+
+<References>
+  <Reference reference='1'>
+    Vitalik Buterin, "On Abstraction", ethereum foundation blog, 5. July 2015, https://blog.ethereum.org/2015/07/05/on-abstraction
+  </Reference>
+  <Reference reference='2'>
+    Vitalik Buterin (@vbuterin), "EIP-101: Serenity Currency and Crypto Abstraction [DRAFT]," Ethereum Improvement Proposals, no. 101, November 2015. [Online serial]. Available: https://eips.ethereum.org/EIPS/eip-101.
+  </Reference>
+  <Reference reference='3'>
+    Vitalik Buterin (@vbuterin), "EIP-86: Abstraction of transaction origin and signature [DRAFT]," Ethereum Improvement Proposals, no. 86, February 2017. [Online serial]. Available: https://eips.ethereum.org/EIPS/eip-86.
+  </Reference>
+  <Reference reference='4'>
+    Vitalik Buterin (@vbuterin), "Tradeoffs in Account Abstraction Proposals", Ethereum Research Forum, 28. November 2017, https://ethresear.ch/t/tradeoffs-in-account-abstraction-proposals/263
+  </Reference>
+  <Reference reference='5'>
+    Vitalik Buterin (@vbuterin), "Account abstraction for main chain #859", ethereum/EIPs GitHub Repository, 29. January 2018, https://github.com/ethereum/EIPs/issues/859
+  </Reference>
+  <Reference reference='6'>
+    Vitalik Buterin (@vbuterin), "A recap of where we are at on account abstraction", Ethereum Research Forum, 13. April 2018, https://ethresear.ch/t/a-recap-of-where-we-are-at-on-account-abstraction/1721/1
+  </Reference>
+  <Reference reference='7'>
+    Micah Zoltu (@MicahZoltu), "EIP-2711: Sponsored, expiring and batch transactions. [DRAFT]," Ethereum Improvement Proposals, no. 2711, June 2020. [Online serial]. Available: https://eips.ethereum.org/EIPS/eip-2711.
+  </Reference>
+  <Reference reference='8'>
+    Micah Zoltu (@MicahZoltu), "EIP-2803: Rich Transactions [DRAFT]," Ethereum Improvement Proposals, no. 2803, July 2020. [Online serial]. Available: https://eips.ethereum.org/EIPS/eip-2803.
+  </Reference>
+  <Reference reference='9'>
+    Sam Wilson (@SamWilsn), Ansgar Dietrichs (@adietrichs), Matt Garnett (@lightclient), Micah Zoltu (@micahzoltu), "EIP-3074: AUTH and AUTHCALL opcodes [DRAFT]," Ethereum Improvement Proposals, no. 3074, October 2020. [Online serial]. Available: https://eips.ethereum.org/EIPS/eip-3074.
+  </Reference>
+  <Reference reference='10'>
+    Vitalik Buterin (@vbuterin), "We should be moving beyond EOAs, not enshrining them even further (EIP 3074-related)", Ethereum Research Forum, 24. June 2021, https://ethereum-magicians.org/t/we-should-be-moving-beyond-eoas-not-enshrining-them-even-further-eip-3074-related/6538/1
+  </Reference>
+  <Reference reference='11'>
+    Vitalik Buterin (@vbuterin), Ansgar Dietrichs (@adietrichs), Matt Garnett (@lightclient), Will Villanueva (@villanuevawill), Sam Wilson (@SamWilsn), "EIP-2938: Account Abstraction [DRAFT]," Ethereum Improvement Proposals, no. 2938, September 2020. [Online serial]. Available: https://eips.ethereum.org/EIPS/eip-2938.
+  </Reference>
+  <Reference reference='12'>
+    Justin Drake (@justindrake), "Application-layer account abstraction", Ethereum Research Forum, 14. April 2018, https://ethresear.ch/t/application-layer-account-abstraction/1734/1
+  </Reference>
+  <Reference reference='13'>
+    Yoav Weiss yoav@tabookey.com, Dror Tirosh dror@tabookey.com, Alex Forshtat alex@tabookey.com, "ERC-1613: Gas stations network [DRAFT]," Ethereum Improvement Proposals, no. 1613, November 2018. [Online serial]. Available: https://eips.ethereum.org/EIPS/eip-1613.
+  </Reference>
+  <Reference reference='14'>
+  </Reference>
+  <Reference reference='15'>
+  </Reference>
+</References>
+
+
+

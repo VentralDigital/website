@@ -3,10 +3,5 @@
     "title": "SZNS’ BountyBoard: Unauthorized TransferFrom Vulnerability",
     "href": "/posts/2022/8/18/sznsdaos-bountyboard-unauthorized-transferfrom-vulnerability/",
     "newWindow": false
-  },
-  "hunting-crits-aragon-locktovote": {
-    "title": "Aragon's LockToVote Plugin",
-    "href": "/posts/2025/8/12/hunting-crits-aragon-locktovote/",
-    "newWindow": false
   }
 }

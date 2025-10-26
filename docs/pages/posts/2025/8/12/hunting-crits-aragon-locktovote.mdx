@@ -8,7 +8,7 @@
 
 import { Callout } from 'nextra/components'
 import { Tabs } from 'nextra/components'
-import { OptionTable } from 'components/table'
+import { OptionTable, Option } from 'components/table'
 
 [Aragon OSx](https://www.aragon.org/osx) offers a modular governance framework for creating DAOs that are customizable via plugins. In Aragon, multiple governance bodies, consisting of members grouped by their difference in skills, incentives and interests, may create and vote on proposals. Such proposals can then go through multiple stages in which the relevant stakeholders can have their say. A common example is having curators making proposals for implementing new DeFi strategies using funds deposited to a vault, which are optimistically accepted unless the actual providers of that liquidity veto the proposal.
 
@@ -498,90 +498,56 @@ abstract contract MajorityVotingBase is IMajorityVoting, Initializable, ERC165Up
 
 Looking at the proposal execution logic can be quite overwhelming. Although the function only has a single parameter, whether we actually reach the point where the external (delegate)call is made, is constrained by the state of various storage variables that it accesses. Let's take a look at each of them in order of occurrence, while investigating how we can influence their value.
 
-<OptionTable
-  options={[
-    [
-      'currentTime',
-      'uint64',
-      'Current block timestamp. Validators have slight control over this value and may manipulate it by a few seconds.'
-    ],
-    [
-      'currentTokenSupply',
-      'uint256',
-      'Current total supply of the locked token. Is manipulatable depending on the token, for example: Flash minting, wrapping, burning, etc.'
-    ],
-    [
-      'proposal_.executed',
-      'bool',
-      'Whether the proposal has been executed or not. Default initialized to false, set to true only after all execution checks have passed and execution is attempted.'
-    ],
-    [
-      'proposal_.parameters.startDate',
-      'uint64',
-      'Vote start date. Can be set once during proposal creation, to the current or a future timestamp.'
-    ],
-    [
-      'proposal_.parameters.endDate',
-      'uint64',
-      'Vote end date. Can be set once during proposal creation, to a timestamp that ensures that, after the vote started, it will last at least as long as the configured proposal duration (in voting settings).'
-    ],
-    [
-      'proposal_.parameters.votingMode',
-      'VotingMode',
-      'Enum of Standard, EarlyExecution, VoteReplacement. Is set once according to what is configured in the voting settings during proposal creation.'
-    ],
-    [
-      'proposal_.tally.yes',
-      'uint256',
-      'The number of yes votes cast. Can only be influenced by using the functions for making or clearing a vote.'
-    ],
-    [
-      'proposal_.tally.abstain',
-      'uint256',
-      'The number of abstain votes cast. Can only be influenced by using the functions for making or clearing a vote.'
-    ],
-    [
-      'proposal_.tally.no',
-      'uint256',
-      'The number of no votes cast. Can only be influenced by using the functions for making or clearing a vote.'
-    ],
-    [
-      'proposal_.parameters.supportThresholdRatio',
-      'uint32',
-      'The support threshold ratio. Is set once according to what is configured in the voting settings during proposal creation.'
-    ],
-    [
-      'proposal_.parameters.minParticipationRatio',
-      'uint256',
-      'The minimum voting power ratio needed for a proposal to reach minimum participation. Is set once according to what is configured in the voting settings during proposal creation.'
-    ],
-    [
-      'proposal_.parameters.minApprovalRatio',
-      'uint256',
-      'Minimum ratio of allocated YES votes. Is set once according to what is configured in the voting settings during proposal creation.'
-    ],
-    [
-      'proposal_.targetConfig.operation',
-      'Operation',
-      'Enum of either Call or DelegateCall. Is set once according to the target config during proposal creation.'
-    ],
-    [
-      'proposal_.targetConfig.target',
-      'address',
-      'The address of the target contract. Defaults to the associated DAO when no custom custom executor has been set. Is set once according to the target config during proposal creation.'
-    ],
-    [
-      'proposal_.actions',
-      'Action[]',
-      'The actions to be executed when the proposal passes. Passed through as-is from proposal creation to (delegate)call. Influences proposalId hash.'
-    ],
-    [
-      'proposal_.allowFailureMap',
-      'uint256',
-      'A bitmap allowing the proposal to succeed, even if individual actions might revert. Passed through as-is from proposal creation to (delegate)call.'
-    ],
-  ]}
-/>
+<OptionTable>
+    <Option option="currentTime" type="uint64">
+    Current block timestamp. Validators have slight control over this value and may manipulate it by a few seconds.
+    </Option>
+    <Option option="currentTokenSupply" type="uint256">
+    Current total supply of the locked token. Is manipulatable depending on the token, for example: Flash minting, wrapping, burning, etc.
+    </Option>
+    <Option option="proposal_.executed" type="bool">
+    Whether the proposal has been executed or not. Default initialized to false, set to true only after all execution checks have passed and execution is attempted.
+    </Option>
+    <Option option="proposal_.parameters.startDate" type="uint64">
+    Vote start date. Can be set once during proposal creation, to the current or a future timestamp.
+    </Option>
+    <Option option="proposal_.parameters.endDate" type="uint64">
+    Vote end date. Can be set once during proposal creation, to a timestamp that ensures that, after the vote started, it will last at least as long as the configured proposal duration (in voting settings).
+    </Option>
+    <Option option="proposal_.parameters.votingMode" type="VotingMode">
+    Enum of Standard, `EarlyExecution`, `VoteReplacement`. Is set once according to what is configured in the voting settings during proposal creation.
+    </Option>
+    <Option option="proposal_.tally.yes" type="uint256">
+    The number of yes votes cast. Can only be influenced by using the functions for making or clearing a vote.
+    </Option>
+    <Option option="proposal_.tally.abstain" type="uint256">
+    The number of abstain votes cast. Can only be influenced by using the functions for making or clearing a vote.
+    </Option>
+    <Option option="proposal_.tally.no" type="uint256">
+    The number of no votes cast. Can only be influenced by using the functions for making or clearing a vote.
+    </Option>
+    <Option option="proposal_.parameters.supportThresholdRatio" type="uint32">
+    The support threshold ratio. Is set once according to what is configured in the voting settings during proposal creation.
+    </Option>
+    <Option option="proposal_.parameters.minParticipationRatio" type="uint256">
+    The minimum voting power ratio needed for a proposal to reach minimum participation. Is set once according to what is configured in the voting settings during proposal creation.
+    </Option>
+    <Option option="proposal_.parameters.minApprovalRatio" type="uint256">
+    Minimum ratio of allocated YES votes. Is set once according to what is configured in the voting settings during proposal creation.
+    </Option>
+    <Option option="proposal_.targetConfig.operation" type="Operation">
+    Enum of either `Call` or `DelegateCall`. Is set once according to the target config during proposal creation.
+    </Option>
+    <Option option="proposal_.targetConfig.target" type="address">
+    The address of the target contract. Defaults to the associated DAO when no custom custom executor has been set. Is set once according to the target config during proposal creation.
+    </Option>
+    <Option option="proposal_.actions" type="Action[]">
+    The actions to be executed when the proposal passes. Passed through as-is from proposal creation to (delegate)call. Influences `proposalId` hash.
+    </Option>
+    <Option option="proposal_.allowFailureMap" type="uint256">
+    A bitmap allowing the proposal to succeed, even if individual actions might revert. Passed through as-is from proposal creation to (delegate)call.
+    </Option>
+</OptionTable>
 
 **Voting Settings**
 

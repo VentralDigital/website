@@ -213,17 +213,28 @@ import customThemeImage from '../public/assets/authors/patrickd.jpg'
 
 ### Option Table
 
-import { OptionTable } from 'components/table'
+import { OptionTable, Option } from 'components/table'
 
-<OptionTable
-  options={[
-    [
-      'codeHighlight',
-      'boolean',
-      'Enable or disable syntax highlighting. Defaults to `true`.'
-    ]
-  ]}
-/>
+<OptionTable optionTitle="Field">
+  <Option option="sender" type="address">
+  The Account making the `UserOperation`.
+  </Option>
+  <Option option="nonce" type="uint256">
+  Anti-replay parameter for "semi-abstracted nonce support".
+  </Option>
+  <Option option="factory" type="address">
+  Account Factory for new Accounts OR `0x7702` flag for EIP-7702 Accounts, otherwise `address(0)`.
+  </Option>
+  <Option option="factoryData" type="bytes">
+  Data for the Account Factory if `factory` is provided OR EIP-7702 initialization data, or empty array.
+  </Option>
+  <Option option="callData" type="bytes">
+  The data to pass to the `sender` during the main execution call.
+  </Option>
+  <Option option="signature" type="bytes">
+  Data passed into the `sender` to verify authorization.
+  </Option>
+</OptionTable>
 
 ## Code
 

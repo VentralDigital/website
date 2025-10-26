@@ -1,6 +1,7 @@
 import styles from './style.module.css'
+import type { ReactNode } from 'react'
 
-export function OptionTable({ options, head = true }: { options: [string, string, any], head: boolean }) {
+export function OptionTable({ optionTitle = "Option", head = true, children }: { options: [string, string, any], optionTitle: string, head: boolean, children: ReactNode }) {
   return (
     <div
       className={
@@ -12,31 +13,39 @@ export function OptionTable({ options, head = true }: { options: [string, string
         {head && (
           <thead>
             <tr className="border-b py-4 text-left dark:border-neutral-700">
-              <th className="py-2 font-semibold">Option</th>
+              <th className="py-2 font-semibold">{optionTitle}</th>
               <th className="py-2 pl-6 font-semibold">Type</th>
               <th className="px-6 py-2 font-semibold">Description</th>
             </tr>
           </thead>
         )}
         <tbody className="align-baseline text-gray-900 dark:text-gray-100">
-          {options.map(([option, type, description]) => (
-            <tr
-              key={option}
-              className="border-b border-gray-100 dark:border-neutral-700/50"
-            >
-              <td className="whitespace-pre py-2 font-mono text-xs font-semibold leading-6 text-violet-600 dark:text-violet-500">
-                {option}
-              </td>
-              {type && (
-                <td className="whitespace-pre py-2 pl-6 font-mono text-xs font-semibold leading-6 text-slate-500 dark:text-slate-400">
-                  {type}
-                </td>
-              )}
-              <td className="py-2 pl-6">{description}</td>
-            </tr>
-          ))}
+          {children}
         </tbody>
       </table>
     </div>
+  )
+}
+
+export function Option({
+  option,
+  type,
+  children,
+}: {option: string, type: string, children: ReactNode}) {
+  return (
+    <tr
+      key={option}
+      className="border-b border-gray-100 dark:border-neutral-700/50"
+    >
+      <td className="whitespace-pre py-2 font-mono text-xs font-semibold leading-6 text-violet-600 dark:text-violet-500">
+        {option}
+      </td>
+      {type && (
+        <td className="whitespace-pre py-2 pl-6 font-mono text-xs font-semibold leading-6 text-slate-500 dark:text-slate-400">
+          {type}
+        </td>
+      )}
+      <td className="py-2 pl-6">{children}</td>
+    </tr>
   )
 }

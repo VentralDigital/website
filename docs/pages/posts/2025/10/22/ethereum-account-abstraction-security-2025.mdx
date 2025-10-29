@@ -5,6 +5,7 @@
 import { UseCases, UseCase } from '@components/usecases'
 import { Callout } from 'nextra/components'
 import { R, Reference, References } from '@components/references'
+import { OptionalText } from '@components/optionaltext'
 import { OptionTable, Option } from 'components/table'
 import { Tabs } from 'nextra/components'
 
@@ -16,7 +17,7 @@ import banner from './banner.jpg'
   <meta name="twitter:image" content={'https://ventral.digital' + banner.src} />
 </Head>
 
-After a quick refresher on Ethereum's classical account model, the article explores the use cases of Account Abstraction and the historical attempts that were made to introduce it. Here we'll take a more detailed look at ERC-4337, which introduced interacting with Ethereum via an alternative mempool without requiring EOAs, and EIP-7702, which allows EOAs to become SCAs. After a look at the security aspects of these standards, we'll finish by looking at RIP-7560, which aims to finally introduce Account Abstraction natively.
+After a quick refresher on Ethereum's classical account model, the article explores the use cases of Account Abstraction and the historical attempts that were made to introduce it. Here we'll take a more detailed look at ERC-4337, which introduced interacting with Ethereum via an alternative mempool without requiring EOAs, and EIP-7702, which allows EOAs to become SCAs. After a look at the security aspects of these standards, we'll conclude with RIP-7560, which aims to finally introduce Account Abstraction natively.
 
 ## Introduction
 
@@ -156,7 +157,7 @@ Although the ERC appears to be quite complex, the principle behind the solution 
   <Tabs.Tab>
     <OptionTable optionTitle="UserOperation Field">
         <Option option="sender" type="address">
-        The Account making the `UserOperation`.
+        The Account making the `UserOperation`. This specifically refers to the SCA that will be triggered to execute the `UserOperation`.
         </Option>
         <Option option="nonce" type="uint256">
         Anti-replay parameter for "semi-abstracted nonce support".
@@ -171,7 +172,7 @@ Although the ERC appears to be quite complex, the principle behind the solution 
         The data to pass to the `sender` during the main execution call.
         </Option>
         <Option option="signature" type="bytes">
-        Data passed into the `sender` to verify authorization.
+        Data passed into the `sender` to verify authorization. What it is actually used for is purposefully not defined by the standard, leaving it up to the SCA implementation.
         </Option>
     </OptionTable>
   </Tabs.Tab>
@@ -200,13 +201,13 @@ Although the ERC appears to be quite complex, the principle behind the solution 
         Address of paymaster contract, (or empty, if the `sender` pays for gas by itself).
         </Option>
         <Option option="paymasterVerificationGasLimit" type="uint256">
-        The amount of gas to allocate for the paymaster validation code (only if paymaster exists).
+        The amount of gas to allocate for the paymaster validation code (only if `paymaster` exists).
         </Option>
         <Option option="paymasterPostOpGasLimit" type="uint256">
-        The amount of gas to allocate for the paymaster post-operation code (only if paymaster exists).
+        The amount of gas to allocate for the paymaster post-operation code (only if `paymaster` exists).
         </Option>
         <Option option="paymasterData" type="bytes">
-        Data for paymaster (only if paymaster exists).
+        Data for paymaster (only if `paymaster` exists).
         </Option>
     </OptionTable>
   </Tabs.Tab>
@@ -214,18 +215,107 @@ Although the ERC appears to be quite complex, the principle behind the solution 
 
 Whether nodes accept and keep track of such operations is up to them, but those that do may participate in bundling multiple `UserOperations` into a single transaction, similar to how Block Builders bundle multiple transactions into a single block to be added to the chain. Since there's no protocol change, this transaction of bundled operations is treated like any other, which has the following implications: 
 
+<OptionalText>
 * The gas overhead for a basic `UserOperation` is around ~42k (though half of it is divided among multiple operations), compared to the ~21k of a basic transaction.
 * The Bundler will pay the transaction's gas cost with the EOA account they submitted it with.
 * The Bundler needs to be compensated for the transaction during the operation's verification.
 * Measures need to be put into place to prevent unpaid work when operations that were valid off-chain suddenly become invalid on-chain.
-  * `UserOperation` must not expire too soon.
+  * `UserOperation` must not expire too soon. Preferably, the Bundler should itself also be a Block Builder or make use of private transaction mempool infrastructure such as `mev-boost`.
   * The `UserOperation`'s `verificationGasLimit` should be very small, e.g.
    $`<=200k`$ as larger amounts mean potentially more expensive unpaid work.
   * The function verifying the `UserOperation` must not use environmental opcodes whose output can change in the meantime, such as: `GASPRICE`, `GASLIMIT`, `DIFFICULTY`, `TIMESTAMP`, `BASEFEE`, `BLOCKHASH`, `NUMBER`, `SELFBALANCE`, `BALANCE`, `ORIGIN`, `GAS`, `CREATE`, `CREATE2`, `COINBASE`.
   * There may only be one `UserOperation` of the same `sender` within the alt mempool at a time (though replaceable) to prevent the contract containing the validation code from using its storage to make later operations fail.
+</OptionalText>
 
-All operation-bundling transactions call the `handleOps(){:solidity}` function of the `EntryPoint` contract deployed at `0x0000000071727De22E5E9d8BAf0edAc6f37da032`. This contract, being the central trusted manager of all ERC-4337 `UserOperations`, has been audited by OpenZeppelin.
 
+```solidity filename="IEntryPoint.sol" copy
+function handleOps(PackedUserOperation[] calldata ops, address payable beneficiary);
+```
+
+All operation-bundling transactions call the `handleOps(){:solidity}` function of the `EntryPoint` contract, it's current version v0.8.0 is deployed at `0x4337084d9e255ff0702461cf8895ce9e3b5ff108`. This contract, being the central trusted manager of all ERC-4337 `UserOperations`, has been audited by OpenZeppelin to ensure that the following invariants hold:
+
+<OptionalText>
+
+* `UserOperation` only executes if wallet validation succeeds for it.
+* If wallet validation succeeds, the matching `UserOperation` must execute.
+* Validations must not affect each other. All validations happen before any execution.
+* If all `UserOperation`s are valid, bundler must be compensated correctly.
+* Wallet only pays for valid `UserOperation`s and only if no paymaster is specified.
+* Paymaster only pays if its validation of the `UserOperation` succeeds.
+* If paymaster requested a `postOp`, then `postOp` must be called after the operation.
+* If `postOp` reverts after a `UserOperation`, it must be called again after the `UserOperation` side effects were reverted.
+* Wallet and paymaster deposits can only be withdrawn by their owner.
+* Paymaster stake cannot be withdrawn if paymaster is active or during the unlock delay
+* Paymaster can withdraw its stake after the unlock delay, no one else can.
+</OptionalText>
+
+The `handleOps(){:solidity}` function is passed the bundle of user operations as well as the `beneficiary` address that should receive the gas refund. The function makes two loops, the _verification loop_ and the _execution loop_. The first iterates over all operations calling `sender.validateUserOp(){:solidity}` on each, with `sender` being a SCA wallet.
+
+```solidity filename="IAccount.sol" copy
+function validateUserOp(
+  PackedUserOperation calldata userOp,
+  bytes32 userOpHash,
+  uint256 missingAccountFunds
+) external returns (uint256 validationData);
+```
+
+Aside from checking whether the `UserOperation` is valid for the given `signature` value, `validateUserOp(){:solidity}` must at least send the `missingAccountFunds` to the `EntryPoint` contract. Any Ether sent above this amount is automatically considered a deposit. Note that `EntryPoint` has a set of functions for managing Ether deposits. A sender that has deposited a sufficient amount into `EntryPoint` will receive 0 for `missingAccountFunds` and can save gas by skipping the refunds to `EntryPoint` for every `UserOperation`. 
+
+<OptionalText>
+
+The validation function's 32 byte return value is a packed object of either a `uint160` or an `address`, and two `uint48` values. If the `validateUserOp(){:solidity}` function successfully validated the `signature` it should set a `0` as `uint160`, a `1` otherwise. Instead of the `uint160` it can also return an `address` of an "authorizer" contract responsible for validation (if the authorizer is responsible for multiple SCAs it's called an "aggregator"). The two `uint48` values are each 6-byte timestamps, `validUntil` and `validAfter`, respectively. The value of `validUntil` may be `0` to communicate that the `UserOperation` does not expire. Note that these values are verified by Bundlers off-chain when deciding whether to add a `UserOperation` to a bundle.
+
+The standard comes with "semi-abstracted nonce support" with both guarantees `UserOperation` uniqueness, like it's guaranteed for normal transactions, while at the same time allowing SCAs to implement custom logic with regard to transaction ordering and replay protection. This is achieved by splitting the `UserOperation`'s `nonce` (256-bit) into two values `key` (192-bit) and `sequence` (64-bit). Where each arbitrarily `key` has its own sequentially and monotonically incremental `sequence` starting at `0`. Note that validation and tracking of these values is taken care of by the Bundlers and the `EntryPoint` contract, the validation function's job here is to enforce proper usage of the `key` value.
+</OptionalText>
+
+Once the _verification loop_ has finished, the _execution loop_ begins calling on each `sender` for which `validateUserOp(){:solidity}` succeeded and necessary payment has been made. The call is executed using the `UserOperation`'s `callData`, meaning that there's no specific "execution function" that must be used. Though if the calldata starts with the function signature of `validateUserOp(PackedUserOperation,bytes32){:solidity}`, the rest of the `callData` will be ignored and the appropriate call will be made passing the `UserOperation` and its hash instead.
+
+Once the SCA has finished executing the operation, the wallet is refunded the excess gas cost that was pre-charged during verification, the rest is used to reimburse the Bundler. To prevent a `UserOperation` from reserving too much gas space within a bundle, a penalty of 10% is applied on gas that remained unused if that remaining amount is $`>= 40,000`$.
+
+With that we've walked through the entire flow following a normal ERC-4337 operation from submission to execution. The flow is slightly extended when the `UserOperation` specifies a `paymaster`, which usually either means that the operation is being sponsored (gas is payed by paymaster) or that it wants to pay for the gas cost in another way (e.g. with ERC-20 tokens). 
+
+<OptionalText>
+
+In that case, the _verificaton loop_ calls `paymaster.validatePaymasterUserOp(){:solidity}` _after_ `validateUserOp(){:solidity}` (which will be called with `missingAccountFunds` set to 0 in this case). Here the `paymaster` contract should check whether it really should handle payment of the current `UserOperation`, typically by validating a signature in the `paymasterData` field. If the `paymaster` contract expects being paid back in some way, it should check whether the `sender` has made sufficient funds available to it.
+
+If the `validatePaymasterUserOp(){:solidity}` function returned a `context` (`bytes`) value, the `paymaster`'s `postOp()` function will be called and the `context` will be passed to it. As the name implies, this function is called after execution of `UserOperation` finished, successful or not. The `paymaster` should use this opportunity to deduct the appropriate amount of tokens from the `sender` for the gas that the `UserOperation` actually ended up using.
+
+<Callout>
+  The `paymaster`'s functions must be gated to only allow calls from the official `EntryPoint` contract.
+</Callout>
+
+To prevent `sender`s from cheating `paymaster`s, e.g. by using the `UserOperation` to send away the balance before it could be deducted, the effects of the `UserOperation` are reverted when `postOp()` errors. In that case, `postOp()` will be called once again in order to deduct the total final gas cost, including the extra cost incurred by the cheating attempt.
+
+The fact that multiple `UserOperation`s may use the same `paymaster` within the same bundle offers another opportunity for a DoS attack even with its access restricted in the same manner as that of `validateUserOp(){:solidity}`. Misbehaving `paymaster`s that cause unpaid work will be throttled and eventually banned by Bundlers, ignoring `UserOperation`s that specify them. To prevent bypassing this measure using a sybil attack, a `paymaster` must stake Ether in the `EntryPoint` contract which can only been withdrawn after a delay. Note that the stake is separate from the deposit used to pay for gas fees.
+
+<Callout>
+  A discussion on factories, a contract responsible for initializing a new SCA wallet via a `UserOperation`, has been omitted here but since multiple operations may use the same factory, the same measures as for `paymaster`s apply.
+</Callout>
+
+</OptionalText>
+
+
+<R reference='14'/>
+
+##### Wallet Security Considerations
+
+1. Any functions receiving `UserOperation`s from the `EntryPoint` contract, such as `validateUserOp(){:solidity}`, `executeUserOp(){:solidity}`, or custom named execution functions, must validate that the `msg.sender` matches a trusted `EntryPoint` contract address. Note that the same is true for the functions of `paymaster` and authorizer/aggregator contracts.
+1. A `factory`'s `createAccount()` function must ensure that the `msg.sender` matches the address returned by `entryPoint.senderCreator()`. The same is true for the initialization function of an EIP-7702 delegated SCA (discussed further down).
+1. The `userOpHash` passed to an SCA's `validateUserOp(){:solidity}` function is a hash of the entire `UserOperation` (except its `signature` field), in addition to the `EntryPoint` contract's address as well as the `chainId`. Although the `UserOperation`'s `signature` field's usage is up to the SCA's implementation, it should in some form verify this hash to prevent modification and replay of the `UserOperation`.
+1. The `validateUserOp(){:solidity}` function must revert on errors, except when the issue is specifically failed authentication (i.e. an error validating the `signature` against the `userOpHash`), where it should return a `1` instead.
+1. The `validateUserOp(){:solidity}` function must validate the `UserOperation`'s `nonce` enforcing which `key` is allowed to be used under what circumstance. The `nonce` consists of a `key` and a `sequence` value where the tracking and validation of each `sequence` per key is already handled outside the SCA wallet.
+1. The structure of a `UserOperation` on-chain is a "packed" format where several fields are concatenated into a single one. Proper unpacking must be ensured before usage. The return value of the SCA's `validateUserOp(){:solidity}` function must be a properly "packed" structure as well.
+1. Creation of SCA Wallets via a `factory` contract address, specified within the `UserOperation`, must make use of the `CREATE2` opcode to generate a wallet address that depends on the initial `signature` in order to prevent re-deployment with different credentials set to control it. 
+1. Creation of SCA Wallets via a EIP-7702 initialization function should error when called multiple times for the creation of the same SCA. This may happen due to the `EntryPoint` contract being unable to tell whether an EIP-7702 account has been initiated or not.
+
+#### RIP-7560
+
+#### EIP-7702
+
+
+All EIP-7702 delegated Smart Contract Account implementations MUST check that all calls to the initialization function originate from the entryPoint.senderCreator() address.
+
+There is no way for the EntryPoint contract to know whether an EIP-7702 account has been initialized or not, and therefore the EIP-7702 account initialization code, can be called multiple times through EntryPoint. The Account code SHOULD only allow calling it once and the Wallet Application SHOULD NOT pass the initCode repeatedly.
 
 ## References
 
@@ -270,6 +360,7 @@ All operation-bundling transactions call the `handleOps(){:solidity}` function o
     Yoav Weiss yoav@tabookey.com, Dror Tirosh dror@tabookey.com, Alex Forshtat alex@tabookey.com, "ERC-1613: Gas stations network [DRAFT]," Ethereum Improvement Proposals, no. 1613, November 2018. [Online serial]. Available: https://eips.ethereum.org/EIPS/eip-1613.
   </Reference>
   <Reference reference='14'>
+    eth-infinitism/account-abstraction; Account Abstraction Contracts GitHub repository; Releases: https://github.com/eth-infinitism/account-abstraction/releases
   </Reference>
   <Reference reference='15'>
   </Reference>

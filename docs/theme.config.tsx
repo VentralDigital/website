@@ -15,6 +15,7 @@ const config: DocsThemeConfig = {
   logo: (
     <>
       <Image src={logoImage} height={50} alt="Ventral Digital"/>
+      <span className="text-xs text-slate-500 font-mono">/** <span className="text-sky-900">v</span>entral  digital **/</span>
     </>
   ),
   /* Adding announcement banner to top: */

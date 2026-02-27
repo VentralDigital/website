@@ -1,6 +1,6 @@
-# Ethereum Account Abstraction Security 2025
+# Introducing: Ethereum Account Abstraction
 
-<p className="text-xs text-right">October 22, 2025 by [patrickd](/about#patrickd)</p>
+<p className="text-xs text-right">February 27, 2026 by [patrickd](/about#patrickd)</p>
 
 import { UseCases, UseCase } from '@components/usecases'
 import { Callout } from 'nextra/components'
@@ -9,17 +9,6 @@ import { OptionalText } from '@components/optionaltext'
 import { OptionTable, Option } from 'components/table'
 import { Tabs } from 'nextra/components'
 
-import Head from 'next/head'
-import banner from './banner.jpg'
-
-<Head>
-  <meta property="og:image" content={'https://ventral.digital' + banner.src} />
-  <meta name="twitter:image" content={'https://ventral.digital' + banner.src} />
-</Head>
-
-
-## Introduction
-
 As you're likely aware, Ethereum has two types of accounts: Externally Owned Accounts (EOA) and Smart Contract Accounts (SCA). Transactions can only originate from EOAs, which can then invoke the execution of an SCA's code. To send a transaction, you must be in possession of an EOA's private key and the account must be sufficiently funded with Ether to pay the transaction's gas cost.
 
 While the _effects_ of a transaction are fully programmable, the _validity conditions_ of the transaction are fixed. In other words, once you've proven that you are indeed the address's owner, your transaction will be executed causing the programmed effects, incurring a cost up to the amount that you have promised to pay for. A transaction is dismissed as invalid if its ECDSA signature-related fields (`v`, `r`, `s`, `nonce`) don't allow the recovery of an Ethereum address that is sufficiently funded to cover what was promised as maximum gas payment.
@@ -27,8 +16,6 @@ While the _effects_ of a transaction are fully programmable, the _validity condi
 ![Diagram: A Transaction's validation of Signature (fixed to ECDSA) and Replay Protection (fixed to using nonces) happens Off-Chain. A transaction always authenticates an EOA account, whose balance will be used to pay for any cost incurred by the execution of a smart contract account's code.](./invocation-model.svg)
 
 Having such fixed validity conditions for block builders is very useful, since it allows verification in constant-time and guarantees that any work done during a transaction's execution will be appropriately paid. Unfortunately, it also means that a user receiving ERC-20 tokens cannot do anything with them until he funds his address with Ether, that access to the entirety of his tokens is controlled by a single private key which must be carefully stored, and that, if he loses it by accident or to a scammer, there's little to be done in terms of recovery or revocation of access.
-
-signing approval transactions and incentivicing infinite approvals
 
 ## Use Cases
 
@@ -41,9 +28,9 @@ Account Abstraction (AA) decouples the relation between _account_ and _signer_, 
     Allows usage of custom signature schemes, instead of reliance on a single ECDSA signature for authentication.
 
     * **Multi-Sig**: Require $k$-out-of-$n$ valid signatures for the account to execute an action.
-    * **Schnorr Signatures**: The ECDSA Scheme is basically a worse version of Schnorr Signatures, designed to be different enough so as not to infringe on Schnorr's patents. The last patent has expired in 2010 allowing us to move to a cryptographically superior signature scheme.
+    * **Schnorr Signatures**: The ECDSA Scheme is basically a worse version of Schnorr Signatures, designed to be different enough so as not to infringe on Schnorr's patents. The last patent has expired in 2010 allowing us to move to the cryptographically superior signature scheme now.
     * **Quantum-Resistant Signatures**: Whether or not, and when, Quantum-Computers will become a threat to DLP-based cryptography remains to be determined, but with AA we can already switch to signature schemes that are considered resistant to their attacks.
-    * **Secure-Enclave Compatible Signatures**: Ethereum uses the `secp256k1` curve for its ECDSA signatures. With AA we can make use of a signature scheme on the `secp256r1` curve, which basically allows turning any modern phone into a hardware wallet thanks to its secure enclave hardware.
+    * **Secure-Enclave Compatible Signatures**: Ethereum uses the `secp256k1` curve for its ECDSA signatures. With AA we can make use of a signature scheme on the `secp256r1` curve, which practically allows turning any modern phone into a hardware wallet thanks to its secure enclave hardware.
     * **zk Schemes**: Zero-Knowledge-Proof schemes other than traditional signatures may be used to authenticate with the account. zkEmail, for example, allows cryptographic authentication by proving email address ownership.
   </UseCase>
   <UseCase usecase='Gas Abstraction'>
@@ -51,7 +38,7 @@ Account Abstraction (AA) decouples the relation between _account_ and _signer_, 
 
     * **Pay with Tokens**: Although gas will ultimately still need to be paid in Ether, the user may acquire the necessary Ether as needed in exchange for other tokens.
     * **Gas Sponsorship**: Gas cost may be covered by sponsors, such as a DeFi project incentivizing usage of its protocol by paying (part of) its users' transactions.
-    * **Private Mixer Withdrawals**: Withdrawal from a privacy mixer protocol like Tornado Cash will no longer require project-specific relayer networks or manually funding the withdrawal address with Ether. With AA users can pay the gas cost using part of the amount withdrawn themselves.
+    * **Private Mixer Withdrawals**: Withdrawal from a privacy mixer protocol like Tornado Cash will no longer require project-specific relayer networks or anonymously funding the withdrawal address with Ether. With AA users can pay the gas cost using part of the amount withdrawn themselves.
     * **TradFi Gas Payment**: Wallets may offer users the ability to pay their gas cost using the legacy financial system, for example, with a credit card.
   </UseCase>
   <UseCase usecase='Recovery Mechanisms'>
@@ -83,37 +70,20 @@ Account Abstraction (AA) decouples the relation between _account_ and _signer_, 
     * **Scheme Updates**: If a used authentication scheme has been compromised or has become outdated, it can be disabled and replaced.
     * **Security Updates**: Smart contract upgrades allow users to move to another, more actively maintained and secure wallet when necessary.
   </UseCase>
+  <UseCase usecase='Chain Abstraction'>
+    Allows seamless chain interoperability where all transaction come from the user himself.
+
+    * **Cross-Chain Asset Transfer**: Truly decentralized, permissionless, and censorship resistant bridges.
+    * **Cross-Chain Gas Abstraction**: With paymasters that get compensated without censoring abilities.
+    * **Multi-Chain Execution**: Users can create transactions that operate on several chains at once.
+  </UseCase>
 </UseCases>
-
-Chain Abstraction
-Seamless Chain Interoperability
-  * Decentralized (No Trusted Parties)
-  * Permissionless
-  * Censorship Resistant
-  * Self Custodial
-
-* EIL (Ethereum Interop Layer), users buy gas and liquidity vouchers from cross-chain liquidity providers XLPs on a chain where they have funds and redeem the vouchers on another chain
-  * Cross chain asset transfer
-  * Cross chain gas abstraction
-  * Multichain execution
-
-
-
-**AA enables trustless bridging**
-
-No need for bridge operators / multisig bridges. Trustless, permissionless bridging. User can create a transaction that operation on several chains (same one running on multiple chains) – bridge operator is not part of transaction.
-
-Cross-Chain gas payment via paymasters. Operator gets compensated but can't censor.
-
-Keystores on L1 or a designated L2: Manage credentials on one chain, use them everywhere.
-
-Chain Abstraction: Wallets can make cross-chain usage seamless via ENS record lookup for standardized bridges, light client implementations, RPCs,....
 
 ## History
 
 Discussions on how Account Abstraction is best achieved are as old as Ethereum itself. An observable commonality in approaches is that they attempt to either teach EOAs to execute code, or SCAs to be invoked without requiring the user to have an EOA. Though ultimately, the goal has always been to eventually phase out EOAs completely by migrating them to become invocable SCAs.
 
-There's also a notable crux issue in making a transaction's validity conditions programmable: The threat of Denial of Service (DoS) attacks on the Ethereum network by spamming it with transactions whose validation-program's execution is expensive and unpredictably invalid, causing unpaid work for block builders. Before, block builders could always rely on getting paid for spending time executing arbitrary code even if it eventually failed, because at that point it was already ensured that the EOA would have sufficient funds to pay for the gas. This is no longer guaranteed when the gas funding validation step itself requires code execution.
+There's also a notable crux issue in making a transaction's validity conditions programmable: The threat of Denial of Service (DoS) attacks on the Ethereum network by spamming it with transactions whose validation-program's execution is expensive and unpredictably invalid, causing unpaid work for block builders. Before, block builders could always rely on getting paid for spending time executing arbitrary code even if it eventually failed, because at that point it was already ensured that the EOA would have sufficient funds to pay for the gas. This is much more difficult to guarantee when the gas funding validation step itself requires code execution.
 
 #### EIP-101
 
@@ -177,15 +147,11 @@ Until `PAYGAS` is called, the contract's sole concern should have been determini
 
 Over time, it became clear that Account Abstraction via protocol changes (EIP) wouldn't happen any time soon, given that they're generally time intensive and most of the core developer's focus was committed to achieving Ethereum's switch to PoS. Instead, we saw ERC-4337<R reference='11' /> emerge as a proposal for introducing AA as an optional, out-of-protocol solution in September 2021, though arguably we've seen first signs of it in 2018 with Justin Drake's _Application-layer account abstraction_<R reference='12' /> post and the emergence of relay-based solutions such as the ERC-1613 Gas stations network<R reference='13' /> proposal. Since its launch in March 2023 it has been widely integrated with SCA wallets such as Safe, but overall adoption and usage still remains relatively niche compared to the total EVM account base.
 
-Given its length, a first look at the ERC can certainly be intimidating. It declares various aspects "out of scope", leaving the reader wondering where these things are specified. Moreover, the standard has been continuously evolving with the latest changes for "v0.9" having been applied just a few weeks ago.<R reference='14' /> This too raises questions on where the development of the standard is taking place and the changes introduced by the various versions. But before we get lost in those details, let's take a look at how the proposal currently works:
+Given its length, a first look at the ERC can certainly be intimidating. It declares various aspects "out of scope", leaving the reader wondering where these things are specified. Moreover, the standard has been continuously evolving with the latest changes for "v0.9" having been applied just a few months ago.<R reference='14' />
 
 ![Diagram of ERC-4337](./erc-4337.svg)
 
 The standard introduces a new type of data object called  `UserOperation` which, similar to a transaction, is send to a peer-to-peer (P2P) network (JSON-RPC API `eth_sendUserOperation` call) of nodes keeping track of such operations in an "alternate mempool". This means that `UserOperation`s are kept track of in a mempool separate from the one keeping track of transactions, avoiding changes to Ethereum's consensus protocol.
-
-<Callout>
-  mention experimental rpc
-</Callout>
 
 <Tabs items={['UserOperation Fields', 'Gas Payment Fields', 'Gas Abstraction Fields']} defaultIndex="0">
   <Tabs.Tab>
@@ -247,52 +213,24 @@ The standard introduces a new type of data object called  `UserOperation` which,
   </Tabs.Tab>
 </Tabs>
 
-Whether nodes accept such operations is up to them, but those that do may participate in bundling multiple `UserOperations` into a single transaction, similar to how Block Builders bundle multiple transactions into a single block to be added to the chain. Since there's no protocol change, this transaction of bundled operations is treated like any other, which has the following implications: 
-
-<OptionalText>
-
-
-
-
-* The gas overhead for a basic `UserOperation` is around ~42k (though half of it is divided among multiple operations), compared to the ~21k of a basic transaction.
-* The Bundler will pay the transaction's gas cost with their own EOA account. The Bundler needs to be compensated for the transaction cost by the operation.
-
-
-As in previous this is solved by separating the validation code from the execution code, so that the validation code can be limited and operations can't suddenly start to fail. (Sandboxing the validation code)
-
-
-* Measures need to be put into place to prevent unpaid work when operations that were valid off-chain suddenly become invalid on-chain.
-  * `UserOperation` must not expire too soon. Preferably, the Bundler should itself also be a Block Builder or make use of private transaction mempool infrastructure such as `mev-boost`.
-  * The `UserOperation`'s `verificationGasLimit` should be very small, e.g.
-   $`<=200k`$ as larger amounts mean potentially more expensive unpaid work.
-  * The function verifying the `UserOperation` must not use environmental opcodes whose output can change in the meantime, such as: `GASPRICE`, `GASLIMIT`, `DIFFICULTY`, `TIMESTAMP`, `BASEFEE`, `BLOCKHASH`, `NUMBER`, `SELFBALANCE`, `BALANCE`, `ORIGIN`, `GAS`, `CREATE`, `CREATE2`, `COINBASE`.
-  * There may only be one `UserOperation` of the same `sender` within the alt mempool at a time (though replaceable) to prevent the contract containing the validation code from using its storage to make later operations fail.
-  * One operation shouldn't reserve too much gas for itself...
-  * Only compliant operations should be propagated in the mempool protocol...
-
-Problem with the sandbox approach: limits use cases such as paying for gas with an erc-20 token since you can't interact with it.
-
-</OptionalText>
+Whether nodes accept such operations is up to them, but those that do may participate in bundling multiple `UserOperations` into a single transaction, similar to how Block Builders bundle multiple transactions into a single block to be added to the chain. It should be noted that the details on the validation of user operations has changed over the various versions of the standard.
 
 
 ```solidity filename="IEntryPoint.sol" copy
 function handleOps(PackedUserOperation[] calldata ops, address payable beneficiary);
 ```
 
-All operation-bundling transactions call the `handleOps(){:solidity}` function on one of the official `EntryPoint` contracts – there are multiple due to the contract not being upgradeable. How is it chosen which one to use? In the following we'll only discuss the latest version v0.8.0.
+All operation-bundling transactions call the `handleOps(){:solidity}` function on one of the official `EntryPoint` contracts:
 
 | Version | Date         | Address                                      |
 |---------|--------------|----------------------------------------------|
-| v0.9.0  | ? | ? |
+| v0.9.0  | Nov 16, 2025 | `0x433709009B8330FDa32311DF1C2AFA402eD8D009` |
 | v0.8.0  | Mar 26, 2025 | `0x4337084d9e255ff0702461cf8895ce9e3b5ff108` |
 | v0.7.0  | Feb 22, 2024 | `0x0000000071727De22E5E9d8BAf0edAc6f37da032` |
 | v0.6.0  | Apr 24, 2023 | `0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789` |
 | v0.5.0  | Mar 1, 2023  | `0x0576a174D229E3cFA37253523E645A78A0C91B57` |
 
-
-
-
-This contract, being the central trusted manager of all ERC-4337 `UserOperations`, has been audited by OpenZeppelin to ensure that the following invariants hold:
+Each version, being the central trusted manager of all ERC-4337 `UserOperations`, has been audited to ensure that invariants such as the following hold:
 
 <OptionalText>
 
@@ -325,9 +263,11 @@ Aside from checking whether the `UserOperation` is valid for the given `signatur
 
 The validation function's 32 byte return value is a packed object of either a `uint160` or an `address`, and two `uint48` values. If the `validateUserOp(){:solidity}` function successfully validated the `signature` it should set a `0` as `uint160`, a `1` otherwise. Instead of the `uint160` it can also return an `address` of an "authorizer" contract responsible for validation (if the authorizer is responsible for validating aggregated signatures it's referred to as an "aggregator"). The two `uint48` values are each 6-byte timestamps, `validUntil` and `validAfter`, respectively. The value of `validUntil` may be `0` to communicate that the `UserOperation` does not expire. Note that these values are verified by Bundlers off-chain when deciding whether to add a `UserOperation` to a bundle.
 
-The standard comes with "semi-abstracted nonce support" with both guarantees `UserOperation` uniqueness, like it's guaranteed for normal transactions, while at the same time allowing SCAs to implement custom logic with regard to transaction ordering and replay protection. This is achieved by splitting the `UserOperation`'s `nonce` (256-bit) into two values `key` (192-bit) and `sequence` (64-bit). Where each arbitrarily `key` has its own sequentially and monotonically incremental `sequence` starting at `0`. Note that validation and tracking of these values is taken care of by the Bundlers and the `EntryPoint` contract, the validation function's job here is to enforce proper usage of the `key` value.
+<Callout>
+  Aggregators are smart contracts allowing multiple user operations to be checked by a single entity, reducing gas cost. For example, multiple BLS-signed operations can be aggregated with a single signature.
+</Callout>
 
-It's possible to make your smart contract wallet completely stateless by just having the `EntryPoint` contract keeping track of it....
+The standard comes with "semi-abstracted nonce support" which both guarantees `UserOperation` uniqueness, like it's guaranteed for normal transactions, while at the same time allowing SCAs to implement custom logic with regard to transaction ordering and replay protection. This is achieved by splitting the `UserOperation`'s `nonce` (256-bit) into two values `key` (192-bit) and `sequence` (64-bit). Where each arbitrarily `key` has its own sequentially and monotonically incremental `sequence` starting at `0`. Note that validation and tracking of these values is taken care of by the Bundlers and the `EntryPoint` contract, the validation function's job here is to enforce proper usage of the `key` value. In the simplest case, smart contract wallets may be completely stateless and rely on the `EntryPoint` contract's nonce handling.
 </OptionalText>
 
 Once the _verification loop_ has finished, the _execution loop_ begins calling on each `sender` for which `validateUserOp(){:solidity}` succeeded and necessary payment has been made. The call is executed using the `UserOperation`'s `callData`, meaning that there's no specific "execution function" that must be used. Though if the calldata starts with the function signature of `validateUserOp(PackedUserOperation,bytes32){:solidity}`, the rest of the `callData` will be ignored and the appropriate call will be made passing the `UserOperation` and its hash instead.
@@ -351,290 +291,85 @@ To prevent `sender`s from cheating `paymaster`s, e.g. by using the `UserOperatio
 The fact that multiple `UserOperation`s may use the same `paymaster` within the same bundle offers another opportunity for a DoS attack even with its access restricted in the same manner as that of `validateUserOp(){:solidity}`. Misbehaving `paymaster`s that cause unpaid work will be throttled and eventually banned by Bundlers, ignoring `UserOperation`s that specify them. To prevent bypassing this measure using a sybil attack, a `paymaster` must stake Ether in the `EntryPoint` contract which can only been withdrawn after a delay. Note that the stake is separate from the deposit used to pay for gas fees.
 
 <Callout>
-  The same applies for 
-
-
-
   A discussion on factories, a contract responsible for initializing a new SCA wallet via a `UserOperation`, has been omitted here but since multiple operations may use the same factory, the same measures as for `paymaster`s apply.
 </Callout>
 
 </OptionalText>
 
-
-
-##### Wallet Security Considerations
+<Callout type="info">
+**Security Considerations**
 
 1. Any functions receiving `UserOperation`s from the `EntryPoint` contract, such as `validateUserOp(){:solidity}`, `executeUserOp(){:solidity}`, or custom named execution functions, must validate that the `msg.sender` matches a trusted `EntryPoint` contract address. Note that the same is true for the functions of `paymaster` and authorizer/aggregator contracts.
-1. A `factory`'s `createAccount()` function must ensure that the `msg.sender` matches the "neutral" address returned by `entryPoint.senderCreator()` – will be same address everywhere for address reproducibility? The same is true for the initialization function of an EIP-7702 delegated SCA (discussed further down).
+1. A `factory`'s `createAccount()` function must ensure that the `msg.sender` matches the "neutral" address returned by `entryPoint.senderCreator()`. The same is true for the initialization function of an EIP-7702 delegated SCA.
 1. The `userOpHash` passed to an SCA's `validateUserOp(){:solidity}` function is a hash of the entire `UserOperation` (except its `signature` field), in addition to the `EntryPoint` contract's address as well as the `chainId`. Although the `UserOperation`'s `signature` field's usage is up to the SCA's implementation, it should in some form verify this hash to prevent modification and replay of the `UserOperation`.
 1. The `validateUserOp(){:solidity}` function must revert on errors, except when the issue is specifically failed authentication (i.e. an error validating the `signature` against the `userOpHash`), where it should return a `1` instead.
 1. The `validateUserOp(){:solidity}` function must validate the `UserOperation`'s `nonce` enforcing which `key` is allowed to be used under what circumstance. The `nonce` consists of a `key` and a `sequence` value where the tracking and validation of each `sequence` per key is already handled outside the SCA wallet.
 1. The structure of a `UserOperation` on-chain is a "packed" format where several fields are concatenated into a single one. Proper unpacking must be ensured before usage. The return value of the SCA's `validateUserOp(){:solidity}` function must be a properly "packed" structure as well.
 1. Creation of SCA Wallets via a `factory` contract address, specified within the `UserOperation`, must make use of the `CREATE2` opcode to generate a wallet address that depends on the initial `signature` in order to prevent re-deployment with different credentials set to control it. 
 1. Creation of SCA Wallets via a EIP-7702 initialization function should error when called multiple times for the creation of the same SCA. This may happen due to the `EntryPoint` contract being unable to tell whether an EIP-7702 account has been initiated or not.
+1. Paymasters expecting a ERC-20 reimbursement should preferably obtain it during validation as transfers in `postOp()` may permanently fail and paymaster will be required to pay the transaction without reimbursement even after the user operation was reverted. Instead, use `postOp()` to return change to the user if costs were overestimated.
+</Callout>
 
-
-
----
-
-**Auditing ERC-4337 Paymasters: Little Code, Big Risk** by Ruben Koch at Quantstamp
-
-The Two Types of Paymasters
-  * ERC-20 Paymaster: Enabling UserOp inclusion in exchange for gas-equivalent ERC-20 token payment
-    * User is charged either during validatePaymasterUserOp or at postOp
-    * Only postOp knows actual final gas consumption, but transfers in postOp() can unexpectedly fail, causing postOp to always revert even after UserOp execution has been rolled back – paymaster will still need to pay
-    * Transfer during validation guarantees payment, but determining various gas related parameters can be difficult here. "Do not revert due to stale oracle data, but encode it as part of returned validity window"? – Then change is returned during postOp() if gas limits were set too high ("Be aware of 10% unused gas penalty" or you might end up over/under charging the user!)
-  * Verifying Paymaster: Checks signature on chain, signature provided off-chain afters a series of eligibility checks
-
-Other paymaster security aspects
-
-* ERC-7562 Violations, SIG_VALIDATION_FAILED vs reverts
-* PostOp Reverts may lead to uncompleted payment of users
-* Bugs related to paymasters supporting entrypoint v0.6
-* Paymasters not complying with ERC-7562 validation rules
-* paymasterAndData gas griefing attack
-* reverts in postOp() can lead to stuck funds
-* verifying paymasters require off-chain throttling mechanism
-
-
-
-"This protocol audited by @Cyfrin was aiming for full compatibility with ERC4337, 7702, 7579, 7484, 7780, 1271 & 7739 - top teamwork & findings by the auditors"
-
-**Exploring the Future of Account Abstraction in Ethereum**
-
-* Anti-DoS Validation rules have developed to allow for more use cases:
-  EIP-7562 defines mempool rules for both ERC-4337 and native AA
-
-**Unveiling 4337: The Foundation of Account Abstraction**
-
-* There are two primary types of paymaster
-  * Verifying Paymaster (most common): Logic for whether a paymaster will sponsor a transaction exists off-chain and the key that owns the paymaster contract will sign each individual user operation
-  * (???)
-* Aggregators are smart contracts allowing multiple user operations to be checked by a single entity, reducing gas cost. Eg. if all operations use BLS, they can be aggregated into a single signature, which is particularly interesting for L2s
-
-
-**Going Native**
-
-Why? Gas overhead, compatibility issues (origin, non-EOA blocks), censorship resistance amd downtime risk, attack surface
-
-Plan is to keep everything as compatible as possible to 4337 to make sure the existing AA ecosystem can switch to it without much effort 
-
-EIP-7702: Allow EOAs to role play as SCAs
-RIP-7560: Enshrines ERC-4337 to become native in L2 rollups. Works by splitting up the transaction into multiple frames.
-EIP-7701: Enshrines ERC-4337 to become native in L1 with EOF allowing it to be less opinionated. Remains language agnostic, avoiding Solidity function selectors necessary to split validation from execution. With EOF validation code can be checked for AA-specific purposes. Exposure of validation code as external function can be avoided. 
-
-**A Lush Garden of Complementary Standards**
-
-ERC-7769: JSON-RPC for ERC-4337 Account Abstraction
-ERC-7679: UserOperation Builder
-ERC-7710: Smart Contract Delegation Interfaces
-ERC-6492: Signature Validation for Predeploy Contracts
-ERC-7715: Grant Permissions from Wallets
-RIP-7755: Contract Standard for Cross-L2 Calls Facilitation
-EIP-5792: Wallet Function Call API
-EIP-7702: Set EOA Account Code for One Transaction
-RIP-7212: Precompiled for secp256r1 Curve Support
-ERC-6900: Modular Smart Contract Accounts and Plugins
-ERC-7579: Minimal Modular Smart Accounts
-ERC-7677: Paymaster Web Service Capability
-ERC-3770: Chain-Specific Addresses
-
-
-**Enhancing 4337: Improvements and New Standards to Boost Adoption**
-
-* Standards such as ERC-7579 abd ERC-7555 allow for more modularization as well as better SSO logins for smart accounts without which it's quite cumbersome for daps to implement smart accounts while making them usable for the average user
-* Next entrypoint version (v0.7)
-  * Most crucially: UserOp struct is actually changing, adding several new gas limit variables to specify gas limits for verification for paymasters and the paymaster's postOp call (previously verification gas limit was shared with account)
-  * New Delegate-And-Revert function: Previously all the simulation function of the entrypoint were baked into the contract itself, but now the bundler is able to simulate and write custom simulation contracts that they can use to calculate the gas limits for these operations.
-  * 10% of unused callgas limit is slashed from the user. Incentivizes UserOperations to be more careful about the blockspace they'll reserve.
-
-
-**What's New in Account Abstraction? | Dror Tirosh - ERC-4337**
-
-Releases
-
-V0.6 (April 2023)
-
-* Align on-chain and off-chain UserOperation hash (PR#245)
-* Nonce managed by EntryPoint (PR#247)
-* Prevent recursion of handleOps (PR#257)
-
-Together they guarantee that now there is a consistent view of the UserOperation.
-
-This is primarily relevant to external entities (explorers, wallets, event processors)
-
-V0.7 (February 2024)
-
-* Simulation in separate contract
-* Updated paymaster flows (removed 2nd postOp, dedicated gas limits)
-* Separated validation rules into their own separate doc
-* Relaxed validation rules
-* PackedUserOperation
-
-Moving closer towards 7560 native AA
-
-#### ERC-6900 MSCA (Modular Smart Contract Accounts)
-
-* Making each use-case of AA an installable plugin
-* Each plugin has Validation, Execution and Hooks
-* Plugins that follow the standard can be installed in any MSCA that implements the standard even if they were originally developed for another MSCA
-* Install-time permissions (Android inspired)
-* 4 Typical types of modules
-  * Validators (should it be executed? eg. other signature types)
-  * Executors (eg. logic where multiple calls have to be made that depend on each other, like for portfolio rebalancing)
-  * Hooks (Enforce conditions (invariants) or execute pre- or post-execution logic)
-  * Fallbacks (Adding new callable functions to smart contract wallet)
-
-#### EIP-7701
-
-Native Account Abstraction on Ethereum Layer 1 using role-based validation and AA transaction types.¶
-EIP-7701 proposes native Account Abstraction (AA) on Ethereum Layer 1. It introduces a new role-based validation model and a new transaction type (AA_TX_TYPE) that allows EOAs to delegate validation to smart contracts. This enables smart account behavior directly at the protocol level, without relying on external EntryPoints or simulation frameworks.
-
-This proposal is Ethereum L1’s counterpart to RIP-7560, which enables native AA on rollups. EIP-7701 aims to make smart accounts a first-class protocol feature on Ethereum mainnet.
-
-
-#### RIP-7560
-
-Goal is to turn 4337 into a native version with minimal changes where user operations become a first class type of transaction without a bundler actor (becomes part of block building).
-
-RIPs prevent fragmentation, help with coordination between Layer 2s
-
-RIP-7560 proposes a new native transaction type for Account Abstraction (AA), integrating smart contract account validation directly into the Ethereum protocol. Unlike ERC-4337, which operates entirely at the application layer, RIP-7560 modifies the Ethereum execution layer to enable consensus-level AA.
-
-EIP-7701 brings the same role-based Account Abstraction model to Ethereum Layer 1, while RIP-7560 is designed for rollups. Both introduce new EIP-2718-compatible transaction types and protocol-level validation.
-
-RIP-7560 and EIP-7701 are not mutually exclusive — they represent the direction of native AA across Ethereum’s modular stack. Wallet and infra developers should consider support for both.
-
-
-RIP-7711 specifies how mempools should handle native account abstraction transactions introduced by RIP-7560. This ensures that L1 and L2 clients consistently propagate, validate, and prioritize native AA transactions.
-
-7560 Lays the foundations, extensions, mostly to add what 4337 already has today
-- RIP-7711 Decentralized public mempool for AA
-- RIP-7712 Non-sequential transaction nonce support
-- RIP-TBD: Signature Aggregation (BLS and co)
+Though the ERC-4337 standard introduced much needed account abstraction at the application layer, there are ongoing efforts to natively enshrine it. In [RIP-7560](https://github.com/ethereum/RIPs/blob/master/RIPS/rip-7560.md) we see how splitting a transaction into multiple frames leads to an elegant introduction of user operations for Layer 2 protocols. And with [EIP-7701](https://eips.ethereum.org/EIPS/eip-7701) account abstraction would finally land on mainnet together with EOF, allowing the EVM to remain language agnostic. Overall, the hope is to keep such changes as compatible as possible with ERC-4337 to ensure that the existing account abstraction ecosystem will be able to go native with little effort.
 
 #### EIP-7702
 
-Even vitalik himself has stated that 7702 delegations are only valid for a single transactions. He likely confused it with 3074 or it was different at that point...
+This standard complements ERC-4337 by basically allowing users to turn their existing EOA wallets into SCA wallets. Though, that's not the complete story: The account will remain accessible through its original public-key pair, presenting both a potential weak point and backdoor in the long term. Even so, EIP-7702 went live in May 2025 as part of the Pectra update with great hopes of incentivizing ERC-4337 use.
 
-Allows for batch execution and permissioned subkeys
+<Callout>
+Note that this persists across multiple transactions once applied, not to be confused with the ephemeral conversion that EIP-3074 would have allowed.
+</Callout>
 
-All EIP-7702 delegated Smart Contract Account implementations MUST check that all calls to the initialization function originate from the entryPoint.senderCreator() address.
+EIP-7702 introduces a new transaction type called Set Code (`setcode`) or Type-4 (`0x04`) which contains a so-called `authorizationList`. As you might have guessed from the name, each of the "authorizations" in this list delegates an EOA account to a specified contract account.
 
-There is no way for the EntryPoint contract to know whether an EIP-7702 account has been initialized or not, and therefore the EIP-7702 account initialization code, can be called multiple times through EntryPoint. The Account code SHOULD only allow calling it once and the Wallet Application SHOULD NOT pass the initCode repeatedly.
+<OptionTable optionTitle="Authorization">
+    <Option option="chain_id" type="uint256">
+    Specific chain id where the authorization is applicable. May be set to `0` to allow application to any chain.
+    </Option>
+    <Option option="nonce" type="uint64">
+    Nonce of the EOA for which the authorization is to be applied. Application increments nonce.
+    </Option>
+    <Option option="address" type="address">
+    Address of the _"authority template contract"_, or simply: Address containing the actual code to which the EOA will be delegated to.
+    </Option>
+    <Option option="y_parity" type="uint8">
+    The y-parity component of the EOA's ECDSA signature for this authorization.
+    </Option>
+    <Option option="r" type="uint256">
+    The `r` component of the EOA's ECDSA signature for this authorization.
+    </Option>
+    <Option option="s" type="uint256">
+    The `s` component of the EOA's ECDSA signature for this authorization.
+    </Option>
+</OptionTable>
 
-**4 Months After EIP-7702: Does Your Wallet Feel Smarter? Ivo Georgiev, Ambire | ETHSofia 2025**
+Each of the list's items is signed by that EOA's private key which has several implications:
 
-People didn't really want to move to smart contract accounts with 4337/wallets because they had active lending in DeFi protocols, staked/locked funds, etc etc
+* Users can convert multiple of their EOAs to become a smart contract account in a single transaction.
+* Users can convert multiple EOAs across multiple specific chains with the same transaction.
+* Wallet providers can collect authorizations and make a bulk-conversion-transaction for which they sponsor the fees.
 
-**EIP-7702 (Type 4 transactions) | Everything you need to know**
+When such an authorization is applied upon an EOA account, its code is set to begin with `0xef`, a banned opcode. A purposeful choice to indicate that this account's code must be handled differently than regular code (ie. not to be executed by the EVM). To control how exactly the code should be dealt with instead, the opcode is followed by `0100` and then by the specified contract `address` from the authorization. Specifying a delegation to the zero-address resets the account's code and turns it back into a normal EOA.
 
-Important difference to 3074: It's NOT temporary (not reset at the end of the transaction)!
+<Callout>
+Note that recursion is not allowed: It's not possible for an EOA to be delegated to another delegated EOA.
+</Callout>
 
-EIP-5792: Wallet call API, adds new RPC calls that allow first setting code and then making calls ???
+The standard does not implement any explicit initialization phase here: The code is simply set as a "template" for the EOA, which means that no constructor will be executed to initialize the EOA's storage. Neither is it possible to specify a call to an explicit initialization-function to initialize the EOA's storage when the delegation is set.
 
-**EIP 7702: Smart Accounts / Set Code Transaction**
+<Callout type="info">
+**Security Considerations**
 
-Isn't just an addition to 4337, but allows some aspects of AA on its own:
-- Batch Transactions: No separate approval transaction anymore cause you can set code supporting multi-calls, and then call yourself (?) with a batch of sub-calls to execute...
-... Well... This a smart contract wallet alone + 4337 all of this was basically already possible
-But the batching is definitely a game changer for EOA users... Also avoids infinite approvals..
-
-Advantage: Allows turning your good old EOA into an SCA wallet.
-Problem: Your smart contract wallet will always have the private key as a potential weakpoint and even backdoor once ECDSA is broken...
-
-Type-4 transactions have a list of authorization to allow bundling a whole bunch of them together from various people. (If any individual authorization fails to be applied, it is skipped). If EAO submits it himself, then nonce in tx is normal next nonce, but nonce in authorization is +1
-
-Each EOA signs a delegation / authorization
-* ChainId (specific or 0)
-* address of the "authority template contract" (it's just any account with code, no delegation recursion allowed)
-* nonce of the EOA (if chain ID is 0 for multiple chains, a cross-chain discrepancy in nonces may prevent setting on some chains)
-* y,r,s ECDSA signature by EAO
-
-~~"tx.origin is the smart account even if a bundler has submitted the transaction" ???~~ pretty sure he didn't mean it this way
-
-The Solidity 0.8.29 feature allows setting `layout at` to set the start offset for storage reducing the probability of collision between different templates.
-
-The template can authenticate that the caller is itself but through EOA by checking `msg.sender == address(this)`
-
-Security:
-
-* ChainId == 0 potentially means that an authorization can be replayed on another chain where you didn't want it. Potentially forcing an upgrade to a vulnerable wallet on one chain, to all the other chains. Better to only sign delegations for only specific chains.
-* No init code requires init functions that could be frontrun. Prefer stateless wallets or init function with access controls.
-* Storage collisions, because storage is not wiped when changing delegations, even when changing to 0x0
-* Social engineering to sign malicious delegations that can drain a wallet. Wallets that support 7702 will usually block any delegation that isn't their own implementation.
-
-**EIP-7702: a technical deep dive by lightclient | Devcon SEA**
-
-Allows changing existing EOA's behavior by allowing them to have code, fully solving the "execution" part of AA. And fully 4337 compatible Does not solve the "security" part of AA: ECDSA key can override the contract code and EOA is needed for these type-4 transactions.
-
-Meme: 7702 addresses are like light particles with a dual nature, allowing them to appear as EOAs or as SCAs in different transactions.
-
-"Encapsulates the ideas of EIP-3074 packaged together in the right way to give the best interaction with wallet/client developers – generally what we want ethereum to look like in the future"
-Breakthrough change between 3074 and 7702: with 3074 the idea was to make EOAs as generic as possible, allowing any execution that's possible assuming a signature was was provided, In 7702 they took a step back, pushing users into the direction of smart contract wallets.
-
-New "setcode" (type-4) transaction type containing an authorizationList, which authorizes some other address to act on your behalf. Each authorization is signed by the respective EOA, the transaction can be signed by someone else. Can filter by chainId, with 0 representing "apply on all chains" (problem, nonce might not be same across chains). If delegation target address is zero-address, then delegation is undone. [~~It's a list despite only able to set a single delegator because that way you can use a single transaction to convert your EOA to a smart contract wallet across multiple chains?~~ No, each authorization is for one EOA – can upgrade multiple EOAs]
-
-Creation by template instead of deployment via init code: No initialization phase that returns runtime code. Instead target template code is directly written into account (initialization can happen later via regular call). This minimizes the amount of calldata from trying to migrate your EOA into a smart contract wallet (just 20 bytes for template address, no extra bytes for setup). It also minimizes the odds that users change delegation frequently (better than ephemeral delegations) improving UX. [If initialization happens later, and cannot be done atomically, what if someone malicious initializes? – You have to check EOA's signature to authenticate! (don't use sender due to relay use)]
-
-Working around EIP-3607 (transactions from account with code are invalid): Account has "delegation designator" stored in code, a structured piece of bytecode with 23 bytes. Exception is made that transactions may originate from accounts that have delegation designators set as code. First byte 0xEF (EIP-3541, designates special stuff), next byte is 0x01 communicating that its a 7702 delegation designator, and 0x00 says it's the first version (if the magic value was 0xEF00 it would be EOF EIP-3540). Then the target address with the remaining 20 bytes. 
-
-
-**Deep Dive into Ethereum 7702 Smart Accounts: security risks, footguns and testing**
-
-* Whoever bundles the Authorizations and sends them with the type 4 transaction is the one actually paying for everything. (?)
-* Opcodes like CODEHASH and CODELENGTH will returns the length of the special code snippet in a delegated EOA, not the code it delegates to.
-
-Security:
-* Lack of receive() function
-* Lac of access controls in execute functions
-* Thinking that constructors have any effect
-* Allowing the delegated code to do things on its own (use constructor to prevent usage)
-* Initializable by anyone (as setting delegate is done through relayers, so initialization should probably accept signatures to allow relayers to initialize as well)
-* Reinitializable
-* Replayable initialization (across contracts or chains)
-* Storage collisions between contracts
-* Lack of nonce management allowing replays
-
-
-
-
----
-
-EIP-7701: Smart EOAs
-ERC-6900 / 7579 — Modular account plugin standards
-ERC-6492 — Signature validation for undeployed wallets
-
-
-
-Modular Accounts¶
-Compare ERC-6900 and ERC-7579 for building smart wallet systems.¶
-Modular account standards define how smart accounts can be extended with plug-ins, permissions, and upgradeable logic. Two main proposals in the ecosystem are ERC-6900 and ERC-7579.
-https://docs.erc4337.io/smart-accounts/modular-accounts.html
-
-
-
-Core Standards¶
-ERC-4337: Account Abstraction Using Alt Mempool
-ERC-7562: Account Abstraction Validation Scope Rules
-EIP-7701: Native Account Abstraction
-Core Standards: Rollups¶
-RIP-7560: Native Account Abstraction
-RIP-7711: Validation-Execution Separation in Native Account Abstraction
-RIP-7712: Enable RIP-7560 transactions using a two-dimensional nonce
-Supporting Standards¶
-EIP-5003: Insert Code into EOAs with AUTHUSURP (Q)
-EIP-5792: Wallet Call API
-EIP-7702: Set Code for EOAs
-ERC-6900: Modular Smart Contract Accounts
-ERC-7579: Minimal Modular Smart Accounts
-ERC-6492: Signature Validation for Predeploy Contracts
-ERC-7677: Paymaster Web Service Capability
-ERC-7679: UserOperation Builder
-ERC-7715: Grant Permissions from Wallets
-ERC-7769: JSON-RPC API for ERC-4337
-RIP-7212: Precompile for secp256r1 Curve Support
-
+1. Constructors in the template code have no effect on the EOA. Explicit initialization functions must be called separately after delegation has been applied. This poses a front-running risk.
+1. A Smart Contract Wallet's template code must be safely initializable. So either initialization by a 3rd party should be without risk (eg. due to a lack of parameters), or initialization should be access controlled, eg. to only allow calls from the EOA itself (`msg.sender == address(this)`).
+1. When an EOA is converted to an SCA via ERC-4337 the delegated Smart Contract Account implementation should ensure that calls to initialization functions originate from the address returned by `entryPoint.senderCreator()`.
+1. As there is no way for the `EntryPoint` contract to know whether an EIP-7702 account has already been initialized or not, the account's initialization function can be called multiple times. The initialization function should actively handle this by, eg. preventing repeated initializations with reverts.
+1. Some Smart Contracts attempt to differentiate callers as being either EOA or SCA accounts by checking things such as code size and transaction origin. With EIP-7702 accounts can be used as, and switch between, being both EOA and SCA.
+1. When EOAs switch to another delegate, or if they undo delegation and later set a new delegate, the storage remains untouched. If delegated contracts do not specifically handle such situations (eg. by using a custom storage layout), storage-clashes are bound to occur.
+1. Avoid usage of `chainId: 0` for converting the same EOA across multiple chains as it may allow unwanted conversions of accounts on chains that the user did not intent. Even if this is intended, the account's `nonce` might be different to the one specified in the authorization causing it to fail to be applied.
+1. The `CODESIZE` and `CODECOPY` instructions operate on the delegated template code at `address` while `EXTCODESIZE` and `EXTCODECOPY` instead operate on the indicator (`0xef0100 || address`).
+1. The code that is delegated to ("authority template contract") should be treated like an implementation behind a proxy (ie. use its constructor to disallow direct usage).
+</Callout>
 
 ## References
 
@@ -680,19 +415,6 @@ RIP-7212: Precompile for secp256r1 Curve Support
   </Reference>
   <Reference reference='14'>
     Release History for /ERCS/erc-4337.md; Accessed 11.11.2025; https://github.com/ethereum/ERCs/commits/46b60ce3f57cbdac880bcf2e0512045cbb16166e/ERCS/erc-4337.md
-  </Reference>
-
-
-
-
-  <Reference reference=''>
-    eth-infinitism/account-abstraction; Account Abstraction Contracts GitHub repository; https://github.com/eth-infinitism/account-abstraction/
-  </Reference>
-  <Reference reference=''>
-
-  </Reference>
-  <Reference reference=''>
-    
   </Reference>
 </References>
 
